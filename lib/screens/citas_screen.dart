@@ -5,11 +5,11 @@ import 'dashboard_screen.dart';
 import 'configuracion_screen.dart';
 
 const Map<String, Color> kColorPorEstado = {
-  'ATRASADAS': Color(0xFFE0554F),
-  'Pendiente': Color(0xFFF0A020),
-  'Esperando Pieza': Color(0xFF3E7BF0),
-  'En proceso': Color(0xFF8B5CF6),
-  'Completado': Color(0xFF22C55E),
+  'ATRASADAS': AppColors.atrasadas,
+  'Pendiente':  AppColors.pendientes,
+  'Esperando Pieza': AppColors.esperandoPieza,
+  'En proceso': AppColors.enProceso,
+  'Completado': AppColors.completado,
 };
 
 class CitasScreen extends StatefulWidget {
@@ -392,7 +392,8 @@ class _CitasScreenState extends State<CitasScreen> {
     DateTime fecha = DateTime.now();
     TimeOfDay? hora;
     final Set<String> serviciosMarcados = {};
-
+    
+    //Eliminar esto cuando se conecte a la DB
     const marcasDemo = ['Toyota', 'Honda', 'Ford', 'Hyundai', 'Suzuki'];
     const tecnicosDemo = ['Técnico 1', 'Técnico 2', 'Técnico 3'];
     const serviciosDemo = ['Cambio de aceite y filtro', 'Frenos', 'Suspensión y dirección', 'Transmisión y caja'];
