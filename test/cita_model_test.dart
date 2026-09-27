@@ -37,11 +37,32 @@ void main() {
     });
 
     test('copyWith conserva el id original', () {
-      expect(cita.copyWith(estado: EstadoCita.completada).id, cita.id);
+      expect(cita.copyWith(estado: EstadoCita.completado).id, cita.id);
     });
 
     test('un estado desconocido en la base cae en pendiente', () {
-      expect(EstadoCita.desdeTexto('inventado'), EstadoCita.pendiente);
+      expect(EstadoCita.desdeNombre('inventado'), EstadoCita.pendiente);
+    });
+
+    test('la etiqueta coincide con la llave de kColorPorEstado de Leandy', () {
+      // Si esto falla, el color del acordeon de Leandy deja de matchear.
+      expect(EstadoCita.pendiente.etiqueta, 'Pendiente');
+      expect(EstadoCita.esperandoPieza.etiqueta, 'Esperando Pieza');
+      expect(EstadoCita.enProceso.etiqueta, 'En proceso');
+      expect(EstadoCita.completado.etiqueta, 'Completado');
+    });
+
+    test('ATRASADAS es derivado, no un estado guardado', () {
+      final vencida = cita.copyWith(fechaCita: DateTime(2020, 1, 1));
+      expect(vencida.etiquetaUI, 'ATRASADAS');
+      expect(vencida.copyWith(estado: EstadoCita.completado).etiquetaUI, 'Completado');
+      expect(cita.etiquetaUI, 'Pendiente');
+    });
+
+    test('los servicios sobreviven al viaje a JSON y vuelven', () {
+      final conServicios = cita.copyWith(servicios: const ['Frenos', 'Alineación']);
+      final vuelta = Cita.fromMap(conServicios.toMap());
+      expect(vuelta.servicios, ['Frenos', 'Alineación']);
     });
   });
 }
