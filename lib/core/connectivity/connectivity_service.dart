@@ -25,9 +25,42 @@ class ConnectivityService extends ChangeNotifier {
   bool get hayConexion => _hayConexion;
 
   /// Lee el estado actual y abre la escucha continua de cambios.
+  ///
+  /// El `try/catch` NO es paranoia: `checkConnectivity()` cruza un MethodChannel
+  /// y puede reventar con `MissingPluginException` si el plugin no esta
+  /// registrado para la plataforma actual (emuladores raros, desktop, tests) o
+  /// si la plataforma se negaba. Sin este catch, ese error sube como async
+  /// sin manejar y Flutter lo reporta como excepcion no capturada: la app
+  /// arranca "crashada" en background por un problema de red que no es grave.
+  /// Peor: si este futuro falla, la suscripcion de abajo NUNCA se crea y el
+  /// banner queda muerto para toda la sesion. Por eso la suscripcion va FUERA
+  /// del try: registrarla es lo importante, leer el estado inicial es lo
+  /// secundario.
   Future<void> _iniciar() async {
-    _aplicar(await _connectivity.checkConnectivity());
-    _suscripcion = _connectivity.onConnectivityChanged.listen(_aplicar);
+    try {
+      _aplicar(await _connectivity.checkConnectivity());
+    } on Exception catch (e) {
+      debugPrint('ConnectivityService: no se pudo leer el estado inicial ($e)');
+    }
+
+    try {
+      _suscripcion = _connectivity.onConnectivityChanged.listen(
+        _aplicar,
+        // `onError` aparte porque un error en un Stream NO se propaga al
+        // `catch` de arriba: viaja por el canal de error del propio listener.
+        onError: (Object e) =>
+            debugPrint('ConnectivityService: error en el stream ($e)'),
+      );
+    } on Exception catch (e) {
+      // El `.listen()` tambien puede reventar al ACTIVAR el canal, y ese error
+      // sale por el `try` porque es sincrono, no por `onError`. Si se llega
+      // aca, la app arranca igual: el banner se queda en el estado inicial
+      // (`_hayConexion = false`, o sea "sin conexion"), que es la postura
+      // segura para una app que sin red igual guarda todo en SQLite.
+      // Si esto se rompe en produccion, la extension natural es un
+      // `Timer.periodic` que vuelva a pedir `checkConnectivity()`.
+      debugPrint('ConnectivityService: no se pudo abrir el stream ($e)');
+    }
   }
 
   void _aplicar(List<ConnectivityResult> resultados) {
