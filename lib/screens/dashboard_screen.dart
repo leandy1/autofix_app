@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import 'login_screen.dart';
 import 'citas_screen.dart';
-import 'analisis_screen.dart';
 import 'configuracion_screen.dart';
 
 /// Modelo simple para representar una fila de la tabla "Citas del día".
@@ -167,12 +166,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
               label: 'Citas',
               selected: false,
               onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CitasScreen())),
-            ),
-            _drawerItem(
-              icon: Icons.show_chart,
-              label: 'Análisis',
-              selected: false,
-              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AnalisisScreen())),
             ),
             _drawerItem(
               icon: Icons.settings_outlined,

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import 'dashboard_screen.dart';
 import 'citas_screen.dart';
-import 'analisis_screen.dart';
 import 'login_screen.dart';
 
 /// Un servicio individual con su nombre y precio (ej: "Cambio de aceite y filtro", RD$800).
@@ -173,12 +172,6 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
               label: 'Citas',
               selected: false,
               onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CitasScreen())),
-            ),
-            _drawerItem(
-              icon: Icons.show_chart,
-              label: 'Análisis',
-              selected: false,
-              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AnalisisScreen())),
             ),
             _drawerItem(icon: Icons.settings_outlined, label: 'Configuración', selected: true),
             const Spacer(),

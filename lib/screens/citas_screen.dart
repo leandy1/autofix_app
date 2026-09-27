@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import 'login_screen.dart';
 import 'dashboard_screen.dart';
-import 'analisis_screen.dart';
 import 'configuracion_screen.dart';
 
 /// --- Modelos de datos ---
@@ -235,12 +234,6 @@ class _CitasScreenState extends State<CitasScreen> {
               onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DashboardScreen())),
             ),
             _drawerItem(icon: Icons.calendar_today_outlined, label: 'Citas', selected: true),
-            _drawerItem(
-              icon: Icons.show_chart,
-              label: 'Análisis',
-              selected: false,
-              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AnalisisScreen())),
-            ),
             _drawerItem(
               icon: Icons.settings_outlined,
               label: 'Configuración',
