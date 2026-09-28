@@ -146,7 +146,7 @@ class _CitasScreenState extends State<CitasScreen> {
     required bool selected,
     VoidCallback? onTap,
   }) {
-    return Container(
+    return Material(
       color: selected ? Colors.white.withValues(alpha: 0.06) : Colors.transparent,
       child: ListTile(
         onTap: onTap,
@@ -426,165 +426,174 @@ class _CitasScreenState extends State<CitasScreen> {
                       ),
                     ),
                     Flexible(
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.all(18),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _tituloSeccionModal('DATOS DEL CLIENTE'),
-                            TextField(decoration: _decoracionCampo('Nombre completo').copyWith(hintText: 'Nombre del cliente')),
-                            const SizedBox(height: 10),
-                            TextField(decoration: _decoracionCampo('Teléfono').copyWith(hintText: '809-000-0000')),
-                            const SizedBox(height: 16),
-                            _tituloSeccionModal('DATOS DEL VEHÍCULO'),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: DropdownButtonFormField<String>(
-                                    initialValue: marcaSeleccionada,
-                                    decoration: _decoracionCampo('Marca'),
-                                    hint: const Text('Seleccionar', style: TextStyle(fontSize: 13)),
-                                    items: marcasDemo
-                                        .map((m) => DropdownMenuItem(value: m, child: Text(m, style: const TextStyle(fontSize: 13))))
-                                        .toList(),
-                                    onChanged: (valor) => setDialogState(() => marcaSeleccionada = valor),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(child: TextField(decoration: _decoracionCampo('Modelo').copyWith(hintText: 'Ej: Corolla'))),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            Row(
-                              children: [
-                                Expanded(child: TextField(keyboardType: TextInputType.number, decoration: _decoracionCampo('Año').copyWith(hintText: '2020'))),
-                                const SizedBox(width: 10),
-                                Expanded(child: TextField(decoration: _decoracionCampo('Placa').copyWith(hintText: 'A123456'))),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-                            _tituloSeccionModal('SERVICIOS'),
-                            const Text('Seleccionar servicios', style: TextStyle(fontSize: 12, color: AppColors.textGray)),
-                            const SizedBox(height: 6),
-                            Container(
-                              decoration: BoxDecoration(border: Border.all(color: AppColors.inputBorder), borderRadius: BorderRadius.circular(8)),
+
+                      child: Material(
+                        color: AppColors.background,
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.all(18),
+                              
                               child: Column(
-                                children: [
-                                  Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                    color: const Color(0xFFF3F5F8),
-                                    child: const Text('TIPOS DE SERVICIO',
-                                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.textGray)),
-                                  ),
-                                  ...serviciosDemo.map((nombre) => CheckboxListTile(
-                                        dense: true,
-                                        controlAffinity: ListTileControlAffinity.leading,
-                                        value: serviciosMarcados.contains(nombre),
-                                        onChanged: (checked) {
-                                          setDialogState(() {
-                                            if (checked == true) {
-                                              serviciosMarcados.add(nombre);
-                                            } else {
-                                              serviciosMarcados.remove(nombre);
-                                            }
-                                          });
-                                        },
-                                        title: Text(nombre, style: const TextStyle(fontSize: 13)),
-                                      )),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            _tituloSeccionModal('ASIGNACIÓN'),
-                            DropdownButtonFormField<String>(
-                              initialValue: tecnicoSeleccionado,
-                              decoration: _decoracionCampo('Técnico'),
-                              hint: const Text('Seleccionar técnico', style: TextStyle(fontSize: 13)),
-                              items: tecnicosDemo
-                                  .map((t) => DropdownMenuItem(value: t, child: Text(t, style: const TextStyle(fontSize: 13))))
-                                  .toList(),
-                              onChanged: (valor) => setDialogState(() => tecnicoSeleccionado = valor),
-                            ),
-                            const SizedBox(height: 10),
-                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Expanded(
-                                  child: InkWell(
-                                    onTap: () async {
-                                      final nuevaFecha = await showDatePicker(
-                                        context: context,
-                                        initialDate: fecha,
-                                        firstDate: DateTime(2020),
-                                        lastDate: DateTime(2100),
-                                      );
-                                      if (nuevaFecha != null) setDialogState(() => fecha = nuevaFecha);
-                                    },
-                                    child: InputDecorator(
-                                      decoration: _decoracionCampo('Fecha'),
-                                      child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text(_formatearFechaCorta(fecha), style: const TextStyle(fontSize: 13)),
-                                          const Icon(Icons.calendar_today_outlined, size: 16, color: AppColors.textGray),
-                                        ],
+                                _tituloSeccionModal('DATOS DEL CLIENTE'),
+                                TextField(decoration: _decoracionCampo('Nombre completo').copyWith(hintText: 'Nombre del cliente')),
+                                const SizedBox(height: 10),
+                                TextField(decoration: _decoracionCampo('Teléfono').copyWith(hintText: '809-000-0000')),
+                                const SizedBox(height: 16),
+                                _tituloSeccionModal('DATOS DEL VEHÍCULO'),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: DropdownButtonFormField<String>(
+                                        initialValue: marcaSeleccionada,
+                                        decoration: _decoracionCampo('Marca'),
+                                        hint: const Text('Seleccionar', style: TextStyle(fontSize: 13)),
+                                        items: marcasDemo
+                                            .map((m) => DropdownMenuItem(value: m, child: Text(m, style: const TextStyle(fontSize: 13))))
+                                            .toList(),
+                                        onChanged: (valor) => setDialogState(() => marcaSeleccionada = valor),
                                       ),
                                     ),
+                                    const SizedBox(width: 10),
+                                    Expanded(child: TextField(decoration: _decoracionCampo('Modelo').copyWith(hintText: 'Ej: Corolla'))),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    Expanded(child: TextField(keyboardType: TextInputType.number, decoration: _decoracionCampo('Año').copyWith(hintText: '2020'))),
+                                    const SizedBox(width: 10),
+                                    Expanded(child: TextField(decoration: _decoracionCampo('Placa').copyWith(hintText: 'A123456'))),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                _tituloSeccionModal('SERVICIOS'),
+                                const Text('Seleccionar servicios', style: TextStyle(fontSize: 12, color: AppColors.textGray)),
+                                const SizedBox(height: 6),
+                                Container(
+                                  decoration: BoxDecoration(border: Border.all(color: AppColors.inputBorder), borderRadius: BorderRadius.circular(8)),
+                                  child: Column(
+                                    children: [
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                        color: const Color(0xFFF3F5F8),
+                                        child: const Text('TIPOS DE SERVICIO',
+                                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.textGray)),
+                                      ),
+                                      ...serviciosDemo.map((nombre) => CheckboxListTile(
+                                            dense: true,
+                                            controlAffinity: ListTileControlAffinity.leading,
+                                            value: serviciosMarcados.contains(nombre),
+                                            onChanged: (checked) {
+                                              setDialogState(() {
+                                                if (checked == true) {
+                                                  serviciosMarcados.add(nombre);
+                                                } else {
+                                                  serviciosMarcados.remove(nombre);
+                                                }
+                                              });
+                                            },
+                                            title: Text(nombre, style: const TextStyle(fontSize: 13)),
+                                          )),
+                                    ],
                                   ),
                                 ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: InkWell(
-                                    onTap: () async {
-                                      final nuevaHora = await showTimePicker(context: context, initialTime: hora ?? TimeOfDay.now());
-                                      if (nuevaHora != null) setDialogState(() => hora = nuevaHora);
-                                    },
-                                    child: InputDecorator(
-                                      decoration: _decoracionCampo('Hora'),
-                                      child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text(hora == null ? '--:--' : hora!.format(context), style: const TextStyle(fontSize: 13)),
-                                          const Icon(Icons.access_time, size: 16, color: AppColors.textGray),
-                                        ],
+                                const SizedBox(height: 16),
+                                _tituloSeccionModal('ASIGNACIÓN'),
+                                DropdownButtonFormField<String>(
+                                  initialValue: tecnicoSeleccionado,
+                                  decoration: _decoracionCampo('Técnico'),
+                                  hint: const Text('Seleccionar técnico', style: TextStyle(fontSize: 13)),
+                                  items: tecnicosDemo
+                                      .map((t) => DropdownMenuItem(value: t, child: Text(t, style: const TextStyle(fontSize: 13))))
+                                      .toList(),
+                                  onChanged: (valor) => setDialogState(() => tecnicoSeleccionado = valor),
+                                ),
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: InkWell(
+                                        onTap: () async {
+                                          final nuevaFecha = await showDatePicker(
+                                            context: context,
+                                            initialDate: fecha,
+                                            firstDate: DateTime(2020),
+                                            lastDate: DateTime(2100),
+                                          );
+                                          if (nuevaFecha != null) setDialogState(() => fecha = nuevaFecha);
+                                        },
+                                        child: InputDecorator(
+                                          decoration: _decoracionCampo('Fecha'),
+                                          child: Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Text(_formatearFechaCorta(fecha), style: const TextStyle(fontSize: 13)),
+                                              const Icon(Icons.calendar_today_outlined, size: 16, color: AppColors.textGray),
+                                            ],
+                                          ),
+                                        ),
                                       ),
                                     ),
-                                  ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: InkWell(
+                                        onTap: () async {
+                                          final nuevaHora = await showTimePicker(context: context, initialTime: hora ?? TimeOfDay.now());
+                                          if (nuevaHora != null) setDialogState(() => hora = nuevaHora);
+                                        },
+                                        child: InputDecorator(
+                                          decoration: _decoracionCampo('Hora'),
+                                          child: Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Text(hora == null ? '--:--' : hora!.format(context), style: const TextStyle(fontSize: 13)),
+                                              const Icon(Icons.access_time, size: 16, color: AppColors.textGray),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                DropdownButtonFormField<String>(
+                                  initialValue: estadoSeleccionado,
+                                  decoration: _decoracionCampo('Estado'),
+                                  items: const ['Pendiente', 'Esperando Pieza', 'En proceso', 'Completado']
+                                      .map((e) => DropdownMenuItem(value: e, child: Text(e, style: const TextStyle(fontSize: 13))))
+                                      .toList(),
+                                  onChanged: (valor) => setDialogState(() => estadoSeleccionado = valor ?? estadoSeleccionado),
+                                ),
+                                const SizedBox(height: 10),
+                                TextField(
+                                  maxLines: 3,
+                                  decoration: _decoracionCampo('Descripción').copyWith(hintText: 'Notas adicionales sobre la cita...'),
                                 ),
                               ],
-                            ),
-                            const SizedBox(height: 10),
-                            DropdownButtonFormField<String>(
-                              initialValue: estadoSeleccionado,
-                              decoration: _decoracionCampo('Estado'),
-                              items: const ['Pendiente', 'Esperando Pieza', 'En proceso', 'Completado']
-                                  .map((e) => DropdownMenuItem(value: e, child: Text(e, style: const TextStyle(fontSize: 13))))
-                                  .toList(),
-                              onChanged: (valor) => setDialogState(() => estadoSeleccionado = valor ?? estadoSeleccionado),
-                            ),
-                            const SizedBox(height: 10),
-                            TextField(
-                              maxLines: 3,
-                              decoration: _decoracionCampo('Descripción').copyWith(hintText: 'Notas adicionales sobre la cita...'),
-                            ),
-                          ],
+                            ),  
                         ),
                       ),
                     ),
-                    Padding(
-                      padding: const EdgeInsets.all(18),
-                      child: SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.orangePrimary,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    Container(
+                      width: double.infinity,
+                      color: AppColors.headerNavy,
+                      child: Padding(
+                        padding: const EdgeInsets.all(18),
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.orangePrimary,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              child: const Text('Guardar Cita', style: TextStyle(fontWeight: FontWeight.w700)),
+                            ),
                           ),
-                          child: const Text('Guardar Cita', style: TextStyle(fontWeight: FontWeight.w700)),
-                        ),
                       ),
                     ),
                   ],

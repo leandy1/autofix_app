@@ -4,22 +4,6 @@ import 'dashboard_screen.dart';
 import 'citas_screen.dart';
 import 'login_screen.dart';
 
-/// Un servicio individual con su nombre y precio (ej: "Cambio de aceite y filtro", RD$800).
-class ServicioItem {
-  String nombre;
-  double precio;
-  ServicioItem({required this.nombre, required this.precio});
-}
-
-/// Un grupo de servicios (ej: "Carrocería"), que contiene varios ServicioItem.
-class GrupoServicio {
-  String nombre;
-  List<ServicioItem> servicios;
-  bool expandido;
-  GrupoServicio({required this.nombre, List<ServicioItem>? servicios, this.expandido = true})
-      : servicios = servicios ?? [];
-}
-
 class ConfiguracionScreen extends StatefulWidget {
   const ConfiguracionScreen({super.key});
 
@@ -28,23 +12,17 @@ class ConfiguracionScreen extends StatefulWidget {
 }
 
 class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
-  // ---------------------------------------------------------------------
-  // Todas las listas empiezan VACÍAS a propósito. La pantalla es funcional
-  // (agregar/eliminar funciona de verdad), pero sin datos de ejemplo.
-  // ---------------------------------------------------------------------
-  final List<ServicioItem> _tiposServicio = [];
-  final List<String> _tecnicos = [];
-  final List<String> _estados = [];
-  final List<String> _marcasVehiculo = [];
-  final List<GrupoServicio> _gruposServicios = [];
-
-  // Controladores de los campos "Agregar..." de cada sección.
+  // Controladores solo para que los campos de texto funcionen visualmente.
+  // Los botones "Agregar" no guardan nada — eso se conecta en otro archivo.
   final TextEditingController _nombreServicioController = TextEditingController();
   final TextEditingController _precioServicioController = TextEditingController();
   final TextEditingController _tecnicoController = TextEditingController();
   final TextEditingController _estadoController = TextEditingController();
   final TextEditingController _marcaController = TextEditingController();
   final TextEditingController _grupoController = TextEditingController();
+
+  // Solo para la demo visual del acordeón "Grupos de Servicios".
+  bool _grupoDemoExpandido = true;
 
   @override
   void dispose() {
@@ -73,32 +51,11 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
             const SizedBox(height: 16),
             _buildTiposDeServicioCard(),
             const SizedBox(height: 16),
-            _buildListaSimpleCard(
-              titulo: 'Técnicos',
-              hint: 'Ej: Juan Pérez',
-              controller: _tecnicoController,
-              lista: _tecnicos,
-              onAgregar: (valor) => setState(() => _tecnicos.add(valor)),
-              onEliminar: (index) => setState(() => _tecnicos.removeAt(index)),
-            ),
+            _buildListaSimpleCard(titulo: 'Técnicos', hint: 'Ej: Juan Pérez', controller: _tecnicoController),
             const SizedBox(height: 16),
-            _buildListaSimpleCard(
-              titulo: 'Estados',
-              hint: 'Ej: En diagnóstico',
-              controller: _estadoController,
-              lista: _estados,
-              onAgregar: (valor) => setState(() => _estados.add(valor)),
-              onEliminar: (index) => setState(() => _estados.removeAt(index)),
-            ),
+            _buildListaSimpleCard(titulo: 'Estados', hint: 'Ej: En diagnóstico', controller: _estadoController),
             const SizedBox(height: 16),
-            _buildListaSimpleCard(
-              titulo: 'Marcas de Vehículo',
-              hint: 'Ej: Nissan',
-              controller: _marcaController,
-              lista: _marcasVehiculo,
-              onAgregar: (valor) => setState(() => _marcasVehiculo.add(valor)),
-              onEliminar: (index) => setState(() => _marcasVehiculo.removeAt(index)),
-            ),
+            _buildListaSimpleCard(titulo: 'Marcas de Vehículo', hint: 'Ej: Nissan', controller: _marcaController),
             const SizedBox(height: 16),
             _buildGruposDeServiciosCard(),
           ],
@@ -108,7 +65,7 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
   }
 
   // ---------------------------------------------------------------------
-  // AppBar + Drawer (mismos que en el resto de las pantallas).
+  // AppBar + Drawer
   // ---------------------------------------------------------------------
 
   PreferredSizeWidget _buildAppBar() {
@@ -194,14 +151,16 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
     );
   }
 
+  /// Usa Material (no Container) para que el ListTile no lance el warning
+  /// de "background color or ink splashes may be invisible".
   Widget _drawerItem({
     required IconData icon,
     required String label,
     required bool selected,
     VoidCallback? onTap,
   }) {
-    return Container(
-      color: selected ? Colors.white.withValues(alpha: 0.06) : Colors.transparent,
+    return Material(
+      color: selected ? Colors.white.withOpacity(0.06) : Colors.transparent,
       child: ListTile(
         onTap: onTap,
         leading: Icon(icon, color: selected ? AppColors.orangePrimary : Colors.white70, size: 20),
@@ -218,7 +177,7 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
     );
   }
 
-  /// Contenedor blanco reutilizable para cada sección de configuración.
+  /// Contenedor blanco reutilizable para cada sección.
   Widget _sectionCard({required String titulo, required Widget child}) {
     return Container(
       width: double.infinity,
@@ -226,7 +185,7 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
       decoration: BoxDecoration(
         color: AppColors.cardWhite,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -239,37 +198,20 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
     );
   }
 
-  /// Campo de texto + botón "Agregar" reutilizable, con el mismo estilo del
-  /// boceto (input con borde gris claro, botón naranja al lado).
-  Widget _buildCampoAgregar({
-    required TextEditingController controller,
-    required String hint,
-    required VoidCallback onAgregar,
-  }) {
+  /// Campo de texto + botón "Agregar" — el botón no hace nada por ahora,
+  /// solo está ahí para que se vea y se sienta el diseño completo.
+  Widget _buildCampoAgregar({required TextEditingController controller, required String hint}) {
     return Row(
       children: [
         Expanded(
           child: TextField(
             controller: controller,
-            decoration: InputDecoration(
-              hintText: hint,
-              hintStyle: const TextStyle(color: AppColors.placeholderGray, fontSize: 13),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: AppColors.inputBorder),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: AppColors.orangePrimary, width: 1.5),
-              ),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-            ),
+            decoration: _decoracionInput(hint),
           ),
         ),
         const SizedBox(width: 8),
         ElevatedButton(
-          onPressed: onAgregar,
+          onPressed: () {}, // Sin lógica: la conexión con datos se hace en otro archivo.
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.orangePrimary,
             foregroundColor: Colors.white,
@@ -283,8 +225,27 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
     );
   }
 
+  InputDecoration _decoracionInput(String hint) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: const TextStyle(color: AppColors.placeholderGray, fontSize: 13),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.inputBorder)),
+      focusedBorder:
+          OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.orangePrimary, width: 1.5)),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+    );
+  }
+
+  Widget _textoVacio(String mensaje) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Text(mensaje, style: const TextStyle(color: AppColors.textGray, fontSize: 13)),
+    );
+  }
+
   // ---------------------------------------------------------------------
-  // Sección "Tipos de Servicio" — tiene nombre + precio (dos campos).
+  // "Tipos de Servicio" — nombre + precio, sin lista real detrás.
   // ---------------------------------------------------------------------
 
   Widget _buildTiposDeServicioCard() {
@@ -293,23 +254,7 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          TextField(
-            controller: _nombreServicioController,
-            decoration: InputDecoration(
-              hintText: 'Ej: Cambio de frenos',
-              hintStyle: const TextStyle(color: AppColors.placeholderGray, fontSize: 13),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: AppColors.inputBorder),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: AppColors.orangePrimary, width: 1.5),
-              ),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-          ),
+          TextField(controller: _nombreServicioController, decoration: _decoracionInput('Ej: Cambio de frenos')),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -317,25 +262,12 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
                 child: TextField(
                   controller: _precioServicioController,
                   keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    hintText: 'Precio RD\$',
-                    hintStyle: const TextStyle(color: AppColors.placeholderGray, fontSize: 13),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: AppColors.inputBorder),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: AppColors.orangePrimary, width: 1.5),
-                    ),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
+                  decoration: _decoracionInput('Precio RD\$'),
                 ),
               ),
               const SizedBox(width: 8),
               ElevatedButton(
-                onPressed: _agregarTipoServicio,
+                onPressed: () {}, // Sin lógica.
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.orangePrimary,
                   foregroundColor: Colors.white,
@@ -348,120 +280,45 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          if (_tiposServicio.isEmpty)
-            _textoVacio('No hay tipos de servicio registrados aún.')
-          else
-            ..._tiposServicio.asMap().entries.map((entry) {
-              final index = entry.key;
-              final servicio = entry.value;
-              return _filaItemConPrecio(
-                nombre: servicio.nombre,
-                precio: servicio.precio,
-                onEliminar: () => setState(() => _tiposServicio.removeAt(index)),
-              );
-            }),
+          _textoVacio('No hay tipos de servicio registrados aún.'),
         ],
       ),
     );
   }
 
-  void _agregarTipoServicio() {
-    final nombre = _nombreServicioController.text.trim();
-    final precioTexto = _precioServicioController.text.trim();
-    if (nombre.isEmpty || precioTexto.isEmpty) return;
-    final precio = double.tryParse(precioTexto) ?? 0;
-    setState(() {
-      _tiposServicio.add(ServicioItem(nombre: nombre, precio: precio));
-      _nombreServicioController.clear();
-      _precioServicioController.clear();
-    });
-  }
-
   // ---------------------------------------------------------------------
-  // Secciones simples (Técnicos, Estados, Marcas de Vehículo): un solo
-  // campo de texto + lista con botón de eliminar.
+  // Secciones simples: Técnicos, Estados, Marcas de Vehículo.
   // ---------------------------------------------------------------------
 
-  Widget _buildListaSimpleCard({
-    required String titulo,
-    required String hint,
-    required TextEditingController controller,
-    required List<String> lista,
-    required void Function(String valor) onAgregar,
-    required void Function(int index) onEliminar,
-  }) {
+  Widget _buildListaSimpleCard({required String titulo, required String hint, required TextEditingController controller}) {
     return _sectionCard(
       titulo: titulo,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildCampoAgregar(
-            controller: controller,
-            hint: hint,
-            onAgregar: () {
-              final valor = controller.text.trim();
-              if (valor.isEmpty) return;
-              onAgregar(valor);
-              controller.clear();
-            },
-          ),
+          _buildCampoAgregar(controller: controller, hint: hint),
           const SizedBox(height: 12),
-          if (lista.isEmpty)
-            _textoVacio('No hay elementos registrados aún.')
-          else
-            ...lista.asMap().entries.map((entry) => _filaItemSimple(
-                  nombre: entry.value,
-                  onEliminar: () => onEliminar(entry.key),
-                )),
+          _textoVacio('No hay elementos registrados aún.'),
         ],
       ),
     );
   }
 
-  Widget _textoVacio(String mensaje) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Text(mensaje, style: const TextStyle(color: AppColors.textGray, fontSize: 13)),
-    );
-  }
-
-  Widget _filaItemSimple({required String nombre, required VoidCallback onEliminar}) {
+  Widget _filaItemDemo({required String nombre, String? precio}) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 10),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFFF0F1F3))),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(nombre, style: const TextStyle(fontSize: 13, color: AppColors.textDark)),
-          InkWell(
-            onTap: onEliminar,
-            child: const Icon(Icons.close, size: 16, color: Colors.redAccent),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _filaItemConPrecio({required String nombre, required double precio, required VoidCallback onEliminar}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFFF0F1F3))),
-      ),
+      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF0F1F3)))),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(nombre, style: const TextStyle(fontSize: 13, color: AppColors.textDark)),
           Row(
             children: [
-              Text('RD\$ ${precio.toStringAsFixed(0)}', style: const TextStyle(fontSize: 13, color: AppColors.textGray)),
-              const SizedBox(width: 10),
-              InkWell(
-                onTap: onEliminar,
-                child: const Icon(Icons.close, size: 16, color: Colors.redAccent),
-              ),
+              if (precio != null) ...[
+                Text(precio, style: const TextStyle(fontSize: 13, color: AppColors.textGray)),
+                const SizedBox(width: 10),
+              ],
+              const Icon(Icons.close, size: 16, color: Colors.redAccent),
             ],
           ),
         ],
@@ -470,8 +327,10 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
   }
 
   // ---------------------------------------------------------------------
-  // Sección "Grupos de Servicios": cada grupo es una tarjeta expandible que
-  // contiene una sublista de servicios (tomados de "Tipos de Servicio").
+  // "Grupos de Servicios" — se deja UNA tarjeta de ejemplo fija (no una
+  // lista real) solo para mostrar cómo se ve un grupo expandido, con su
+  // acordeón funcionando (abrir/cerrar) y el modal de selección de
+  // servicios abriendo y cerrando.
   // ---------------------------------------------------------------------
 
   Widget _buildGruposDeServiciosCard() {
@@ -480,77 +339,40 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildCampoAgregar(
-            controller: _grupoController,
-            hint: 'Ej: Electricidad',
-            onAgregar: () {
-              final nombre = _grupoController.text.trim();
-              if (nombre.isEmpty) return;
-              setState(() {
-                _gruposServicios.add(GrupoServicio(nombre: nombre));
-                _grupoController.clear();
-              });
-            },
-          ),
+          _buildCampoAgregar(controller: _grupoController, hint: 'Ej: Electricidad'),
           const SizedBox(height: 12),
-          if (_gruposServicios.isEmpty)
-            _textoVacio('No hay grupos de servicios creados aún.')
-          else
-            ..._gruposServicios.asMap().entries.map((entry) => _buildGrupoAcordeon(entry.key, entry.value)),
+          _buildGrupoDemoAcordeon(),
         ],
       ),
     );
   }
 
-  Widget _buildGrupoAcordeon(int indexGrupo, GrupoServicio grupo) {
+  Widget _buildGrupoDemoAcordeon() {
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-        borderRadius: BorderRadius.circular(8),
-      ),
+      decoration: BoxDecoration(border: Border.all(color: const Color(0xFFE5E7EB)), borderRadius: BorderRadius.circular(8)),
       child: Column(
         children: [
           ListTile(
-            title: Text(grupo.nombre, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+            title: const Text('Carrocería', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
             leading: InkWell(
-              onTap: () => setState(() => grupo.expandido = !grupo.expandido),
+              onTap: () => setState(() => _grupoDemoExpandido = !_grupoDemoExpandido),
               child: AnimatedRotation(
-                turns: grupo.expandido ? 0.5 : 0,
+                turns: _grupoDemoExpandido ? 0.5 : 0,
                 duration: const Duration(milliseconds: 200),
                 child: const Icon(Icons.keyboard_arrow_down, color: AppColors.textGray),
               ),
             ),
-            trailing: InkWell(
-              onTap: () => setState(() => _gruposServicios.removeAt(indexGrupo)),
-              child: const Icon(Icons.close, size: 18, color: Colors.redAccent),
-            ),
+            trailing: const Icon(Icons.close, size: 18, color: Colors.redAccent),
           ),
-          if (grupo.expandido) ...[
-            if (grupo.servicios.isEmpty)
-              Padding(
-                padding: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
-                child: _textoVacio('Este grupo aún no tiene servicios.'),
-              )
-            else
-              ...grupo.servicios.asMap().entries.map((entry) {
-                final indexServicio = entry.key;
-                final servicio = entry.value;
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: _filaItemConPrecio(
-                    nombre: servicio.nombre,
-                    precio: servicio.precio,
-                    onEliminar: () => setState(() => grupo.servicios.removeAt(indexServicio)),
-                  ),
-                );
-              }),
+          if (_grupoDemoExpandido) ...[
+            _filaItemDemo(nombre: 'Alineación y balanceo', precio: 'RD\$ 1200'),
+            _filaItemDemo(nombre: 'Cambio de gomas', precio: 'RD\$ 600'),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
               child: SizedBox(
                 width: double.infinity,
                 child: TextButton.icon(
-                  onPressed: () => _abrirSelectorDeServicios(grupo),
+                  onPressed: _abrirSelectorDeServiciosDemo,
                   icon: const Icon(Icons.add, size: 16, color: AppColors.orangePrimary),
                   label: const Text('Agregar Servicio', style: TextStyle(color: AppColors.orangePrimary, fontWeight: FontWeight.w600)),
                 ),
@@ -562,20 +384,14 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
     );
   }
 
-  /// Abre la ventana modal (como en tu captura 3) para elegir, con checkboxes,
-  /// cuáles servicios de "Tipos de Servicio" se agregan a este grupo.
-  Future<void> _abrirSelectorDeServicios(GrupoServicio grupo) async {
-    if (_tiposServicio.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Primero agrega servicios en "Tipos de Servicio".')),
-      );
-      return;
-    }
-
-    // Copia local de selección, para no modificar nada hasta presionar "Confirmar".
+  /// Modal de ejemplo "Seleccionar Servicios" — los checkboxes se pueden
+  /// marcar/desmarcar (interacción básica), pero "Confirmar" solo cierra
+  /// el modal, no guarda nada.
+  void _abrirSelectorDeServiciosDemo() {
     final Set<String> seleccionados = {};
+    const serviciosDemo = ['Cambio de aceite y filtro', 'Frenos', 'Suspensión y dirección', 'Transmisión y caja'];
 
-    await showDialog(
+    showDialog(
       context: context,
       builder: (context) {
         return StatefulBuilder(
@@ -593,30 +409,22 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
                       const Text('Seleccionar Servicios',
                           style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textDark)),
                       const SizedBox(height: 12),
-                      ..._tiposServicio.map((servicio) {
-                        final yaEstaEnGrupo = grupo.servicios.any((s) => s.nombre == servicio.nombre);
-                        final marcado = seleccionados.contains(servicio.nombre);
+                      ...serviciosDemo.map((nombre) {
+                        final marcado = seleccionados.contains(nombre);
                         return CheckboxListTile(
                           value: marcado,
-                          onChanged: yaEstaEnGrupo
-                              ? null // ya está en el grupo, no se puede volver a marcar
-                              : (checked) {
-                                  setDialogState(() {
-                                    if (checked == true) {
-                                      seleccionados.add(servicio.nombre);
-                                    } else {
-                                      seleccionados.remove(servicio.nombre);
-                                    }
-                                  });
-                                },
+                          onChanged: (checked) {
+                            setDialogState(() {
+                              if (checked == true) {
+                                seleccionados.add(nombre);
+                              } else {
+                                seleccionados.remove(nombre);
+                              }
+                            });
+                          },
                           controlAffinity: ListTileControlAffinity.leading,
                           contentPadding: EdgeInsets.zero,
-                          title: Text(
-                            servicio.nombre,
-                            style: TextStyle(fontSize: 14, color: yaEstaEnGrupo ? AppColors.textGray : AppColors.textDark),
-                          ),
-                          secondary: Text('RD\$ ${servicio.precio.toStringAsFixed(0)}',
-                              style: const TextStyle(fontSize: 13, color: AppColors.textGray)),
+                          title: Text(nombre, style: const TextStyle(fontSize: 14)),
                         );
                       }),
                       const SizedBox(height: 12),
@@ -629,21 +437,10 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
                           ),
                           const SizedBox(width: 8),
                           ElevatedButton(
-                            onPressed: seleccionados.isEmpty
-                                ? null
-                                : () {
-                                    setState(() {
-                                      for (final nombre in seleccionados) {
-                                        final servicio = _tiposServicio.firstWhere((s) => s.nombre == nombre);
-                                        grupo.servicios.add(ServicioItem(nombre: servicio.nombre, precio: servicio.precio));
-                                      }
-                                    });
-                                    Navigator.of(context).pop();
-                                  },
+                            onPressed: () => Navigator.of(context).pop(), // Solo cierra, no guarda.
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.orangePrimary,
                               foregroundColor: Colors.white,
-                              disabledBackgroundColor: AppColors.orangePrimary.withValues(alpha: 0.4),
                               elevation: 0,
                             ),
                             child: const Text('Confirmar'),
