@@ -160,7 +160,7 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
     VoidCallback? onTap,
   }) {
     return Material(
-      color: selected ? Colors.white.withOpacity(0.06) : Colors.transparent,
+      color: selected ? Colors.white.withValues(alpha: 0.06) : Colors.transparent,
       child: ListTile(
         onTap: onTap,
         leading: Icon(icon, color: selected ? AppColors.orangePrimary : Colors.white70, size: 20),
@@ -185,7 +185,7 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
       decoration: BoxDecoration(
         color: AppColors.cardWhite,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

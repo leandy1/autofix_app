@@ -222,7 +222,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  /// Tarjeta oscura superior: "DASHBOARD / <fecha>" con selector de fecha funcional.
+  /// Tarjeta oscura superior: "DASHBOARD / fecha" con selector de fecha funcional.
   Widget _buildHeroCard() {
     final bool esHoy = _esMismoDia(_fechaSeleccionada, DateTime.now());
     return Container(
