@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import '../theme/app_colors.dart';
-import 'dashboard_screen.dart';
-import 'citas_screen.dart';
-import 'login_screen.dart';
+import '../../theme/app_colors.dart';
+import 'dashboard_admin_screen.dart';
+import 'citas_admin_screen.dart';
+import '../auth/login_screen.dart';
 
 class ConfiguracionScreen extends StatefulWidget {
   const ConfiguracionScreen({super.key});

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import '../theme/app_colors.dart';
-import 'login_screen.dart';
-import 'citas_screen.dart';
-import 'configuracion_screen.dart';
+import '../../theme/app_colors.dart';
+import '../auth/login_screen.dart';
+import 'citas_admin_screen.dart';
+import 'configuracion_admin_screen.dart';
 
 /// Modelo simple para representar una fila de la tabla "Citas del día".
 /// Más adelante esto puede moverse a lib/models/cita.dart y llenarse desde

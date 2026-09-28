@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import '../theme/app_colors.dart';
-import 'login_screen.dart';
-import 'dashboard_screen.dart';
-import 'configuracion_screen.dart';
+import '../../theme/app_colors.dart';
+import '../auth/login_screen.dart';
+import 'dashboard_admin_screen.dart';
+import 'configuracion_admin_screen.dart';
 
 const Map<String, Color> kColorPorEstado = {
   'ATRASADAS': AppColors.atrasadas,

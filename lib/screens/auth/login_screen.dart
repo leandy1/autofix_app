@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
-import '../theme/app_colors.dart';
-import 'dashboard_screen.dart';
+
+import '../../controllers/auth/login_controller.dart';
+import '../../theme/app_colors.dart';
+import '../admin/dashboard_admin_screen.dart';
+import '../cliente/dashboard_cliente_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -13,21 +16,25 @@ class _LoginScreenState extends State<LoginScreen> {
   // Controladores para leer lo que el usuario escribe en cada campo.
   final TextEditingController _userController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final LoginController _loginController = LoginController();
 
   @override
   void dispose() {
     // Buena práctica: liberar los controladores cuando la pantalla se destruye.
     _userController.dispose();
     _passwordController.dispose();
+    _loginController.dispose();
     super.dispose();
   }
 
   void _handleLogin() {
-    // todo: aquí va la lógica real de autenticación (Sandy - Programador funcional).
-    debugPrint('Usuario: ${_userController.text}');
-    debugPrint('Contraseña: ${_passwordController.text}');
+    final role = _loginController.submit();
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const DashboardScreen()),
+      MaterialPageRoute(
+        builder: (_) => role == LoginRole.admin
+            ? const DashboardScreen()
+            : const DashboardClienteScreen(),
+      ),
     );
   }
 
@@ -49,7 +56,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha:0.08),
+                      color: Colors.black.withValues(alpha: 0.08),
                       blurRadius: 20,
                       offset: const Offset(0, 8),
                     ),
@@ -58,10 +65,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 clipBehavior: Clip.antiAlias, // para que el header respete las esquinas redondeadas
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildHeader(),
-                    _buildForm(),
-                  ],
+                  children: [_buildHeader(), _buildForm()],
                 ),
               ),
             ),
@@ -120,6 +124,9 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           const SizedBox(height: 24),
 
+          _buildRoleSelector(),
+          const SizedBox(height: 18),
+
           _buildLabeledField(
             label: 'Usuario',
             hint: 'Ingrese su usuario',
@@ -140,9 +147,47 @@ class _LoginScreenState extends State<LoginScreen> {
 
           const Text(
             '© 2026 Grupo Q',
+            style: TextStyle(fontSize: 12, color: AppColors.footerGray),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRoleSelector() {
+    return ListenableBuilder(
+      listenable: _loginController,
+      builder: (context, _) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Ingresar como',
             style: TextStyle(
-              fontSize: 12,
-              color: AppColors.footerGray,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: AppColors.labelDark,
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<LoginRole>(
+              segments: const [
+                ButtonSegment(
+                  value: LoginRole.admin,
+                  label: Text('Admin'),
+                  icon: Icon(Icons.admin_panel_settings_outlined),
+                ),
+                ButtonSegment(
+                  value: LoginRole.cliente,
+                  label: Text('Cliente'),
+                  icon: Icon(Icons.person_outline),
+                ),
+              ],
+              selected: {_loginController.selectedRole},
+              onSelectionChanged: (selection) {
+                _loginController.selectRole(selection.first);
+              },
             ),
           ),
         ],
@@ -176,19 +221,22 @@ class _LoginScreenState extends State<LoginScreen> {
           decoration: InputDecoration(
             hintText: hint,
             hintStyle: const TextStyle(color: AppColors.placeholderGray),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 14,
+            ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
               borderSide: const BorderSide(color: AppColors.inputBorder),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: AppColors.orangePrimary, width: 1.5),
+              borderSide: const BorderSide(
+                color: AppColors.orangePrimary,
+                width: 1.5,
+              ),
             ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
           ),
         ),
       ],
@@ -212,10 +260,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         child: const Text(
           'Ingresar',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-          ),
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
         ),
       ),
     );
