@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../../models/demo_admin_data.dart';
 import '../../theme/app_colors.dart';
 import 'dashboard_admin_screen.dart';
 import 'citas_admin_screen.dart';
@@ -51,11 +53,26 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
             const SizedBox(height: 16),
             _buildTiposDeServicioCard(),
             const SizedBox(height: 16),
-            _buildListaSimpleCard(titulo: 'Técnicos', hint: 'Ej: Juan Pérez', controller: _tecnicoController),
+            _buildListaSimpleCard(
+              titulo: 'Técnicos',
+              hint: 'Ej: Juan Pérez',
+              controller: _tecnicoController,
+              items: demoTecnicosConfiguracion,
+            ),
             const SizedBox(height: 16),
-            _buildListaSimpleCard(titulo: 'Estados', hint: 'Ej: En diagnóstico', controller: _estadoController),
+            _buildListaSimpleCard(
+              titulo: 'Estados',
+              hint: 'Ej: En diagnóstico',
+              controller: _estadoController,
+              items: demoEstadosConfiguracion,
+            ),
             const SizedBox(height: 16),
-            _buildListaSimpleCard(titulo: 'Marcas de Vehículo', hint: 'Ej: Nissan', controller: _marcaController),
+            _buildListaSimpleCard(
+              titulo: 'Marcas de Vehículo',
+              hint: 'Ej: Nissan',
+              controller: _marcaController,
+              items: demoMarcasConfiguracion,
+            ),
             const SizedBox(height: 16),
             _buildGruposDeServiciosCard(),
           ],
@@ -237,15 +254,8 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
     );
   }
 
-  Widget _textoVacio(String mensaje) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Text(mensaje, style: const TextStyle(color: AppColors.textGray, fontSize: 13)),
-    );
-  }
-
   // ---------------------------------------------------------------------
-  // "Tipos de Servicio" — nombre + precio, sin lista real detrás.
+  // "Tipos de Servicio" — el formulario y el listado usan datos de demostración.
   // ---------------------------------------------------------------------
 
   Widget _buildTiposDeServicioCard() {
@@ -280,7 +290,8 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          _textoVacio('No hay tipos de servicio registrados aún.'),
+          for (final servicio in demoServiciosAdmin)
+            _filaItemDemo(nombre: servicio.nombre, precio: servicio.precio),
         ],
       ),
     );
@@ -290,7 +301,12 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
   // Secciones simples: Técnicos, Estados, Marcas de Vehículo.
   // ---------------------------------------------------------------------
 
-  Widget _buildListaSimpleCard({required String titulo, required String hint, required TextEditingController controller}) {
+  Widget _buildListaSimpleCard({
+    required String titulo,
+    required String hint,
+    required TextEditingController controller,
+    required List<String> items,
+  }) {
     return _sectionCard(
       titulo: titulo,
       child: Column(
@@ -298,7 +314,7 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
         children: [
           _buildCampoAgregar(controller: controller, hint: hint),
           const SizedBox(height: 12),
-          _textoVacio('No hay elementos registrados aún.'),
+          for (final item in items) _filaItemDemo(nombre: item),
         ],
       ),
     );
@@ -353,7 +369,10 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
       child: Column(
         children: [
           ListTile(
-            title: const Text('Carrocería', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+            title: Text(
+              demoGruposServiciosAdmin.first.nombre,
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+            ),
             leading: InkWell(
               onTap: () => setState(() => _grupoDemoExpandido = !_grupoDemoExpandido),
               child: AnimatedRotation(
@@ -365,8 +384,11 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
             trailing: const Icon(Icons.close, size: 18, color: Colors.redAccent),
           ),
           if (_grupoDemoExpandido) ...[
-            _filaItemDemo(nombre: 'Alineación y balanceo', precio: 'RD\$ 1200'),
-            _filaItemDemo(nombre: 'Cambio de gomas', precio: 'RD\$ 600'),
+            for (final servicio in demoGruposServiciosAdmin.first.servicios)
+              _filaItemDemo(
+                nombre: servicio.nombre,
+                precio: servicio.precio,
+              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
               child: SizedBox(
@@ -389,8 +411,6 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
   /// el modal, no guarda nada.
   void _abrirSelectorDeServiciosDemo() {
     final Set<String> seleccionados = {};
-    const serviciosDemo = ['Cambio de aceite y filtro', 'Frenos', 'Suspensión y dirección', 'Transmisión y caja'];
-
     showDialog(
       context: context,
       builder: (context) {
@@ -409,22 +429,25 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
                       const Text('Seleccionar Servicios',
                           style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textDark)),
                       const SizedBox(height: 12),
-                      ...serviciosDemo.map((nombre) {
-                        final marcado = seleccionados.contains(nombre);
+                      ...demoServiciosAdmin.map((servicio) {
+                        final marcado = seleccionados.contains(servicio.nombre);
                         return CheckboxListTile(
                           value: marcado,
                           onChanged: (checked) {
                             setDialogState(() {
                               if (checked == true) {
-                                seleccionados.add(nombre);
+                                seleccionados.add(servicio.nombre);
                               } else {
-                                seleccionados.remove(nombre);
+                                seleccionados.remove(servicio.nombre);
                               }
                             });
                           },
                           controlAffinity: ListTileControlAffinity.leading,
                           contentPadding: EdgeInsets.zero,
-                          title: Text(nombre, style: const TextStyle(fontSize: 14)),
+                          title: Text(
+                            servicio.nombre,
+                            style: const TextStyle(fontSize: 14),
+                          ),
                         );
                       }),
                       const SizedBox(height: 12),

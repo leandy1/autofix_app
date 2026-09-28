@@ -1,43 +1,24 @@
 import 'package:flutter/material.dart';
+
+import '../../models/demo_admin_data.dart';
 import '../../theme/app_colors.dart';
 import '../auth/login_screen.dart';
 import 'citas_admin_screen.dart';
 import 'configuracion_admin_screen.dart';
 
-/// Modelo simple para representar una fila de la tabla "Citas del día".
-/// Más adelante esto puede moverse a lib/models/cita.dart y llenarse desde
-/// una base de datos real en vez de datos de ejemplo.
-class CitaResumen {
-  final String cliente;
-  final String vehiculo;
-  final String placa;
-  final String servicio;
-
-  const CitaResumen({
-    required this.cliente,
-    required this.vehiculo,
-    required this.placa,
-    required this.servicio,
-  });
-}
-
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
+  const DashboardScreen({
+    this.data = demoDashboardAdmin,
+    super.key,
+  });
+
+  final DashboardAdminDemo data;
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  // Datos de ejemplo, iguales a los que se ven en el boceto de Figma.
-  static const List<CitaResumen> _citasDelDia = [
-    CitaResumen(cliente: 'Luis Castillo', vehiculo: 'Toyota RAV4', placa: 'E567890', servicio: 'Motor, Correa'),
-    CitaResumen(cliente: 'Pedro Núñez', vehiculo: 'Honda CR-V', placa: 'G789012', servicio: 'Aire'),
-    CitaResumen(cliente: 'Isabel Reyes', vehiculo: 'Honda Accord', placa: 'L234567', servicio: 'Correa de tiempo'),
-    CitaResumen(cliente: 'Natalia Flores', vehiculo: 'Ford Edge', placa: 'R890123', servicio: 'Sistema de frenos'),
-    CitaResumen(cliente: 'Lucía Medina', vehiculo: 'Suzuki Jimny', placa: 'T012345', servicio: 'Alineación y balanceo'),
-  ];
-
   // Fecha que se muestra en la tarjeta oscura del Dashboard.
   DateTime _fechaSeleccionada = DateTime.now();
 
@@ -72,7 +53,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               icon: Icons.directions_car_filled_outlined,
               iconColor: AppColors.blueAccent,
               label: 'VEHÍCULOS EN EL TALLER',
-              value: '2',
+              value: widget.data.vehiculosEnTaller,
               description: 'Estado: En proceso',
             ),
             const SizedBox(height: 12),
@@ -80,7 +61,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               icon: Icons.description_outlined,
               iconColor: AppColors.orangePrimary,
               label: 'ÓRDENES ABIERTAS',
-              value: '6',
+              value: widget.data.ordenesAbiertas,
               description: 'Pendiente + Esperando Pieza + En proceso',
             ),
             const SizedBox(height: 12),
@@ -88,7 +69,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               icon: Icons.check_circle_outline,
               iconColor: AppColors.greenAccent,
               label: 'COMPLETADAS HOY',
-              value: '0',
+              value: widget.data.completadasHoy,
               description: null,
             ),
             const SizedBox(height: 12),
@@ -96,7 +77,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               icon: Icons.attach_money,
               iconColor: AppColors.headerNavy,
               label: 'INGRESOS DEL DÍA',
-              value: 'RD\$ 0',
+              value: widget.data.ingresosDelDia,
               description: 'Solo citas completadas',
             ),
             const SizedBox(height: 20),
@@ -372,7 +353,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(color: const Color(0xFFF1F3F6), borderRadius: BorderRadius.circular(20)),
-                  child: Text('${_citasDelDia.length} citas',
+                  child: Text('${widget.data.citasDelDia.length} citas',
                       style: const TextStyle(fontSize: 12, color: AppColors.textGray, fontWeight: FontWeight.w600)),
                 ),
               ],
@@ -390,7 +371,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 DataColumn(label: Text('Placa')),
                 DataColumn(label: Text('Servicio')),
               ],
-              rows: _citasDelDia
+              rows: widget.data.citasDelDia
                   .map((c) => DataRow(cells: [
                         DataCell(Text(c.cliente, style: const TextStyle(fontWeight: FontWeight.w600))),
                         DataCell(Text(c.vehiculo)),

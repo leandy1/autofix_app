@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../controllers/cliente/vehiculo_cliente_controller.dart';
 import '../../models/cliente_dashboard_data.dart';
+import '../../models/demo_cliente_data.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/cliente/agenda_cliente_widgets.dart';
 import '../../widgets/cliente/cliente_section_widgets.dart';
@@ -24,17 +24,29 @@ class AgendarCitaClienteSection extends StatefulWidget {
 class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
   final TextEditingController _busquedaTallerController =
       TextEditingController();
-  final VehiculoClienteController _vehiculoController =
-      VehiculoClienteController();
+  final TextEditingController _clienteController = TextEditingController();
+  final TextEditingController _telefonoController = TextEditingController();
+  final TextEditingController _descripcionController = TextEditingController();
+  final TextEditingController _marcaController = TextEditingController();
+  final TextEditingController _modeloController = TextEditingController();
+  final TextEditingController _anioController = TextEditingController();
+  final TextEditingController _placaController = TextEditingController();
   final Set<String> _serviciosSeleccionados = {};
   DateTime _fechaSeleccionada = DateTime.now();
   TimeOfDay _horaSeleccionada = const TimeOfDay(hour: 9, minute: 0);
-  bool _solicitudSeleccionada = false;
+  bool _vehiculoFormularioVisible = false;
+  bool _vehiculoSeleccionado = false;
 
   @override
   void dispose() {
     _busquedaTallerController.dispose();
-    _vehiculoController.dispose();
+    _clienteController.dispose();
+    _telefonoController.dispose();
+    _descripcionController.dispose();
+    _marcaController.dispose();
+    _modeloController.dispose();
+    _anioController.dispose();
+    _placaController.dispose();
     super.dispose();
   }
 
@@ -124,6 +136,18 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
     setState(() {});
   }
 
+  void _enviarSolicitud() {
+    _mostrarAviso(
+      'Vista de demostración: la solicitud no se envía ni se guarda.',
+    );
+  }
+
+  void _mostrarAviso(String mensaje) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(mensaje), behavior: SnackBarBehavior.floating),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final tallerActual = talleresCliente.firstWhere(
@@ -142,6 +166,7 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
         etiquetaFormularioCliente('Datos de contacto'),
         const SizedBox(height: 8),
         TextField(
+          controller: _clienteController,
           textCapitalization: TextCapitalization.words,
           decoration: clienteInputDecoration(
             'Nombre completo',
@@ -151,6 +176,7 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
         ),
         const SizedBox(height: 10),
         TextField(
+          controller: _telefonoController,
           keyboardType: TextInputType.phone,
           decoration: clienteInputDecoration(
             'Teléfono',
@@ -257,21 +283,21 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
         const SizedBox(height: 18),
         etiquetaFormularioCliente('Vehículo'),
         const SizedBox(height: 8),
-        ListenableBuilder(
-          listenable: _vehiculoController,
-          builder: (context, _) => VehiculoPlaceholderCliente(
-            formularioVisible: _vehiculoController.formularioVisible,
-            seleccionado: _vehiculoController.seleccionado,
-            resumenVehiculo: _vehiculoController.resumenVehiculo,
-            marcaController: _vehiculoController.marcaController,
-            modeloController: _vehiculoController.modeloController,
-            anioController: _vehiculoController.anioController,
-            placaController: _vehiculoController.placaController,
-            errorFormulario: _vehiculoController.errorFormulario,
-            onPressed: _vehiculoController.abrirFormulario,
-            onCancel: _vehiculoController.cancelarFormulario,
-            onSave: _vehiculoController.guardarVehiculo,
-          ),
+        VehiculoPlaceholderCliente(
+          formularioVisible: _vehiculoFormularioVisible,
+          seleccionado: _vehiculoSeleccionado,
+          resumenVehiculo: null,
+          marcaController: _marcaController,
+          modeloController: _modeloController,
+          anioController: _anioController,
+          placaController: _placaController,
+          errorFormulario: null,
+          onPressed: () => setState(() => _vehiculoFormularioVisible = true),
+          onCancel: () => setState(() => _vehiculoFormularioVisible = false),
+          onSave: () => setState(() {
+            _vehiculoFormularioVisible = false;
+            _vehiculoSeleccionado = true;
+          }),
         ),
         const SizedBox(height: 18),
         etiquetaFormularioCliente('Servicio'),
@@ -353,6 +379,7 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
         ),
         const SizedBox(height: 22),
         TextField(
+          controller: _descripcionController,
           minLines: 3,
           maxLines: 4,
           decoration: clienteInputDecoration(
@@ -363,14 +390,12 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
         ),
         const SizedBox(height: 20),
         botonAccionCliente(
-          _solicitudSeleccionada ? 'Solicitud seleccionada' : 'Solicitar cita',
-          selected: _solicitudSeleccionada,
-          onPressed: () =>
-              setState(() => _solicitudSeleccionada = !_solicitudSeleccionada),
+          'Enviar solicitud de cita',
+          onPressed: _enviarSolicitud,
         ),
         const SizedBox(height: 10),
         const Text(
-          'La integración para registrar solicitudes se agregará después.',
+          'Diseño de demostración. Los datos no se envían ni se guardan.',
           textAlign: TextAlign.center,
           style: TextStyle(color: AppColors.textGray, fontSize: 12),
         ),

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
+
+import '../../models/demo_cliente_data.dart';
 import '../../models/cliente_dashboard_data.dart';
+import '../../models/solicitud_cita_cliente.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/cliente/cliente_section_widgets.dart';
 
@@ -22,7 +25,174 @@ class MisCitasClienteSection extends StatelessWidget {
           if (index > 0) const SizedBox(height: 14),
           _AppointmentCard(cita: citasClienteDemo[index]),
         ],
+        const SizedBox(height: 18),
+        const TituloSeccionCliente(
+          eyebrow: 'SOLICITUDES ENVIADAS',
+          title: 'Seguimiento de citas',
+          subtitle: 'Datos de demostración; las respuestas no se guardan.',
+        ),
+        const SizedBox(height: 12),
+        _SolicitudCitaClienteCard(solicitud: demoSeguimientoCitaCliente),
       ],
+    );
+  }
+}
+
+class _SolicitudCitaClienteCard extends StatelessWidget {
+  const _SolicitudCitaClienteCard({required this.solicitud});
+
+  final SolicitudCitaCliente solicitud;
+
+  @override
+  Widget build(BuildContext context) {
+    final propuesta = solicitud.estado == EstadoSolicitudCita.fechaPropuesta;
+    final aceptada = solicitud.estado == EstadoSolicitudCita.aceptada;
+    final rechazada = solicitud.estado == EstadoSolicitudCita.rechazada;
+    final estado = propuesta
+        ? 'Nueva fecha propuesta'
+        : aceptada
+        ? 'Cita aceptada'
+        : rechazada
+        ? 'Cita rechazada'
+        : 'Esperando respuesta del taller';
+    final colorEstado = propuesta
+        ? AppColors.blueAccent
+        : aceptada
+        ? AppColors.greenAccent
+        : rechazada
+        ? AppColors.atrasadas
+        : AppColors.pendientes;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.cardWhite,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(
+          color: propuesta ? AppColors.blueAccent : AppColors.inputBorder,
+        ),
+        boxShadow: clienteCardShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Solicitud enviada al taller',
+                  style: TextStyle(
+                    color: AppColors.labelDark,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              _StatusBadge(label: estado, color: colorEstado),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            solicitud.taller,
+            style: const TextStyle(
+              color: AppColors.labelDark,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            solicitud.servicios.join(', '),
+            style: const TextStyle(color: AppColors.textGray, fontSize: 12),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Icon(
+                Icons.directions_car_outlined,
+                size: 16,
+                color: AppColors.textGray,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  solicitud.vehiculo,
+                  style: const TextStyle(
+                    color: AppColors.labelDark,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Icon(
+                Icons.calendar_month_outlined,
+                size: 16,
+                color: AppColors.textGray,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '${formatearFechaCortaCliente(solicitud.fecha)} · ${solicitud.hora.format(context)}',
+                style: const TextStyle(
+                  color: AppColors.labelDark,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+          if (propuesta) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'El taller propone este nuevo horario. ¿Te funciona?',
+              style: TextStyle(
+                color: AppColors.blueAccent,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton(
+                  onPressed: () => _mostrarAvisoDemo(context),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.atrasadas,
+                    side: BorderSide(
+                      color: AppColors.atrasadas.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: const Text('No me funciona'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: () => _mostrarAvisoDemo(context),
+                  icon: const Icon(Icons.check, size: 16),
+                  label: const Text('Aceptar horario'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.greenAccent,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  void _mostrarAvisoDemo(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Vista de demostración: la respuesta no se guarda.'),
+        behavior: SnackBarBehavior.floating,
+      ),
     );
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/cliente_dashboard_data.dart';
+import '../../models/demo_cliente_data.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/cliente/cliente_section_widgets.dart';
 import '../../widgets/cliente/taller_cliente_widgets.dart';
@@ -62,7 +63,8 @@ class _TalleresClienteSectionState extends State<TalleresClienteSection> {
                       child: TallerMapaPin(
                         taller: talleresCliente[0],
                         seleccionado:
-                            widget.tallerSeleccionado == talleresCliente[0].nombre,
+                            widget.tallerSeleccionado ==
+                            talleresCliente[0].nombre,
                         onTap: () => _seleccionarTaller(talleresCliente[0]),
                       ),
                     ),
@@ -71,7 +73,8 @@ class _TalleresClienteSectionState extends State<TalleresClienteSection> {
                       child: TallerMapaPin(
                         taller: talleresCliente[1],
                         seleccionado:
-                            widget.tallerSeleccionado == talleresCliente[1].nombre,
+                            widget.tallerSeleccionado ==
+                            talleresCliente[1].nombre,
                         onTap: () => _seleccionarTaller(talleresCliente[1]),
                       ),
                     ),
