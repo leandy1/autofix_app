@@ -11,6 +11,58 @@ class SolicitudesCitasAdminSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final solicitudes = demoSolicitudesAdmin;
+    final icono = Container(
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(
+        color: AppColors.orangePrimary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(11),
+      ),
+      child: const Icon(
+        Icons.move_to_inbox_outlined,
+        color: AppColors.orangePrimary,
+      ),
+    );
+    const encabezado = Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Solicitudes de clientes',
+            style: TextStyle(
+              color: AppColors.labelDark,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          SizedBox(height: 3),
+          Text(
+            'Revisa, acepta o gestiona las citas solicitadas.',
+            style: TextStyle(color: AppColors.textGray, fontSize: 11),
+          ),
+          SizedBox(height: 3),
+          Text(
+            'Datos de demostración; las acciones no se guardan.',
+            style: TextStyle(color: AppColors.textGray, fontSize: 10),
+          ),
+        ],
+      ),
+    );
+    final contador = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.orangePrimary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        '${solicitudes.length} nuevas',
+        style: const TextStyle(
+          color: AppColors.orangePrimary,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -28,65 +80,32 @@ class SolicitudesCitasAdminSection extends StatelessWidget {
               ),
             ],
           ),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: AppColors.orangePrimary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(11),
-                ),
-                child: const Icon(
-                  Icons.move_to_inbox_outlined,
-                  color: AppColors.orangePrimary,
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxWidth < 380) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(
-                      'Solicitudes de clientes',
-                      style: TextStyle(
-                        color: AppColors.labelDark,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [icono, const SizedBox(width: 12), encabezado],
                     ),
-                    SizedBox(height: 3),
-                    Text(
-                      'Revisa, acepta o gestiona las citas solicitadas.',
-                      style: TextStyle(color: AppColors.textGray, fontSize: 11),
-                    ),
+                    const SizedBox(height: 10),
+                    Align(alignment: Alignment.centerRight, child: contador),
                   ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.orangePrimary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  '${solicitudes.length} nuevas',
-                  style: const TextStyle(
-                    color: AppColors.orangePrimary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              SizedBox(height: 3),
-              Text(
-                'Datos de demostración; las acciones no se guardan.',
-                style: TextStyle(color: AppColors.textGray, fontSize: 10),
-              ),
-            ],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  icono,
+                  const SizedBox(width: 12),
+                  encabezado,
+                  const SizedBox(width: 10),
+                  contador,
+                ],
+              );
+            },
           ),
         ),
         const SizedBox(height: 10),
