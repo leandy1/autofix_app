@@ -84,7 +84,7 @@ class _LoginScreenState extends State<LoginScreen> {
       child: Column(
         children: const [
           Text(
-            'AutoTaller',
+            'AutoFix',
             style: TextStyle(
               color: Colors.white,
               fontSize: 28,

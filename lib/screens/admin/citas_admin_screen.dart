@@ -462,8 +462,12 @@ class _CitasScreenState extends State<CitasScreen> {
     required bool expanded,
     required VoidCallback onTap,
   }) {
-    final mostrarCitaDemo = nombre == 'En proceso';
-    final cantidadVisible = mostrarCitaDemo ? 1 : 0;
+    final citasDemo = switch (nombre) {
+      'En proceso' => [demoCitaAdmin],
+      'Completado' => [demoCitaCompletadaAdmin],
+      _ => const [],
+    };
+    final cantidadVisible = citasDemo.length;
     return Column(
           children: [
             Material(
@@ -531,7 +535,7 @@ class _CitasScreenState extends State<CitasScreen> {
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(color: const Color(0xFFE5E7EB)),
                 ),
-                child: !mostrarCitaDemo
+                child: citasDemo.isEmpty
                     ? const Text(
                         'No hay citas en este estado.',
                         style: TextStyle(
@@ -541,9 +545,9 @@ class _CitasScreenState extends State<CitasScreen> {
                       )
                     : Column(
                         children: [
-                          if (mostrarCitaDemo)
+                          for (final cita in citasDemo)
                             CitaClasificadaAdminCard(
-                              solicitud: demoCitaAdmin,
+                              solicitud: cita,
                               previewOnly: true,
                             ),
                         ],
