@@ -79,191 +79,178 @@ class CitaAdminCard extends StatelessWidget {
 
     showDialog<void>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, _) {
-          return Dialog(
-            insetPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 24,
-            ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(15),
-            ),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: 560,
-                maxHeight: MediaQuery.sizeOf(context).height * 0.9,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
-                    child: Column(
-                      children: [
-                        const Text(
-                          'INFORMACIÓN DE LA CITA',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: AppColors.headerNavy,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Divider(height: 1, color: Color(0xFFE7EAF0)),
-                  Flexible(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const _SectionTitle('CLIENTE'),
-                          _DetailGrid(
-                            fields: [
-                              ('Nombre', nombre),
-                              ('Apellido', apellido),
-                              ('Teléfono', cita.telefono),
-                            ],
-                          ),
-                          const Divider(height: 32, color: Color(0xFFE7EAF0)),
-                          const _SectionTitle('VEHÍCULO'),
-                          _DetailGrid(
-                            fields: [
-                              ('Marca', cita.marca.toUpperCase()),
-                              ('Modelo', cita.modelo.toUpperCase()),
-                              ('Año', cita.anio),
-                              ('Placa', cita.placa.toUpperCase()),
-                              ('Técnico', cita.tecnico ?? 'Sin asignar'),
-                            ],
-                          ),
-                          const Divider(height: 32, color: Color(0xFFE7EAF0)),
-                          const _SectionTitle('SERVICIOS'),
-                          Wrap(
-                            spacing: 7,
-                            runSpacing: 7,
-                            children: cita.servicios.isEmpty
-                                ? [const _Chip(label: 'Sin servicios')]
-                                : [
-                                    for (final servicio in cita.servicios)
-                                      _Chip(label: servicio),
-                                  ],
-                          ),
-                          const Divider(height: 32, color: Color(0xFFE7EAF0)),
-                          const _SectionTitle('DESCRIPCIÓN'),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF0F3F7),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              cita.descripcion.isEmpty
-                                  ? 'Sin descripción'
-                                  : cita.descripcion,
-                              style: const TextStyle(
-                                color: AppColors.labelDark,
-                                fontSize: 13,
-                                height: 1.45,
-                              ),
-                            ),
-                          ),
-                        ],
+      builder: (dialogContext) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 560,
+            maxHeight: MediaQuery.sizeOf(context).height * 0.9,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+                child: Column(
+                  children: [
+                    const Text(
+                      'INFORMACIÓN DE LA CITA',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: AppColors.headerNavy,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
-                  ),
-                  const Divider(height: 1, color: Color(0xFFE7EAF0)),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final compact = constraints.maxWidth < 420;
-                        final buttonPadding = EdgeInsets.symmetric(
-                          horizontal: compact ? 8 : 16,
-                          vertical: 8,
-                        );
-                        final deleteButton = OutlinedButton(
-                          onPressed: () {},
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFFEF4444),
-                            side: const BorderSide(color: Color(0xFFFECACA)),
-                            padding: buttonPadding,
-                            minimumSize: const Size(0, 36),
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          child: const Text('Eliminar'),
-                        );
-                        final editButton = OutlinedButton(
-                          onPressed: () {
-                            Navigator.pop(dialogContext);
-                            _editarCita(context);
-                          },
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.headerNavy,
-                            side: const BorderSide(
-                              color: AppColors.inputBorder,
-                            ),
-                            padding: buttonPadding,
-                            minimumSize: const Size(0, 36),
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          child: const Text('Editar'),
-                        );
-                        final closeButton = OutlinedButton(
-                          onPressed: () => Navigator.pop(dialogContext),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.headerNavy,
-                            side: const BorderSide(
-                              color: AppColors.inputBorder,
-                            ),
-                            padding: buttonPadding,
-                            minimumSize: const Size(0, 36),
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          child: const Text('Cerrar'),
-                        );
-
-                        if (compact) {
-                          return Row(
-                            children: [
-                              Expanded(child: deleteButton),
-                              const SizedBox(width: 6),
-                              Expanded(child: editButton),
-                              const SizedBox(width: 6),
-                              Expanded(child: closeButton),
-                            ],
-                          );
-                        }
-
-                        return Row(
-                          children: [
-                            deleteButton,
-                            const Spacer(),
-                            editButton,
-                            const SizedBox(width: 10),
-                            closeButton,
-                          ],
-                        );
-                      },
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          );
-        },
+              const Divider(height: 1, color: Color(0xFFE7EAF0)),
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const _SectionTitle('CLIENTE'),
+                      _DetailGrid(
+                        fields: [
+                          ('Nombre', nombre),
+                          ('Apellido', apellido),
+                          ('Teléfono', cita.telefono),
+                        ],
+                      ),
+                      const Divider(height: 32, color: Color(0xFFE7EAF0)),
+                      const _SectionTitle('VEHÍCULO'),
+                      _DetailGrid(
+                        fields: [
+                          ('Marca', cita.marca.toUpperCase()),
+                          ('Modelo', cita.modelo.toUpperCase()),
+                          ('Año', cita.anio),
+                          ('Placa', cita.placa.toUpperCase()),
+                          ('Técnico', cita.tecnico ?? 'Sin asignar'),
+                        ],
+                      ),
+                      const Divider(height: 32, color: Color(0xFFE7EAF0)),
+                      const _SectionTitle('SERVICIOS'),
+                      Wrap(
+                        spacing: 7,
+                        runSpacing: 7,
+                        children: cita.servicios.isEmpty
+                            ? [const _Chip(label: 'Sin servicios')]
+                            : [
+                                for (final servicio in cita.servicios)
+                                  _Chip(label: servicio),
+                              ],
+                      ),
+                      const Divider(height: 32, color: Color(0xFFE7EAF0)),
+                      const _SectionTitle('DESCRIPCIÓN'),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF0F3F7),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          cita.descripcion.isEmpty
+                              ? 'Sin descripción'
+                              : cita.descripcion,
+                          style: const TextStyle(
+                            color: AppColors.labelDark,
+                            fontSize: 13,
+                            height: 1.45,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const Divider(height: 1, color: Color(0xFFE7EAF0)),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final compact = constraints.maxWidth < 420;
+                    final buttonPadding = EdgeInsets.symmetric(
+                      horizontal: compact ? 8 : 16,
+                      vertical: 8,
+                    );
+                    final deleteButton = OutlinedButton(
+                      onPressed: () {},
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFEF4444),
+                        side: const BorderSide(color: Color(0xFFFECACA)),
+                        padding: buttonPadding,
+                        minimumSize: const Size(0, 36),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: const Text('Eliminar'),
+                    );
+                    final editButton = OutlinedButton(
+                      onPressed: () {
+                        Navigator.pop(dialogContext);
+                        _editarCita(context);
+                      },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.headerNavy,
+                        side: const BorderSide(color: AppColors.inputBorder),
+                        padding: buttonPadding,
+                        minimumSize: const Size(0, 36),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: const Text('Editar'),
+                    );
+                    final closeButton = OutlinedButton(
+                      onPressed: () => Navigator.pop(dialogContext),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.headerNavy,
+                        side: const BorderSide(color: AppColors.inputBorder),
+                        padding: buttonPadding,
+                        minimumSize: const Size(0, 36),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: const Text('Cerrar'),
+                    );
+
+                    if (compact) {
+                      return Row(
+                        children: [
+                          Expanded(child: deleteButton),
+                          const SizedBox(width: 6),
+                          Expanded(child: editButton),
+                          const SizedBox(width: 6),
+                          Expanded(child: closeButton),
+                        ],
+                      );
+                    }
+
+                    return Row(
+                      children: [
+                        deleteButton,
+                        const Spacer(),
+                        editButton,
+                        const SizedBox(width: 10),
+                        closeButton,
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
