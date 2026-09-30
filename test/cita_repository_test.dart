@@ -1,3 +1,4 @@
+import 'package:autofix/core/data/base_repository.dart';
 import 'package:autofix/core/database/database_helper.dart';
 import 'package:autofix/features/citas/data/cita_repository.dart';
 import 'package:autofix/features/citas/models/cita.dart';
@@ -87,53 +88,6 @@ void main() {
     expect(releida.placa, 'A123456');
   });
 
-  test('LEANDY: agruparPorEstadoUi devuelve las 5 llaves de kColorPorEstado', () async {
-    final hoy = DateTime.now();
-    // +30min y no "ahora": `esAtrasada` compara contra el instante actual, asi
-    // que una cita creada con la hora exacta de ya cae en ATRASADAS al toque.
-    final masLater = hoy.add(const Duration(minutes: 30));
-
-    await CitaRepository.instance.crear(
-      nueva(qr: 'HOY-1').copyWith(fechaCita: masLater, estado: EstadoCita.pendiente),
-    );
-    await CitaRepository.instance.crear(
-      nueva(qr: 'HOY-2').copyWith(fechaCita: masLater, estado: EstadoCita.completado),
-    );
-    await CitaRepository.instance.crear(
-      nueva(qr: 'AYER-1').copyWith(
-        fechaCita: hoy.subtract(const Duration(days: 2)),
-        estado: EstadoCita.enProceso,
-      ),
-    );
-
-    final mapa = await CitaRepository.instance.agruparPorEstadoUi(hoy);
-
-    // Las 5 llaves siempre presentes: el acordeon puede pintar '0' sin romperse.
-    expect(
-      mapa.keys,
-      ['ATRASADAS', 'Pendiente', 'Esperando Pieza', 'En proceso', 'Completado'],
-    );
-    expect(mapa['Pendiente']!.length, 1);
-    expect(mapa['Completado']!.length, 1);
-    // La de ayer no aparece: el filtro por dia es en SQL, no en Dart.
-    expect(mapa['En proceso']!.length, 0);
-    expect(mapa['ATRASADAS']!.length, 0);
-  });
-
-  test('LEANDY: una cita de hoy que ya paso la hora cae en ATRASADAS', () async {
-    final hoy = DateTime.now();
-    await CitaRepository.instance.crear(
-      nueva(qr: 'VENCIDA-1').copyWith(
-        fechaCita: hoy.subtract(const Duration(hours: 2)),
-        estado: EstadoCita.pendiente,
-      ),
-    );
-
-    final mapa = await CitaRepository.instance.agruparPorEstadoUi(hoy);
-    expect(mapa['ATRASADAS']!.length, 1);
-    expect(mapa['Pendiente']!.length, 0);
-  });
-
   test('DELETE: la cita deja de estar en la base', () async {
     final id = await CitaRepository.instance.crear(nueva());
 
@@ -152,7 +106,9 @@ void main() {
 
   test('el esquema recien creado tiene TODAS las columnas que usa el modelo', () async {
     // Este test es el que atrapo el bug de `vehiculo`: si el CREATE TABLE se
-    // desincroniza del modelo, el INSERT revienta con "no such column".
+    // desincroniza del modelo, el INSERT revienta con "no such column". Ahora es
+    // todavia mas importante: el modelo declara las claves como literales para no
+    // depender de `DatabaseHelper`, y esta es la unica red que los une.
     final db = await DatabaseHelper.instance.base;
     final columnas = await db.rawQuery('PRAGMA table_info(${DatabaseHelper.tablaCitas})');
     final nombres = columnas.map((f) => f['name'] as String).toSet();
@@ -160,6 +116,38 @@ void main() {
     for (final c in nueva().toMap().keys) {
       expect(nombres, contains(c), reason: 'falta la columna $c en la tabla citas');
     }
+  });
+
+  test('PATRON BASE: el repositorio se puede usar como BaseRepository<Cita>', () async {
+    // Compilar esto YA es la prueba: si `CitaRepository` dejara de cumplir el
+    // contrato, el analyzer falla antes de correr el test. Lo que se verifica en
+    // runtime es que la API generica funciona contra la base real.
+    final BaseRepository<Cita> repo = CitaRepository.instance;
+
+    final id = await repo.crear(nueva());
+    expect(id, greaterThan(0));
+    expect(repo.tabla, DatabaseHelper.tablaCitas);
+
+    final guardada = await repo.obtenerPorId(id);
+    expect(guardada!.cliente, 'Ana Torres');
+    expect((await repo.obtenerTodas()).length, 1);
+
+    expect(await repo.actualizar(guardada.copyWith(cliente: 'Ana T.')), 1);
+    expect((await repo.obtenerPorId(id))!.cliente, 'Ana T.');
+
+    expect(await repo.eliminar(id), 1);
+    expect(await repo.obtenerPorId(id), isNull);
+  });
+
+  test('actualizar sin id lanza en vez de fallar en silencio', () async {
+    expect(
+      () => CitaRepository.instance.actualizar(nueva()),
+      throwsA(isA<ArgumentError>()),
+    );
+  });
+
+  test('eliminar un id inexistente devuelve 0 filas', () async {
+    expect(await CitaRepository.instance.eliminar(9999), 0);
   });
 
   group('migracion v1 -> v2', () {

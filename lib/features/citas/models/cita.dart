@@ -1,16 +1,12 @@
 import 'dart:convert';
 
-import '../../../core/database/database_helper.dart';
+import '../../../core/data/base_repository.dart';
 
-/// Los 4 estados REALES que se guardan en la base.
+/// Estados que realmente se guardan.
 ///
-/// OJO IMPORTANTE PARA LEANDY: tu `kColorPorEstado` tiene 5 llaves
-/// (ATRASADAS, Pendiente, Esperando Pieza, En proceso, Completado), pero
-/// 'ATRASADAS' NO es un estado guardado: es una cita que ya paso su fecha y
-/// todavia no se completo. Por eso aca solo hay 4 valores y 'ATRASADAS' se
-/// calcula al vuelo con el getter [Cita.esAtrasada] + [Cita.etiquetaUI].
-/// Si lo metieras como estado en la base, una cita atrasada que luego se
-/// completa tendria que "saltar" de estado y perderias la trazabilidad.
+/// 'ATRASADAS' no es uno: se deriva de [Cita.esAtrasada]. Persistirlo obligaria
+/// a una cita vencida a "saltar" de estado al completarse y se pierde la
+/// trazabilidad de cuando se atraso.
 enum EstadoCita {
   pendiente('Pendiente'),
   esperandoPieza('Esperando Pieza'),
@@ -19,23 +15,28 @@ enum EstadoCita {
 
   const EstadoCita(this.etiqueta);
 
-  /// Texto EXACTO que usa tu UI. Esta property es la que hace el match:
-  /// `kColorPorEstado[cita.estado.etiqueta]` y listo, sin ifs ni mapazos manuales.
+  /// Texto exacto que consume la UI, para que el mapa de colores matchee sin
+  /// transformaciones intermedias.
   final String etiqueta;
 
-  /// Lee desde la base (guardamos `.name`, no la etiqueta, porque `.name` es
-  /// estable y la etiqueta puede cambiar si redenainan el diseno).
-  static EstadoCita desdeNombre(String valor) =>
-      EstadoCita.values.firstWhere((e) => e.name == valor, orElse: () => EstadoCita.pendiente);
+  /// Se persiste `.name` y no la etiqueta: `.name` es estable aunque el diseño
+  /// renombre el texto visible.
+  static EstadoCita desdeNombre(String valor) => EstadoCita.values.firstWhere(
+        (e) => e.name == valor,
+        orElse: () => EstadoCita.pendiente,
+      );
 
-  /// Lee desde la UI de Leandy ('En proceso', 'Completado'...).
-  static EstadoCita desdeEtiqueta(String valor) =>
-      EstadoCita.values.firstWhere((e) => e.etiqueta == valor, orElse: () => EstadoCita.pendiente);
+  static EstadoCita desdeEtiqueta(String valor) => EstadoCita.values.firstWhere(
+        (e) => e.etiqueta == valor,
+        orElse: () => EstadoCita.pendiente,
+      );
 }
 
-/// Entidad de dominio. No conoce sqflite: solo sabe convertirse a y desde un
-/// [Map], que es el formato que SQLite entiende como fila.
-class Cita {
+/// Entidad de dominio. No importa sqflite ni el helper de base: las claves de
+/// fila son literales aca adentro para que el mismo modelo se pueda mapear
+/// contra SQLite, contra Postgres o contra un Map de test. El test de esquema
+/// (PRAGMA table_info) avisa si el CREATE TABLE se desincroniza.
+class Cita implements EntidadPersistida {
   const Cita({
     this.id,
     required this.codigoQr,
@@ -55,10 +56,30 @@ class Cita {
     this.actualizadoEn,
   });
 
+  static const String etiquetaAtrasadas = 'ATRASADAS';
+
+  static const String _kId = 'id';
+  static const String _kQr = 'codigo_qr';
+  static const String _kCliente = 'cliente';
+  static const String _kTelefono = 'telefono';
+  static const String _kVehiculo = 'vehiculo';
+  static const String _kMarca = 'marca';
+  static const String _kModelo = 'modelo';
+  static const String _kAnio = 'anio';
+  static const String _kPlaca = 'placa';
+  static const String _kServicios = 'servicios';
+  static const String _kTecnico = 'tecnico';
+  static const String _kDescripcion = 'descripcion';
+  static const String _kFechaCita = 'fecha_cita';
+  static const String _kEstado = 'estado';
+  static const String _kCreadoEn = 'creado_en';
+  static const String _kActualizadoEn = 'actualizado_en';
+
+  @override
   final int? id;
 
-  /// Llave con el QR fisico del vehiculo. Es UNIQUE en la base.
-  /// Este campo existe basically para el modulo de escaneo QR.
+  /// Llave con el QR fisico del vehiculo. UNIQUE en la base: es lo que consulta
+  /// el modulo de escaneo.
   final String codigoQr;
   final String cliente;
   final String telefono;
@@ -73,23 +94,23 @@ class Cita {
   final DateTime fechaCita;
   final EstadoCita estado;
   final DateTime? creadoEn;
+
+  @override
   final DateTime? actualizadoEn;
 
-  /// Lo que tu UI necesita mostrar para el acordeon "ATRASADAS".
+  /// "La hora ya paso y todavia no se completo". No es "la fecha es de ayer".
   ///
-  /// OJO con la semantica, Leandy: es "la hora Y PASO y todavia no se completo".
-  /// No es "la fecha es de un dia anterior". Consecuencia PRACTICA: si creas una
-  /// cita con `fechaCita: DateTime.now()`, a los microsegundos ya esta atrasada
-  /// (el `now()` del getter es posterior). Para una cita de hoy usen
-  /// `DateTime.now().add(Duration(hours: 2))`, no la hora exacta.
-  ///
-  /// Es logica de negocio pura: no toca la base, asi que no cuesta un query.
-  bool get esAtrasada =>
-      estado != EstadoCita.completado && fechaCita.isBefore(DateTime.now());
+  /// `ahora` va por parametro a proposito: leer el reloj adentro hace que dos
+  /// dispositivos clasifiquen la misma cita distinto, y en cuanto haya
+  /// sincronizacion eso ya no es una discrepancia visual sino conflicto de datos.
+  /// Quien arma la lista lo pasa una sola vez para toda la pasada.
+  bool esAtrasada(DateTime ahora) =>
+      estado != EstadoCita.completado && fechaCita.isBefore(ahora);
 
-  /// Llave EXACTA de tu `kColorPorEstado`. Devuelve 'ATRASADAS' con mayusculas
-  /// porque asi la definiste vos en el mapa de colores.
-  String get etiquetaUI => esAtrasada ? 'ATRASADAS' : estado.etiqueta;
+  /// Llave exacta del mapa de colores de la UI. Va en mayusculas porque asi
+  /// esta definida alla.
+  String etiquetaUI(DateTime ahora) =>
+      esAtrasada(ahora) ? etiquetaAtrasadas : estado.etiqueta;
 
   Cita copyWith({
     int? id,
@@ -131,47 +152,45 @@ class Cita {
 
   Map<String, Object?> toMap() {
     return {
-      if (id != null) DatabaseHelper.colId: id,
-      DatabaseHelper.colCodigoQr: codigoQr,
-      DatabaseHelper.colCliente: cliente,
-      DatabaseHelper.colTelefono: telefono,
-      DatabaseHelper.colVehiculo: vehiculo,
-      DatabaseHelper.colMarca: marca,
-      DatabaseHelper.colModelo: modelo,
-      DatabaseHelper.colAnio: anio,
-      DatabaseHelper.colPlaca: placa,
-      // Los servicios son una lista y SQLite no tiene arrays: la guardo como
-      // JSON. Es la forma estandar, no un truco, y `fromMap` la reversa.
-      DatabaseHelper.colServicios: jsonEncode(servicios),
-      DatabaseHelper.colTecnico: tecnico,
-      DatabaseHelper.colDescripcion: descripcion,
-      DatabaseHelper.colFechaCita: fechaCita.toIso8601String(),
-      DatabaseHelper.colEstado: estado.name,
-      DatabaseHelper.colCreadoEn: (creadoEn ?? DateTime.now()).toIso8601String(),
-      DatabaseHelper.colActualizadoEn:
-          (actualizadoEn ?? DateTime.now()).toIso8601String(),
+      // El id solo va si ya existe: mandarlo en null en un INSERT lo rompe.
+      if (id != null) _kId: id,
+      _kQr: codigoQr,
+      _kCliente: cliente,
+      _kTelefono: telefono,
+      _kVehiculo: vehiculo,
+      _kMarca: marca,
+      _kModelo: modelo,
+      _kAnio: anio,
+      _kPlaca: placa,
+      // SQLite no tiene arrays: la lista viaja como JSON. `fromMap` la revierte.
+      _kServicios: jsonEncode(servicios),
+      _kTecnico: tecnico,
+      _kDescripcion: descripcion,
+      _kFechaCita: fechaCita.toIso8601String(),
+      _kEstado: estado.name,
+      _kCreadoEn: (creadoEn ?? DateTime.now()).toIso8601String(),
+      _kActualizadoEn: (actualizadoEn ?? DateTime.now()).toIso8601String(),
     };
   }
 
   factory Cita.fromMap(Map<String, Object?> map) {
     return Cita(
-      id: map[DatabaseHelper.colId] as int?,
-      codigoQr: map[DatabaseHelper.colCodigoQr] as String,
-      cliente: map[DatabaseHelper.colCliente] as String,
-      telefono: (map[DatabaseHelper.colTelefono] as String?) ?? '',
-      vehiculo: map[DatabaseHelper.colVehiculo] as String,
-      marca: (map[DatabaseHelper.colMarca] as String?) ?? '',
-      modelo: (map[DatabaseHelper.colModelo] as String?) ?? '',
-      anio: (map[DatabaseHelper.colAnio] as int?) ?? 0,
-      placa: (map[DatabaseHelper.colPlaca] as String?) ?? '',
-      servicios: _leerServicios(map[DatabaseHelper.colServicios]),
-      tecnico: (map[DatabaseHelper.colTecnico] as String?) ?? '',
-      descripcion: (map[DatabaseHelper.colDescripcion] as String?) ?? '',
-      fechaCita: DateTime.parse(map[DatabaseHelper.colFechaCita]! as String),
-      estado: EstadoCita.desdeNombre(map[DatabaseHelper.colEstado]! as String),
-      creadoEn: DateTime.tryParse(map[DatabaseHelper.colCreadoEn]! as String),
-      actualizadoEn:
-          DateTime.tryParse(map[DatabaseHelper.colActualizadoEn] as String? ?? ''),
+      id: map[_kId] as int?,
+      codigoQr: map[_kQr] as String,
+      cliente: map[_kCliente] as String,
+      telefono: (map[_kTelefono] as String?) ?? '',
+      vehiculo: map[_kVehiculo] as String,
+      marca: (map[_kMarca] as String?) ?? '',
+      modelo: (map[_kModelo] as String?) ?? '',
+      anio: (map[_kAnio] as int?) ?? 0,
+      placa: (map[_kPlaca] as String?) ?? '',
+      servicios: _leerServicios(map[_kServicios]),
+      tecnico: (map[_kTecnico] as String?) ?? '',
+      descripcion: (map[_kDescripcion] as String?) ?? '',
+      fechaCita: DateTime.parse(map[_kFechaCita]! as String),
+      estado: EstadoCita.desdeNombre(map[_kEstado]! as String),
+      creadoEn: DateTime.tryParse(map[_kCreadoEn]! as String),
+      actualizadoEn: DateTime.tryParse(map[_kActualizadoEn] as String? ?? ''),
     );
   }
 

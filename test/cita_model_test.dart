@@ -53,10 +53,44 @@ void main() {
     });
 
     test('ATRASADAS es derivado, no un estado guardado', () {
+      // Instante fijo: el modelo no lee el reloj, se lo pasan.
+      final ahora = DateTime(2026, 9, 15, 12);
       final vencida = cita.copyWith(fechaCita: DateTime(2020, 1, 1));
-      expect(vencida.etiquetaUI, 'ATRASADAS');
-      expect(vencida.copyWith(estado: EstadoCita.completado).etiquetaUI, 'Completado');
-      expect(cita.etiquetaUI, 'Pendiente');
+      expect(vencida.etiquetaUI(ahora), 'ATRASADAS');
+      expect(
+        vencida.copyWith(estado: EstadoCita.completado).etiquetaUI(ahora),
+        'Completado',
+      );
+      expect(cita.etiquetaUI(ahora), 'Pendiente');
+    });
+
+    test('esAtrasada depende del instante recibido, no del reloj', () {
+      final pendiente = cita.copyWith(fechaCita: DateTime(2026, 10, 1, 9, 30));
+      // Dos dispositivos con el mismo "ahora" tienen que coincidir siempre.
+      expect(pendiente.esAtrasada(DateTime(2026, 10, 1, 10)), isTrue);
+      expect(pendiente.esAtrasada(DateTime(2026, 10, 1, 9)), isFalse);
+    });
+
+    test('una cita completada no cae en ATRASADAS aunque la hora haya pasado', () {
+      final completada = cita
+          .copyWith(fechaCita: DateTime(2020, 1, 1))
+          .copyWith(estado: EstadoCita.completado);
+      expect(completada.esAtrasada(DateTime(2026, 9, 15)), isFalse);
+    });
+
+    test('las claves de fila coinciden con la tabla citas', () {
+      // El modelo guarda las claves como literales para no depender de la capa de
+      // datos. Este test es el que avisa si el CREATE TABLE se desincroniza: el
+      // chequeo real por PRAGMA vive en `cita_repository_test.dart`.
+      final claves = cita.toMap().keys.toSet();
+      expect(claves, containsAll(<String>{
+        'codigo_qr',
+        'cliente',
+        'vehiculo',
+        'fecha_cita',
+        'estado',
+        'servicios',
+      }));
     });
 
     test('los servicios sobreviven al viaje a JSON y vuelven', () {

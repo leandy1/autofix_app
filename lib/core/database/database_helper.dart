@@ -15,6 +15,17 @@ class DatabaseHelper {
 
   static const String _nombreBase = 'autofix.db';
 
+  /// Nombre alternativo del archivo .db, solo para tests.
+  ///
+  /// `flutter test` corre cada archivo en su propio isolate y EN PARALELO, pero
+  /// `sqflite_common_ffi` deja la base en un unico lugar de `.dart_tool/`. Sin
+  /// esto, dos archivos que insertan el mismo QR se pisan y el UNIQUE revienta
+  /// con un error que no tiene nada que ver con lo que se esta probando.
+  @visibleForTesting
+  static String? nombreBaseParaPruebas;
+
+  static String get _nombre => nombreBaseParaPruebas ?? _nombreBase;
+
   /// v1 = esquema base de la unidad de almacenamiento.
   /// v2 = se agregan los campos que el formulario de Leandy ya captura
   ///      (telefono, marca, modelo, anio, placa, servicios, tecnico).
@@ -61,7 +72,7 @@ class DatabaseHelper {
   Future<Database> _abrir() async {
     // El archivo vive en el almacenamiento INTERNO de la app, no en externo:
     // por eso sobrevive al cierre total y solo se va al desinstalar.
-    final ruta = p.join(await getDatabasesPath(), _nombreBase);
+    final ruta = p.join(await getDatabasesPath(), _nombre);
 
     return openDatabase(
       ruta,
@@ -132,6 +143,6 @@ class DatabaseHelper {
   @visibleForTesting
   static Future<void> resetParaPruebas() async {
     await instance.cerrar();
-    await deleteDatabase(p.join(await getDatabasesPath(), _nombreBase));
+    await deleteDatabase(p.join(await getDatabasesPath(), _nombre));
   }
 }
