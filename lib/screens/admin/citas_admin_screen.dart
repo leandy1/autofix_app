@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../controllers/admin_citas_controller.dart';
 import '../../models/demo_admin_data.dart';
-import '../../models/demo_cita_admin.dart';
+import '../../models/cita_admin.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/admin/solicitudes_citas_admin_section.dart';
 import '../auth/login_screen.dart';
@@ -16,6 +17,1050 @@ const Map<String, Color> kColorPorEstado = {
   'Completado': AppColors.completado,
 };
 
+class CitaAdminCard extends StatelessWidget {
+  const CitaAdminCard({required this.cita, this.onEdited, super.key});
+
+  final CitaAdmin cita;
+  final ValueChanged<CitaAdmin>? onEdited;
+
+  static String _estadoTexto(EstadoCitaAdmin estado) {
+    switch (estado) {
+      case EstadoCitaAdmin.atrasada:
+        return 'Atrasadas';
+      case EstadoCitaAdmin.pendiente:
+        return 'Pendiente';
+      case EstadoCitaAdmin.esperandoPieza:
+        return 'Esperando Pieza';
+      case EstadoCitaAdmin.enProceso:
+        return 'En proceso';
+      case EstadoCitaAdmin.completada:
+        return 'Completado';
+    }
+  }
+
+  static Color _estadoColor(EstadoCitaAdmin estado) {
+    switch (estado) {
+      case EstadoCitaAdmin.atrasada:
+        return AppColors.atrasadas;
+      case EstadoCitaAdmin.pendiente:
+        return AppColors.pendientes;
+      case EstadoCitaAdmin.esperandoPieza:
+        return AppColors.esperandoPieza;
+      case EstadoCitaAdmin.enProceso:
+        return AppColors.enProceso;
+      case EstadoCitaAdmin.completada:
+        return AppColors.completado;
+    }
+  }
+
+  String _fechaFormateada() =>
+      '${cita.fecha.day.toString().padLeft(2, '0')}/${cita.fecha.month.toString().padLeft(2, '0')}/${cita.fecha.year}';
+
+  Future<void> _editarCita(BuildContext context) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => _EditarCitaDialog(
+        cita: cita,
+        onSaved: (citaActualizada) {
+          onEdited?.call(citaActualizada);
+        },
+      ),
+    );
+  }
+
+  void _mostrarDetalle(BuildContext context) {
+    final partesNombre = cita.cliente.trim().split(RegExp(r'\s+'));
+    final nombre = partesNombre.isEmpty || partesNombre.first.isEmpty
+        ? ''
+        : partesNombre.first;
+    final apellido = partesNombre.length > 1
+        ? partesNombre.skip(1).join(' ')
+        : '—';
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, _) {
+          return Dialog(
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 24,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 560,
+                maxHeight: MediaQuery.sizeOf(context).height * 0.9,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+                    child: Column(
+                      children: [
+                        const Text(
+                          'INFORMACIÓN DE LA CITA',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: AppColors.headerNavy,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1, color: Color(0xFFE7EAF0)),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const _SectionTitle('CLIENTE'),
+                          _DetailGrid(
+                            fields: [
+                              ('Nombre', nombre),
+                              ('Apellido', apellido),
+                              ('Teléfono', cita.telefono),
+                            ],
+                          ),
+                          const Divider(height: 32, color: Color(0xFFE7EAF0)),
+                          const _SectionTitle('VEHÍCULO'),
+                          _DetailGrid(
+                            fields: [
+                              ('Marca', cita.marca.toUpperCase()),
+                              ('Modelo', cita.modelo.toUpperCase()),
+                              ('Año', cita.anio),
+                              ('Placa', cita.placa.toUpperCase()),
+                              ('Técnico', cita.tecnico ?? 'Sin asignar'),
+                            ],
+                          ),
+                          const Divider(height: 32, color: Color(0xFFE7EAF0)),
+                          const _SectionTitle('SERVICIOS'),
+                          Wrap(
+                            spacing: 7,
+                            runSpacing: 7,
+                            children: cita.servicios.isEmpty
+                                ? [const _Chip(label: 'Sin servicios')]
+                                : [
+                                    for (final servicio in cita.servicios)
+                                      _Chip(label: servicio),
+                                  ],
+                          ),
+                          const Divider(height: 32, color: Color(0xFFE7EAF0)),
+                          const _SectionTitle('DESCRIPCIÓN'),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF0F3F7),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              cita.descripcion.isEmpty
+                                  ? 'Sin descripción'
+                                  : cita.descripcion,
+                              style: const TextStyle(
+                                color: AppColors.labelDark,
+                                fontSize: 13,
+                                height: 1.45,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 1, color: Color(0xFFE7EAF0)),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final compact = constraints.maxWidth < 420;
+                        final buttonPadding = EdgeInsets.symmetric(
+                          horizontal: compact ? 8 : 16,
+                          vertical: 8,
+                        );
+                        final deleteButton = OutlinedButton(
+                          onPressed: () {},
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFFEF4444),
+                            side: const BorderSide(color: Color(0xFFFECACA)),
+                            padding: buttonPadding,
+                            minimumSize: const Size(0, 36),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: const Text('Eliminar'),
+                        );
+                        final editButton = OutlinedButton(
+                          onPressed: () {
+                            Navigator.pop(dialogContext);
+                            _editarCita(context);
+                          },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.headerNavy,
+                            side: const BorderSide(
+                              color: AppColors.inputBorder,
+                            ),
+                            padding: buttonPadding,
+                            minimumSize: const Size(0, 36),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: const Text('Editar'),
+                        );
+                        final closeButton = OutlinedButton(
+                          onPressed: () => Navigator.pop(dialogContext),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.headerNavy,
+                            side: const BorderSide(
+                              color: AppColors.inputBorder,
+                            ),
+                            padding: buttonPadding,
+                            minimumSize: const Size(0, 36),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: const Text('Cerrar'),
+                        );
+
+                        if (compact) {
+                          return Row(
+                            children: [
+                              Expanded(child: deleteButton),
+                              const SizedBox(width: 6),
+                              Expanded(child: editButton),
+                              const SizedBox(width: 6),
+                              Expanded(child: closeButton),
+                            ],
+                          );
+                        }
+
+                        return Row(
+                          children: [
+                            deleteButton,
+                            const Spacer(),
+                            editButton,
+                            const SizedBox(width: 10),
+                            closeButton,
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final statusColor = _estadoColor(cita.estado);
+    final statusLabel = _estadoTexto(cita.estado);
+    final fields = [
+      _Field(label: 'CLIENTE', value: cita.cliente),
+      _Field(label: 'TELÉFONO', value: cita.telefono),
+      _Field(
+        label: 'VEHÍCULO',
+        value: '${cita.marca} ${cita.modelo} ${cita.anio}',
+      ),
+      _Field(label: 'PLACA', value: cita.placa),
+      _Field(label: 'TÉCNICO', value: cita.tecnico ?? 'Sin asignar'),
+      _Field(label: 'FECHA', value: _fechaFormateada()),
+    ];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(0, 0, 0, 0),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: AppColors.cardWhite,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE8EBF0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
+            child: Row(
+              children: [
+                Text(
+                  '#${cita.id}',
+                  style: const TextStyle(
+                    color: AppColors.headerNavy,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: statusColor.withValues(alpha: 0.20),
+                    ),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: statusLabel,
+                      isDense: true,
+                      alignment: Alignment.center,
+                      icon: const Icon(
+                        Icons.keyboard_arrow_down,
+                        size: 16,
+                        color: AppColors.headerNavy,
+                      ),
+                      dropdownColor: Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      style: TextStyle(
+                        color: statusColor,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.1,
+                      ),
+                      items:
+                          const [
+                            'Atrasadas',
+                            'Pendiente',
+                            'Esperando Pieza',
+                            'En proceso',
+                            'Completado',
+                          ].map((label) {
+                            return DropdownMenuItem<String>(
+                              value: label,
+                              child: Text(label),
+                            );
+                          }).toList(),
+                      onChanged: (nuevoEstado) {
+                        if (nuevoEstado == null) return;
+                        final nuevoEstadoEnum = switch (nuevoEstado) {
+                          'Atrasadas' => EstadoCitaAdmin.atrasada,
+                          'Pendiente' => EstadoCitaAdmin.pendiente,
+                          'Esperando Pieza' => EstadoCitaAdmin.esperandoPieza,
+                          'En proceso' => EstadoCitaAdmin.enProceso,
+                          'Completado' => EstadoCitaAdmin.completada,
+                          _ => cita.estado,
+                        };
+
+                        onEdited?.call(
+                          CitaAdmin(
+                            id: cita.id,
+                            cliente: cita.cliente,
+                            telefono: cita.telefono,
+                            marca: cita.marca,
+                            modelo: cita.modelo,
+                            anio: cita.anio,
+                            placa: cita.placa,
+                            servicios: cita.servicios,
+                            fecha: cita.fecha,
+                            hora: cita.hora,
+                            estado: nuevoEstadoEnum,
+                            descripcion: cita.descripcion,
+                            tecnico: cita.tecnico,
+                            total: cita.total,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: Color(0xFFE7EAF0)),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final columns = constraints.maxWidth >= 500 ? 2 : 1;
+                final fieldWidth =
+                    (constraints.maxWidth - (columns - 1) * 12) / columns;
+
+                return Wrap(
+                  spacing: 12,
+                  runSpacing: 10,
+                  children: [
+                    for (final field in fields)
+                      SizedBox(
+                        width: fieldWidth,
+                        child: _FieldWidget(
+                          label: field.label,
+                          value: field.value,
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'SERVICIOS',
+                  style: TextStyle(
+                    color: AppColors.placeholderGray,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+                const SizedBox(height: 7),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: cita.servicios.isEmpty
+                      ? const [SizedBox.shrink()]
+                      : [
+                          for (final servicio in cita.servicios)
+                            _Chip(label: servicio),
+                        ],
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: Color(0xFFE7EAF0)),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'RD\$ ${cita.total.toStringAsFixed(0)}',
+                    style: TextStyle(
+                      color: AppColors.completado,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                OutlinedButton(
+                  onPressed: () => _mostrarDetalle(context),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.headerNavy,
+                    side: const BorderSide(color: AppColors.inputBorder),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text('Ver detalle'),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EditarCitaDialog extends StatefulWidget {
+  const _EditarCitaDialog({required this.cita, required this.onSaved});
+
+  final CitaAdmin cita;
+  final ValueChanged<CitaAdmin> onSaved;
+
+  @override
+  State<_EditarCitaDialog> createState() => _EditarCitaDialogState();
+}
+
+class _EditarCitaDialogState extends State<_EditarCitaDialog> {
+  late final TextEditingController _clienteController;
+  late final TextEditingController _telefonoController;
+  late final TextEditingController _modeloController;
+  late final TextEditingController _anioController;
+  late final TextEditingController _placaController;
+  late final TextEditingController _descripcionController;
+  late DateTime _fecha;
+  late TimeOfDay _hora;
+  late String? _marcaSeleccionada;
+  late String? _tecnicoSeleccionado;
+  late String _estadoSeleccionado;
+  final Set<String> _serviciosMarcados = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _clienteController = TextEditingController(text: widget.cita.cliente);
+    _telefonoController = TextEditingController(text: widget.cita.telefono);
+    _modeloController = TextEditingController(text: widget.cita.modelo);
+    _anioController = TextEditingController(text: widget.cita.anio);
+    _placaController = TextEditingController(text: widget.cita.placa);
+    _descripcionController = TextEditingController(
+      text: widget.cita.descripcion,
+    );
+    _fecha = widget.cita.fecha;
+    _hora = widget.cita.hora;
+    _marcaSeleccionada = widget.cita.marca;
+    _tecnicoSeleccionado = widget.cita.tecnico;
+    _estadoSeleccionado = switch (widget.cita.estado) {
+      EstadoCitaAdmin.atrasada => 'Atrasadas',
+      EstadoCitaAdmin.pendiente => 'Pendiente',
+      EstadoCitaAdmin.esperandoPieza => 'Esperando Pieza',
+      EstadoCitaAdmin.enProceso => 'En proceso',
+      EstadoCitaAdmin.completada => 'Completado',
+    };
+    _serviciosMarcados.addAll(widget.cita.servicios);
+  }
+
+  @override
+  void dispose() {
+    _clienteController.dispose();
+    _telefonoController.dispose();
+    _modeloController.dispose();
+    _anioController.dispose();
+    _placaController.dispose();
+    _descripcionController.dispose();
+    super.dispose();
+  }
+
+  InputDecoration _decoracionCampo(String label) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: const TextStyle(fontSize: 13, color: AppColors.textGray),
+      hintStyle: const TextStyle(
+        color: AppColors.placeholderGray,
+        fontSize: 13,
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: AppColors.inputBorder),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(
+          color: AppColors.orangePrimary,
+          width: 1.5,
+        ),
+      ),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+    );
+  }
+
+  String _formatearFechaCorta(DateTime fecha) =>
+      '${fecha.day.toString().padLeft(2, '0')}/${fecha.month.toString().padLeft(2, '0')}/${fecha.year}';
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 460, maxHeight: 680),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(18),
+              decoration: const BoxDecoration(
+                color: AppColors.headerNavy,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(15)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Editar Cita',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () => Navigator.of(context).pop(),
+                    child: const Icon(Icons.close, color: Colors.white),
+                  ),
+                ],
+              ),
+            ),
+            Flexible(
+              child: Material(
+                color: AppColors.background,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'DATOS DEL CLIENTE',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textGray,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _clienteController,
+                        decoration: _decoracionCampo('Nombre completo'),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _telefonoController,
+                        decoration: _decoracionCampo('Teléfono'),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'DATOS DEL VEHÍCULO',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textGray,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              value: _marcaSeleccionada,
+                              decoration: _decoracionCampo('Marca'),
+                              items: demoMarcasVehiculo
+                                  .map(
+                                    (m) => DropdownMenuItem(
+                                      value: m,
+                                      child: Text(
+                                        m,
+                                        style: const TextStyle(fontSize: 13),
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (valor) =>
+                                  setState(() => _marcaSeleccionada = valor),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: TextField(
+                              controller: _modeloController,
+                              decoration: _decoracionCampo('Modelo'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _anioController,
+                              keyboardType: TextInputType.number,
+                              decoration: _decoracionCampo('Año'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: TextField(
+                              controller: _placaController,
+                              decoration: _decoracionCampo('Placa'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'SERVICIOS',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textGray,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        decoration: BoxDecoration(
+                          border: Border.all(color: AppColors.inputBorder),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Column(
+                          children: [
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 8,
+                              ),
+                              color: const Color(0xFFF3F5F8),
+                              child: const Text(
+                                'TIPOS DE SERVICIO',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.textGray,
+                                ),
+                              ),
+                            ),
+                            ...demoServiciosAdmin.map(
+                              (servicio) => CheckboxListTile(
+                                dense: true,
+                                controlAffinity:
+                                    ListTileControlAffinity.leading,
+                                value: _serviciosMarcados.contains(
+                                  servicio.nombre,
+                                ),
+                                onChanged: (checked) {
+                                  setState(() {
+                                    if (checked == true) {
+                                      _serviciosMarcados.add(servicio.nombre);
+                                    } else {
+                                      _serviciosMarcados.remove(
+                                        servicio.nombre,
+                                      );
+                                    }
+                                  });
+                                },
+                                title: Text(
+                                  '${servicio.nombre} · ${servicio.precio}',
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'ASIGNACIÓN',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textGray,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        value: _tecnicoSeleccionado,
+                        decoration: _decoracionCampo('Técnico'),
+                        items: demoTecnicosAdmin
+                            .map(
+                              (t) => DropdownMenuItem(
+                                value: t,
+                                child: Text(
+                                  t,
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (valor) =>
+                            setState(() => _tecnicoSeleccionado = valor),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              onTap: () async {
+                                final nuevaFecha = await showDatePicker(
+                                  context: context,
+                                  initialDate: _fecha,
+                                  firstDate: DateTime(2020),
+                                  lastDate: DateTime(2100),
+                                );
+                                if (nuevaFecha != null) {
+                                  setState(() => _fecha = nuevaFecha);
+                                }
+                              },
+                              child: InputDecorator(
+                                decoration: _decoracionCampo('Fecha'),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      _formatearFechaCorta(_fecha),
+                                      style: const TextStyle(fontSize: 13),
+                                    ),
+                                    const Icon(
+                                      Icons.calendar_today_outlined,
+                                      size: 16,
+                                      color: AppColors.textGray,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: InkWell(
+                              onTap: () async {
+                                final nuevaHora = await showTimePicker(
+                                  context: context,
+                                  initialTime: _hora,
+                                );
+                                if (nuevaHora != null) {
+                                  setState(() => _hora = nuevaHora);
+                                }
+                              },
+                              child: InputDecorator(
+                                decoration: _decoracionCampo('Hora'),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      _hora.format(context),
+                                      style: const TextStyle(fontSize: 13),
+                                    ),
+                                    const Icon(
+                                      Icons.access_time,
+                                      size: 16,
+                                      color: AppColors.textGray,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      DropdownButtonFormField<String>(
+                        value: _estadoSeleccionado,
+                        decoration: _decoracionCampo('Estado'),
+                        items: demoEstadosAdmin
+                            .map(
+                              (e) => DropdownMenuItem(
+                                value: e,
+                                child: Text(
+                                  e,
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (valor) => setState(
+                          () => _estadoSeleccionado =
+                              valor ?? _estadoSeleccionado,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _descripcionController,
+                        maxLines: 3,
+                        decoration: _decoracionCampo('Descripción'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Container(
+              width: double.infinity,
+              color: Colors.white,
+              padding: const EdgeInsets.all(18),
+              child: ElevatedButton(
+                onPressed: () {
+                  final citaActualizada = CitaAdmin(
+                    id: widget.cita.id,
+                    cliente: _clienteController.text.trim(),
+                    telefono: _telefonoController.text.trim(),
+                    marca: _marcaSeleccionada ?? widget.cita.marca,
+                    modelo: _modeloController.text.trim(),
+                    anio: _anioController.text.trim(),
+                    placa: _placaController.text.trim(),
+                    servicios: _serviciosMarcados.toList(),
+                    fecha: _fecha,
+                    hora: _hora,
+                    estado: switch (_estadoSeleccionado) {
+                      'Atrasadas' => EstadoCitaAdmin.atrasada,
+                      'Pendiente' => EstadoCitaAdmin.pendiente,
+                      'Esperando Pieza' => EstadoCitaAdmin.esperandoPieza,
+                      'En proceso' => EstadoCitaAdmin.enProceso,
+                      'Completado' => EstadoCitaAdmin.completada,
+                      _ => EstadoCitaAdmin.pendiente,
+                    },
+                    descripcion: _descripcionController.text.trim(),
+                    tecnico: _tecnicoSeleccionado,
+                    total: widget.cita.total,
+                  );
+                  widget.onSaved(citaActualizada);
+                  Navigator.of(context).pop();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.orangePrimary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                child: const Text(
+                  'Guardar cambios',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Field {
+  const _Field({required this.label, required this.value});
+
+  final String label;
+  final String value;
+}
+
+class _FieldWidget extends StatelessWidget {
+  const _FieldWidget({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppColors.placeholderGray,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.4,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF7F9FB),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFEDEFF3)),
+          ),
+          child: Text(
+            value,
+            style: const TextStyle(
+              color: AppColors.textDark,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DetailGrid extends StatelessWidget {
+  const _DetailGrid({required this.fields});
+
+  final List<(String, String)> fields;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth >= 420 ? 2 : 1;
+        final fieldWidth =
+            (constraints.maxWidth - (columns - 1) * 12) / columns;
+
+        return Wrap(
+          spacing: 12,
+          runSpacing: 10,
+          children: [
+            for (final field in fields)
+              SizedBox(
+                width: fieldWidth,
+                child: _FieldWidget(label: field.$1, value: field.$2),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: AppColors.textGray,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+}
+
+class _Chip extends StatelessWidget {
+  const _Chip({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE9F7EF),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: const Color(0xFFCFEAD9)),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: AppColors.headerNavy,
+          fontSize: 10.5,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
 class CitasScreen extends StatefulWidget {
   const CitasScreen({super.key});
 
@@ -27,6 +1072,13 @@ class _CitasScreenState extends State<CitasScreen> {
   DateTime _fechaSeleccionada = DateTime.now();
   bool _filtrosExpandido = false;
   String? _categoriaExpandida = 'En proceso';
+  final AdminCitasController _citasController = AdminCitasController();
+
+  @override
+  void dispose() {
+    _citasController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -48,15 +1100,18 @@ class _CitasScreenState extends State<CitasScreen> {
             for (final categoria in kColorPorEstado.keys)
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
-                child: _buildEstadoAccordion(
-                  nombre: categoria,
-                  color: kColorPorEstado[categoria]!,
-                  expanded: _categoriaExpandida == categoria,
-                  onTap: () => setState(() {
-                    _categoriaExpandida = _categoriaExpandida == categoria
-                        ? null
-                        : categoria;
-                  }),
+                child: ListenableBuilder(
+                  listenable: _citasController,
+                  builder: (context, _) => _buildEstadoAccordion(
+                    nombre: categoria,
+                    color: kColorPorEstado[categoria]!,
+                    expanded: _categoriaExpandida == categoria,
+                    onTap: () => setState(() {
+                      _categoriaExpandida = _categoriaExpandida == categoria
+                          ? null
+                          : categoria;
+                    }),
+                  ),
                 ),
               ),
           ],
@@ -462,100 +1517,93 @@ class _CitasScreenState extends State<CitasScreen> {
     required bool expanded,
     required VoidCallback onTap,
   }) {
-    final citasDemo = switch (nombre) {
-      'En proceso' => [demoCitaAdmin],
-      'Completado' => [demoCitaCompletadaAdmin],
-      _ => const [],
-    };
-    final cantidadVisible = citasDemo.length;
+    final citas = _citasController.citasPorCategorias(nombre);
+    final cantidadVisible = citas.length;
     return Column(
-          children: [
-            Material(
-              color: color,
-              borderRadius: BorderRadius.circular(10),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(10),
-                onTap: onTap,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
+      children: [
+        Material(
+          color: color,
+          borderRadius: BorderRadius.circular(10),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Row(
+                children: [
+                  AnimatedRotation(
+                    turns: expanded ? 0.25 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    child: const Icon(
+                      Icons.play_arrow,
+                      color: Colors.white,
+                      size: 18,
+                    ),
                   ),
-                  child: Row(
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      nombre.toUpperCase(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                  CircleAvatar(
+                    radius: 13,
+                    backgroundColor: Colors.white.withValues(alpha: 0.25),
+                    child: Text(
+                      '$cantidadVisible',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        AnimatedCrossFade(
+          duration: const Duration(milliseconds: 200),
+          crossFadeState: expanded
+              ? CrossFadeState.showFirst
+              : CrossFadeState.showSecond,
+          firstChild: Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(top: 8),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.cardWhite,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFE5E7EB)),
+            ),
+            child: citas.isEmpty
+                ? const Text(
+                    'No hay citas en este estado.',
+                    style: TextStyle(color: AppColors.textGray, fontSize: 13),
+                  )
+                : Column(
                     children: [
-                      AnimatedRotation(
-                        turns: expanded ? 0.25 : 0,
-                        duration: const Duration(milliseconds: 200),
-                        child: const Icon(
-                          Icons.play_arrow,
-                          color: Colors.white,
-                          size: 18,
+                      for (final cita in citas)
+                        CitaAdminCard(
+                          cita: cita,
+                          onEdited: (citaActualizada) {
+                            _citasController.actualizarCita(citaActualizada);
+                            setState(() {});
+                          },
                         ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          nombre.toUpperCase(),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ),
-                      CircleAvatar(
-                        radius: 13,
-                        backgroundColor: Colors.white.withValues(alpha: 0.25),
-                        child: Text(
-                          '$cantidadVisible',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
                     ],
                   ),
-                ),
-              ),
-            ),
-            AnimatedCrossFade(
-              duration: const Duration(milliseconds: 200),
-              crossFadeState: expanded
-                  ? CrossFadeState.showFirst
-                  : CrossFadeState.showSecond,
-              firstChild: Container(
-                width: double.infinity,
-                margin: const EdgeInsets.only(top: 8),
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: AppColors.cardWhite,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFE5E7EB)),
-                ),
-                child: citasDemo.isEmpty
-                    ? const Text(
-                        'No hay citas en este estado.',
-                        style: TextStyle(
-                          color: AppColors.textGray,
-                          fontSize: 13,
-                        ),
-                      )
-                    : Column(
-                        children: [
-                          for (final cita in citasDemo)
-                            CitaClasificadaAdminCard(
-                              solicitud: cita,
-                              previewOnly: true,
-                            ),
-                        ],
-                      ),
-              ),
-              secondChild: const SizedBox(width: double.infinity, height: 0),
-            ),
-          ],
+          ),
+          secondChild: const SizedBox(width: double.infinity, height: 0),
+        ),
+      ],
     );
   }
 
@@ -575,6 +1623,12 @@ class _CitasScreenState extends State<CitasScreen> {
   }
 
   void _abrirFormularioNuevaCita() {
+    final clienteController = TextEditingController();
+    final telefonoController = TextEditingController();
+    final modeloController = TextEditingController();
+    final anioController = TextEditingController();
+    final placaController = TextEditingController();
+    final descripcionController = TextEditingController();
     String? marcaSeleccionada;
     String? tecnicoSeleccionado;
     String estadoSeleccionado = 'Pendiente';
@@ -637,11 +1691,13 @@ class _CitasScreenState extends State<CitasScreen> {
                             children: [
                               _tituloSeccionModal('DATOS DEL CLIENTE'),
                               TextField(
+                                controller: clienteController,
                                 decoration: _decoracionCampo('Nombre completo')
                                     .copyWith(hintText: 'Nombre del cliente'),
                               ),
                               const SizedBox(height: 10),
                               TextField(
+                                controller: telefonoController,
                                 decoration: _decoracionCampo('Teléfono')
                                     .copyWith(hintText: '809-000-0000'),
                               ),
@@ -678,6 +1734,7 @@ class _CitasScreenState extends State<CitasScreen> {
                                   const SizedBox(width: 10),
                                   Expanded(
                                     child: TextField(
+                                      controller: modeloController,
                                       decoration: _decoracionCampo('Modelo')
                                           .copyWith(hintText: 'Ej: Corolla'),
                                     ),
@@ -689,6 +1746,7 @@ class _CitasScreenState extends State<CitasScreen> {
                                 children: [
                                   Expanded(
                                     child: TextField(
+                                      controller: anioController,
                                       keyboardType: TextInputType.number,
                                       decoration: _decoracionCampo('Año')
                                           .copyWith(hintText: '2020'),
@@ -697,6 +1755,7 @@ class _CitasScreenState extends State<CitasScreen> {
                                   const SizedBox(width: 10),
                                   Expanded(
                                     child: TextField(
+                                      controller: placaController,
                                       decoration: _decoracionCampo('Placa')
                                           .copyWith(hintText: 'A123456'),
                                     ),
@@ -804,10 +1863,11 @@ class _CitasScreenState extends State<CitasScreen> {
                                           firstDate: DateTime(2020),
                                           lastDate: DateTime(2100),
                                         );
-                                        if (nuevaFecha != null)
+                                        if (nuevaFecha != null) {
                                           setDialogState(
                                             () => fecha = nuevaFecha,
                                           );
+                                        }
                                       },
                                       child: InputDecorator(
                                         decoration: _decoracionCampo('Fecha'),
@@ -839,10 +1899,11 @@ class _CitasScreenState extends State<CitasScreen> {
                                           context: context,
                                           initialTime: hora ?? TimeOfDay.now(),
                                         );
-                                        if (nuevaHora != null)
+                                        if (nuevaHora != null) {
                                           setDialogState(
                                             () => hora = nuevaHora,
                                           );
+                                        }
                                       },
                                       child: InputDecorator(
                                         decoration: _decoracionCampo('Hora'),
@@ -874,20 +1935,17 @@ class _CitasScreenState extends State<CitasScreen> {
                               DropdownButtonFormField<String>(
                                 initialValue: estadoSeleccionado,
                                 decoration: _decoracionCampo('Estado'),
-                                items:
-                                    demoEstadosAdmin
-                                        .map(
-                                          (e) => DropdownMenuItem(
-                                            value: e,
-                                            child: Text(
-                                              e,
-                                              style: const TextStyle(
-                                                fontSize: 13,
-                                              ),
-                                            ),
-                                          ),
-                                        )
-                                        .toList(),
+                                items: demoEstadosAdmin
+                                    .map(
+                                      (e) => DropdownMenuItem(
+                                        value: e,
+                                        child: Text(
+                                          e,
+                                          style: const TextStyle(fontSize: 13),
+                                        ),
+                                      ),
+                                    )
+                                    .toList(),
                                 onChanged: (valor) => setDialogState(
                                   () => estadoSeleccionado =
                                       valor ?? estadoSeleccionado,
@@ -895,6 +1953,7 @@ class _CitasScreenState extends State<CitasScreen> {
                               ),
                               const SizedBox(height: 10),
                               TextField(
+                                controller: descripcionController,
                                 maxLines: 3,
                                 decoration: _decoracionCampo('Descripción')
                                     .copyWith(
@@ -915,7 +1974,46 @@ class _CitasScreenState extends State<CitasScreen> {
                         child: SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
-                            onPressed: () => Navigator.of(context).pop(),
+                            onPressed: () {
+                              final estado = switch (estadoSeleccionado) {
+                                'Esperando Pieza' =>
+                                  EstadoCitaAdmin.esperandoPieza,
+                                'En proceso' => EstadoCitaAdmin.enProceso,
+                                'Completado' => EstadoCitaAdmin.completada,
+                                _ => EstadoCitaAdmin.pendiente,
+                              };
+
+                              if (marcaSeleccionada == null || hora == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Selecciona la marca y la hora.',
+                                    ),
+                                  ),
+                                );
+                                return;
+                              }
+
+                              final cita = CitaAdmin(
+                                id: DateTime.now().millisecondsSinceEpoch,
+                                cliente: clienteController.text.trim(),
+                                telefono: telefonoController.text.trim(),
+                                marca: marcaSeleccionada!,
+                                modelo: modeloController.text.trim(),
+                                anio: anioController.text.trim(),
+                                placa: placaController.text.trim(),
+                                servicios: serviciosMarcados.toList(),
+                                fecha: fecha,
+                                hora: hora!,
+                                estado: estado,
+                                descripcion: descripcionController.text.trim(),
+                                tecnico: tecnicoSeleccionado,
+                                total: 0.0,
+                              );
+
+                              _citasController.agregarCita(cita);
+                              Navigator.of(context).pop();
+                            },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.orangePrimary,
                               foregroundColor: Colors.white,

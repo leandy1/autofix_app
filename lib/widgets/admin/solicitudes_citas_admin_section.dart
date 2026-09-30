@@ -1003,7 +1003,7 @@ class CitaClasificadaAdminCard extends StatelessWidget {
                             ('Placa', vehicle.plate.toUpperCase()),
                             (
                               'Técnico',
-                              previewOnly ? 'Técnico 2' : 'Sin asignar',
+                                previewOnly ? 'Técnico 2' : 'Sin asignar',
                             ),
                           ],
                         ),
