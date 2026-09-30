@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:autofix/app/conectividad_app.dart';
+import 'package:autofix/main.dart' show AutoFixApp;
 import 'package:autofix/screens/auth/login_screen.dart';
 import 'package:autofix/theme/app_colors.dart';
 
