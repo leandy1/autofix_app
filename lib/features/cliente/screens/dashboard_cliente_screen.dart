@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../theme/app_colors.dart';
-import '../auth/login_screen.dart';
+import 'package:autofix/features/auth/screens/login_screen.dart';
+import 'package:autofix/shared/theme/app_colors.dart';
 import 'agendar_cita_cliente_section.dart';
 import 'mis_citas_cliente_section.dart';
 import 'talleres_cliente_section.dart';

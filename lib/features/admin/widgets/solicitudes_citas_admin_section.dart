@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../../models/demo_admin_data.dart';
-import '../../models/solicitud_cita_cliente.dart';
-import '../../models/servicio_taller.dart';
-import '../../theme/app_colors.dart';
+import 'package:autofix/shared/models/demo_admin_data.dart';
+import 'package:autofix/shared/models/servicio_taller.dart';
+import 'package:autofix/shared/models/solicitud_cita_cliente.dart';
+import 'package:autofix/shared/theme/app_colors.dart';
 
 class SolicitudesCitasAdminSection extends StatelessWidget {
   const SolicitudesCitasAdminSection({super.key});

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../theme/app_colors.dart';
+import 'package:autofix/shared/theme/app_colors.dart';
 
 const clienteCardShadow = [
   BoxShadow(color: Color(0x100B1E3F), blurRadius: 14, offset: Offset(0, 5)),

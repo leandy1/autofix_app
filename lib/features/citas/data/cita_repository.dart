@@ -37,7 +37,7 @@ class CitaRepository implements BaseRepository<Cita> {
     final db = await _helper.base;
     final filas = await db.query(
       tabla,
-      orderBy: '${DatabaseHelper.colFechaCita} DESC',
+      orderBy: '${DatabaseHelper.colFechaCita} ASC',
     );
     return filas.map(Cita.fromMap).toList();
   }
@@ -108,19 +108,6 @@ class CitaRepository implements BaseRepository<Cita> {
       where: '${DatabaseHelper.colId} = ?',
       whereArgs: [id],
     );
-  }
-
-  /// Lo que consume el escaner de QR: devuelve `null` si el codigo no es de
-  /// ninguna cita, que es el caso normal y no un error.
-  Future<Cita?> obtenerPorCodigoQr(String codigoQr) async {
-    final db = await _helper.base;
-    final filas = await db.query(
-      tabla,
-      where: '${DatabaseHelper.colCodigoQr} = ?',
-      whereArgs: [codigoQr],
-      limit: 1,
-    );
-    return filas.isEmpty ? null : Cita.fromMap(filas.first);
   }
 
   /// 'AAAA-MM-DD'. SQLite ordena los timestamps ISO por prefijo, asi que el

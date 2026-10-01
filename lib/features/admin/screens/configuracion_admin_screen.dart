@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../../models/demo_admin_data.dart';
-import '../../theme/app_colors.dart';
+import 'package:autofix/shared/models/demo_admin_data.dart';
+import 'package:autofix/shared/theme/app_colors.dart';
 import 'dashboard_admin_screen.dart';
 import 'citas_admin_screen.dart';
-import '../auth/login_screen.dart';
+import 'package:autofix/features/auth/screens/login_screen.dart';
 
 class ConfiguracionScreen extends StatefulWidget {
   const ConfiguracionScreen({super.key});

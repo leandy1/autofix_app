@@ -39,7 +39,6 @@ enum EstadoCita {
 class Cita implements EntidadPersistida {
   const Cita({
     this.id,
-    required this.codigoQr,
     required this.cliente,
     this.telefono = '',
     required this.vehiculo,
@@ -54,12 +53,12 @@ class Cita implements EntidadPersistida {
     this.estado = EstadoCita.pendiente,
     this.creadoEn,
     this.actualizadoEn,
+    this.total = 0,
   });
 
   static const String etiquetaAtrasadas = 'ATRASADAS';
 
   static const String _kId = 'id';
-  static const String _kQr = 'codigo_qr';
   static const String _kCliente = 'cliente';
   static const String _kTelefono = 'telefono';
   static const String _kVehiculo = 'vehiculo';
@@ -74,13 +73,11 @@ class Cita implements EntidadPersistida {
   static const String _kEstado = 'estado';
   static const String _kCreadoEn = 'creado_en';
   static const String _kActualizadoEn = 'actualizado_en';
+  static const String _kTotal = 'total';
 
   @override
   final int? id;
 
-  /// Llave con el QR fisico del vehiculo. UNIQUE en la base: es lo que consulta
-  /// el modulo de escaneo.
-  final String codigoQr;
   final String cliente;
   final String telefono;
   final String vehiculo;
@@ -94,18 +91,29 @@ class Cita implements EntidadPersistida {
   final DateTime fechaCita;
   final EstadoCita estado;
   final DateTime? creadoEn;
+  final double total;
 
   @override
   final DateTime? actualizadoEn;
 
-  /// "La hora ya paso y todavia no se completo". No es "la fecha es de ayer".
+  /// La cita queda atrasada solo si la fecha calendario ya paso respecto al
+  /// dia que se esta consultando en la UI.
   ///
-  /// `ahora` va por parametro a proposito: leer el reloj adentro hace que dos
-  /// dispositivos clasifiquen la misma cita distinto, y en cuanto haya
-  /// sincronizacion eso ya no es una discrepancia visual sino conflicto de datos.
-  /// Quien arma la lista lo pasa una sola vez para toda la pasada.
-  bool esAtrasada(DateTime ahora) =>
-      estado != EstadoCita.completado && fechaCita.isBefore(ahora);
+  /// Importante: la misma cita no se marca como atrasada en su dia si estoy
+  /// revisando ese mismo dia; solo pasa a "ATRASADAS" cuando la fecha de la
+  /// cita es anterior al dia actual de la vista y no esta completada.
+  bool esAtrasada(DateTime ahora) {
+    if (estado == EstadoCita.completado) return false;
+
+    final fechaConsulta = DateTime(ahora.year, ahora.month, ahora.day);
+    final fechaCitaSinHora = DateTime(
+      fechaCita.year,
+      fechaCita.month,
+      fechaCita.day,
+    );
+
+    return fechaCitaSinHora.isBefore(fechaConsulta);
+  }
 
   /// Llave exacta del mapa de colores de la UI. Va en mayusculas porque asi
   /// esta definida alla.
@@ -114,7 +122,6 @@ class Cita implements EntidadPersistida {
 
   Cita copyWith({
     int? id,
-    String? codigoQr,
     String? cliente,
     String? telefono,
     String? vehiculo,
@@ -129,10 +136,10 @@ class Cita implements EntidadPersistida {
     EstadoCita? estado,
     DateTime? creadoEn,
     DateTime? actualizadoEn,
+    double? total,
   }) {
     return Cita(
       id: id ?? this.id,
-      codigoQr: codigoQr ?? this.codigoQr,
       cliente: cliente ?? this.cliente,
       telefono: telefono ?? this.telefono,
       vehiculo: vehiculo ?? this.vehiculo,
@@ -147,6 +154,7 @@ class Cita implements EntidadPersistida {
       estado: estado ?? this.estado,
       creadoEn: creadoEn ?? this.creadoEn,
       actualizadoEn: actualizadoEn ?? this.actualizadoEn,
+      total: total ?? this.total,
     );
   }
 
@@ -154,7 +162,6 @@ class Cita implements EntidadPersistida {
     return {
       // El id solo va si ya existe: mandarlo en null en un INSERT lo rompe.
       if (id != null) _kId: id,
-      _kQr: codigoQr,
       _kCliente: cliente,
       _kTelefono: telefono,
       _kVehiculo: vehiculo,
@@ -170,13 +177,13 @@ class Cita implements EntidadPersistida {
       _kEstado: estado.name,
       _kCreadoEn: (creadoEn ?? DateTime.now()).toIso8601String(),
       _kActualizadoEn: (actualizadoEn ?? DateTime.now()).toIso8601String(),
+      _kTotal: total,
     };
   }
 
   factory Cita.fromMap(Map<String, Object?> map) {
     return Cita(
       id: map[_kId] as int?,
-      codigoQr: map[_kQr] as String,
       cliente: map[_kCliente] as String,
       telefono: (map[_kTelefono] as String?) ?? '',
       vehiculo: map[_kVehiculo] as String,
@@ -191,6 +198,7 @@ class Cita implements EntidadPersistida {
       estado: EstadoCita.desdeNombre(map[_kEstado]! as String),
       creadoEn: DateTime.tryParse(map[_kCreadoEn]! as String),
       actualizadoEn: DateTime.tryParse(map[_kActualizadoEn] as String? ?? ''),
+      total: (map[_kTotal] as num?)?.toDouble() ?? 0,
     );
   }
 

@@ -97,25 +97,31 @@ class CitasController extends ChangeNotifier {
     return true;
   }
 
-  /// Lee una cita por QR fisico. `null` significa que el codigo no pertenece a
-  /// AutoFix: es un resultado valido, no un error.
-  Future<Cita?> buscarPorQr(String codigoQr) => _repo.obtenerPorCodigoQr(codigoQr);
-
   /// Citas del dia agrupadas por la etiqueta que consume la UI.
   ///
   /// El `ahora` se fija UNA vez por llamada: si cada fila calculara su propia
   /// hora, dos citas del mismo segundo podrian caer en grupos distintos y el
   /// conteo del acordeon no cerraria con la lista.
   Map<String, List<Cita>> agruparPorEstado(DateTime fecha, {DateTime? ahora}) {
-    final momento = ahora ?? DateTime.now();
+    final referencia = fecha;
     final dia = _claveDia(fecha);
     final mapa = <String, List<Cita>>{
       for (final etiqueta in etiquetas) etiqueta: <Cita>[],
     };
 
     for (final cita in _citas) {
-      if (_claveDia(cita.fechaCita) != dia) continue;
-      mapa[cita.etiquetaUI(momento)]!.add(cita);
+      final claveCita = _claveDia(cita.fechaCita);
+      final esFechaElegida = claveCita == dia;
+      final esAtrasada = cita.esAtrasada(referencia) && !esFechaElegida;
+
+      if (esFechaElegida) {
+        mapa[cita.etiquetaUI(referencia)]!.add(cita);
+        continue;
+      }
+
+      if (esAtrasada) {
+        mapa[Cita.etiquetaAtrasadas]!.add(cita);
+      }
     }
     return mapa;
   }

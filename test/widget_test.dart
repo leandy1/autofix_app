@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:autofix/models/cita_admin.dart';
-import 'package:autofix/screens/admin/citas_admin_screen.dart';
+import 'package:autofix/features/admin/screens/citas_admin_screen.dart';
+import 'package:autofix/shared/models/cita_admin.dart';
 
 void main() {
   testWidgets('muestra la cita con el diseño de admin y el estado correcto', (
@@ -67,5 +67,54 @@ void main() {
     expect(find.text('Cédula'), findsNothing);
     expect(find.text('Correo'), findsNothing);
     expect(find.text('Color'), findsNothing);
+  });
+
+  testWidgets('invoca editar y eliminar desde la vista de detalle', (tester) async {
+    final cita = CitaAdmin(
+      id: 7,
+      cliente: 'Beatriz',
+      telefono: '8092223344',
+      marca: 'Honda',
+      modelo: 'Civic',
+      anio: '2021',
+      placa: 'B765432',
+      servicios: const ['Cambio de aceite'],
+      fecha: DateTime(2026, 10, 2),
+      hora: const TimeOfDay(hour: 11, minute: 0),
+      estado: EstadoCitaAdmin.pendiente,
+      descripcion: 'Alineación',
+      tecnico: 'Técnico 1',
+      total: 2500,
+    );
+
+    var editado = false;
+    var eliminado = -1;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: CitaAdminCard(
+            cita: cita,
+            onEdited: (_) => editado = true,
+            onDeleted: (id) => eliminado = id,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Ver detalle'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Editar'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Guardar cambios'));
+    await tester.pumpAndSettle();
+    expect(editado, isTrue);
+
+    await tester.tap(find.text('Ver detalle'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Eliminar'));
+    await tester.pumpAndSettle();
+    expect(eliminado, 7);
   });
 }

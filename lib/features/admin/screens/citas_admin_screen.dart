@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 
-import '../../controllers/admin_citas_controller.dart';
-import '../../models/demo_admin_data.dart';
-import '../../models/cita_admin.dart';
-import '../../theme/app_colors.dart';
-import '../../widgets/admin/solicitudes_citas_admin_section.dart';
-import '../auth/login_screen.dart';
+import 'package:autofix/features/admin/widgets/solicitudes_citas_admin_section.dart';
+import 'package:autofix/features/auth/screens/login_screen.dart';
+import 'package:autofix/features/citas/models/cita.dart' as cita_data;
+import 'package:autofix/features/citas/presentation/citas_controller.dart';
+import 'package:autofix/shared/models/cita_admin.dart';
+import 'package:autofix/shared/models/demo_admin_data.dart';
+import 'package:autofix/shared/theme/app_colors.dart';
 import 'dashboard_admin_screen.dart';
 import 'configuracion_admin_screen.dart';
 
@@ -18,10 +19,16 @@ const Map<String, Color> kColorPorEstado = {
 };
 
 class CitaAdminCard extends StatelessWidget {
-  const CitaAdminCard({required this.cita, this.onEdited, super.key});
+  const CitaAdminCard({
+    required this.cita,
+    this.onEdited,
+    this.onDeleted,
+    super.key,
+  });
 
   final CitaAdmin cita;
   final ValueChanged<CitaAdmin>? onEdited;
+  final ValueChanged<int>? onDeleted;
 
   static String _estadoTexto(EstadoCitaAdmin estado) {
     switch (estado) {
@@ -179,7 +186,10 @@ class CitaAdminCard extends StatelessWidget {
                       vertical: 8,
                     );
                     final deleteButton = OutlinedButton(
-                      onPressed: () {},
+                      onPressed: () {
+                        Navigator.pop(dialogContext);
+                        if (onDeleted != null) onDeleted!(cita.id);
+                      },
                       style: OutlinedButton.styleFrom(
                         foregroundColor: const Color(0xFFEF4444),
                         side: const BorderSide(color: Color(0xFFFECACA)),
@@ -259,6 +269,8 @@ class CitaAdminCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final statusColor = _estadoColor(cita.estado);
     final statusLabel = _estadoTexto(cita.estado);
+    final statusOptions = [...demoEstadosAdmin];
+    if (statusLabel == 'Atrasadas') statusOptions.insert(0, statusLabel);
     final fields = [
       _Field(label: 'CLIENTE', value: cita.cliente),
       _Field(label: 'TELÉFONO', value: cita.telefono),
@@ -326,23 +338,16 @@ class CitaAdminCard extends StatelessWidget {
                         fontWeight: FontWeight.w700,
                         letterSpacing: 0.1,
                       ),
-                      items:
-                          const [
-                            'Atrasadas',
-                            'Pendiente',
-                            'Esperando Pieza',
-                            'En proceso',
-                            'Completado',
-                          ].map((label) {
+                      items: statusOptions.map((label) {
                             return DropdownMenuItem<String>(
                               value: label,
+                              enabled: label != 'Atrasadas',
                               child: Text(label),
                             );
                           }).toList(),
                       onChanged: (nuevoEstado) {
                         if (nuevoEstado == null) return;
                         final nuevoEstadoEnum = switch (nuevoEstado) {
-                          'Atrasadas' => EstadoCitaAdmin.atrasada,
                           'Pendiente' => EstadoCitaAdmin.pendiente,
                           'Esperando Pieza' => EstadoCitaAdmin.esperandoPieza,
                           'En proceso' => EstadoCitaAdmin.enProceso,
@@ -505,10 +510,14 @@ class _EditarCitaDialogState extends State<_EditarCitaDialog> {
     );
     _fecha = widget.cita.fecha;
     _hora = widget.cita.hora;
-    _marcaSeleccionada = widget.cita.marca;
-    _tecnicoSeleccionado = widget.cita.tecnico;
+    _marcaSeleccionada = demoMarcasVehiculo.contains(widget.cita.marca)
+        ? widget.cita.marca
+        : demoMarcasVehiculo.first;
+    _tecnicoSeleccionado = demoTecnicosAdmin.contains(widget.cita.tecnico)
+        ? widget.cita.tecnico
+        : null;
     _estadoSeleccionado = switch (widget.cita.estado) {
-      EstadoCitaAdmin.atrasada => 'Atrasadas',
+      EstadoCitaAdmin.atrasada => 'Pendiente',
       EstadoCitaAdmin.pendiente => 'Pendiente',
       EstadoCitaAdmin.esperandoPieza => 'Esperando Pieza',
       EstadoCitaAdmin.enProceso => 'En proceso',
@@ -632,7 +641,7 @@ class _EditarCitaDialogState extends State<_EditarCitaDialog> {
                         children: [
                           Expanded(
                             child: DropdownButtonFormField<String>(
-                              value: _marcaSeleccionada,
+                              initialValue: _marcaSeleccionada,
                               decoration: _decoracionCampo('Marca'),
                               items: demoMarcasVehiculo
                                   .map(
@@ -751,7 +760,7 @@ class _EditarCitaDialogState extends State<_EditarCitaDialog> {
                       ),
                       const SizedBox(height: 8),
                       DropdownButtonFormField<String>(
-                        value: _tecnicoSeleccionado,
+                        initialValue: _tecnicoSeleccionado,
                         decoration: _decoracionCampo('Técnico'),
                         items: demoTecnicosAdmin
                             .map(
@@ -839,7 +848,7 @@ class _EditarCitaDialogState extends State<_EditarCitaDialog> {
                       ),
                       const SizedBox(height: 10),
                       DropdownButtonFormField<String>(
-                        value: _estadoSeleccionado,
+                        initialValue: _estadoSeleccionado,
                         decoration: _decoracionCampo('Estado'),
                         items: demoEstadosAdmin
                             .map(
@@ -1059,12 +1068,116 @@ class _CitasScreenState extends State<CitasScreen> {
   DateTime _fechaSeleccionada = DateTime.now();
   bool _filtrosExpandido = false;
   String? _categoriaExpandida = 'En proceso';
-  final AdminCitasController _citasController = AdminCitasController();
+  final CitasController _citasController = CitasController();
+
+  @override
+  void initState() {
+    super.initState();
+    _citasController.cargar();
+  }
 
   @override
   void dispose() {
     _citasController.dispose();
     super.dispose();
+  }
+
+  cita_data.Cita _aCitaPersistida(CitaAdmin cita) {
+    final estado = switch (cita.estado) {
+      EstadoCitaAdmin.atrasada => cita_data.EstadoCita.pendiente,
+      EstadoCitaAdmin.pendiente => cita_data.EstadoCita.pendiente,
+      EstadoCitaAdmin.esperandoPieza => cita_data.EstadoCita.esperandoPieza,
+      EstadoCitaAdmin.enProceso => cita_data.EstadoCita.enProceso,
+      EstadoCitaAdmin.completada => cita_data.EstadoCita.completado,
+    };
+    final fechaCita = DateTime(
+      cita.fecha.year,
+      cita.fecha.month,
+      cita.fecha.day,
+      cita.hora.hour,
+      cita.hora.minute,
+    );
+    return cita_data.Cita(
+      id: cita.id,
+      cliente: cita.cliente,
+      telefono: cita.telefono,
+      vehiculo: _vehiculoPersistible(
+        marca: cita.marca,
+        modelo: cita.modelo,
+        anio: cita.anio,
+        placa: cita.placa,
+      ),
+      marca: cita.marca,
+      modelo: cita.modelo,
+      anio: int.tryParse(cita.anio) ?? 0,
+      placa: cita.placa,
+      servicios: cita.servicios,
+      tecnico: cita.tecnico ?? '',
+      descripcion: cita.descripcion,
+      fechaCita: fechaCita,
+      estado: estado,
+      total: cita.total,
+    );
+  }
+
+  String _vehiculoPersistible({
+    required String marca,
+    required String modelo,
+    required String anio,
+    required String placa,
+  }) {
+    final detalleAnio = anio.trim().isEmpty ? '' : ' (${anio.trim()})';
+    final detallePlaca = placa.trim().isEmpty ? '' : ' · ${placa.trim()}';
+    return '${marca.trim()} ${modelo.trim()}$detalleAnio$detallePlaca'.trim();
+  }
+
+  CitaAdmin _citaParaTarjeta(cita_data.Cita cita) {
+    final estado = cita.esAtrasada(DateTime.now())
+        ? EstadoCitaAdmin.atrasada
+        : switch (cita.estado) {
+            cita_data.EstadoCita.pendiente => EstadoCitaAdmin.pendiente,
+            cita_data.EstadoCita.esperandoPieza =>
+              EstadoCitaAdmin.esperandoPieza,
+            cita_data.EstadoCita.enProceso => EstadoCitaAdmin.enProceso,
+            cita_data.EstadoCita.completado => EstadoCitaAdmin.completada,
+          };
+
+    return CitaAdmin(
+      id: cita.id!,
+      cliente: cita.cliente,
+      telefono: cita.telefono,
+      marca: cita.marca,
+      modelo: cita.modelo,
+      anio: cita.anio.toString(),
+      placa: cita.placa,
+      servicios: cita.servicios,
+      fecha: cita.fechaCita,
+      hora: TimeOfDay.fromDateTime(cita.fechaCita),
+      estado: estado,
+      descripcion: cita.descripcion,
+      tecnico: cita.tecnico,
+      total: cita.total,
+    );
+  }
+
+  Future<void> _guardarEdicion(CitaAdmin cita) async {
+    final guardada = await _citasController.guardar(_aCitaPersistida(cita));
+    if (!guardada && mounted) _mostrarErrorPersistencia();
+  }
+
+  Future<void> _eliminarCita(int id) async {
+    final eliminada = await _citasController.eliminar(id);
+    if (!eliminada && mounted) _mostrarErrorPersistencia();
+  }
+
+  void _mostrarErrorPersistencia() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          _citasController.error ?? 'No se pudo guardar la cita.',
+        ),
+      ),
+    );
   }
 
   @override
@@ -1504,7 +1617,9 @@ class _CitasScreenState extends State<CitasScreen> {
     required bool expanded,
     required VoidCallback onTap,
   }) {
-    final citas = _citasController.citasPorCategorias(nombre);
+    final citas = _citasController.agruparPorEstado(
+      _fechaSeleccionada,
+    )[nombre] ?? const <cita_data.Cita>[];
     final cantidadVisible = citas.length;
     return Column(
       children: [
@@ -1570,7 +1685,17 @@ class _CitasScreenState extends State<CitasScreen> {
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: const Color(0xFFE5E7EB)),
             ),
-            child: citas.isEmpty
+            child: _citasController.cargando
+                ? const Center(child: CircularProgressIndicator())
+                : _citasController.error != null
+                ? Text(
+                    'No se pudieron cargar las citas: ${_citasController.error}',
+                    style: const TextStyle(
+                      color: AppColors.textGray,
+                      fontSize: 13,
+                    ),
+                  )
+                : citas.isEmpty
                 ? const Text(
                     'No hay citas en este estado.',
                     style: TextStyle(color: AppColors.textGray, fontSize: 13),
@@ -1579,10 +1704,12 @@ class _CitasScreenState extends State<CitasScreen> {
                     children: [
                       for (final cita in citas)
                         CitaAdminCard(
-                          cita: cita,
+                          cita: _citaParaTarjeta(cita),
                           onEdited: (citaActualizada) {
-                            _citasController.actualizarCita(citaActualizada);
-                            setState(() {});
+                            _guardarEdicion(citaActualizada);
+                          },
+                          onDeleted: (id) {
+                            _eliminarCita(id);
                           },
                         ),
                     ],
@@ -1622,6 +1749,7 @@ class _CitasScreenState extends State<CitasScreen> {
     DateTime fecha = DateTime.now();
     TimeOfDay? hora;
     final Set<String> serviciosMarcados = {};
+    bool guardando = false;
 
     showDialog(
       context: context,
@@ -1961,15 +2089,9 @@ class _CitasScreenState extends State<CitasScreen> {
                         child: SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
-                            onPressed: () {
-                              final estado = switch (estadoSeleccionado) {
-                                'Esperando Pieza' =>
-                                  EstadoCitaAdmin.esperandoPieza,
-                                'En proceso' => EstadoCitaAdmin.enProceso,
-                                'Completado' => EstadoCitaAdmin.completada,
-                                _ => EstadoCitaAdmin.pendiente,
-                              };
-
+                            onPressed: guardando
+                                ? null
+                                : () async {
                               if (marcaSeleccionada == null || hora == null) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
@@ -1981,24 +2103,49 @@ class _CitasScreenState extends State<CitasScreen> {
                                 return;
                               }
 
-                              final cita = CitaAdmin(
-                                id: DateTime.now().millisecondsSinceEpoch,
+                              final estado = switch (estadoSeleccionado) {
+                                'Esperando Pieza' =>
+                                  cita_data.EstadoCita.esperandoPieza,
+                                'En proceso' => cita_data.EstadoCita.enProceso,
+                                'Completado' => cita_data.EstadoCita.completado,
+                                _ => cita_data.EstadoCita.pendiente,
+                              };
+                              final anio = anioController.text.trim();
+                              final cita = cita_data.Cita(
                                 cliente: clienteController.text.trim(),
                                 telefono: telefonoController.text.trim(),
+                                vehiculo: _vehiculoPersistible(
+                                  marca: marcaSeleccionada!,
+                                  modelo: modeloController.text,
+                                  anio: anio,
+                                  placa: placaController.text,
+                                ),
                                 marca: marcaSeleccionada!,
                                 modelo: modeloController.text.trim(),
-                                anio: anioController.text.trim(),
+                                anio: int.tryParse(anio) ?? 0,
                                 placa: placaController.text.trim(),
                                 servicios: serviciosMarcados.toList(),
-                                fecha: fecha,
-                                hora: hora!,
+                                fechaCita: DateTime(
+                                  fecha.year,
+                                  fecha.month,
+                                  fecha.day,
+                                  hora!.hour,
+                                  hora!.minute,
+                                ),
                                 estado: estado,
                                 descripcion: descripcionController.text.trim(),
-                                tecnico: tecnicoSeleccionado,
-                                total: 0.0,
+                                tecnico: tecnicoSeleccionado ?? '',
+                                total: 0,
                               );
 
-                              _citasController.agregarCita(cita);
+                              setDialogState(() => guardando = true);
+                              final guardada = await _citasController.guardar(cita);
+                              if (!context.mounted) return;
+                              if (!guardada) {
+                                setDialogState(() => guardando = false);
+                                _mostrarErrorPersistencia();
+                                return;
+                              }
                               Navigator.of(context).pop();
                             },
                             style: ElevatedButton.styleFrom(
@@ -2009,10 +2156,18 @@ class _CitasScreenState extends State<CitasScreen> {
                                 borderRadius: BorderRadius.circular(10),
                               ),
                             ),
-                            child: const Text(
-                              'Guardar Cita',
-                              style: TextStyle(fontWeight: FontWeight.w700),
-                            ),
+                            child: guardando
+                                ? const SizedBox.square(
+                                    dimension: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Text(
+                                    'Guardar Cita',
+                                    style: TextStyle(fontWeight: FontWeight.w700),
+                                  ),
                           ),
                         ),
                       ),

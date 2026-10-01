@@ -27,15 +27,14 @@ class DatabaseHelper {
   static String get _nombre => nombreBaseParaPruebas ?? _nombreBase;
 
   /// v1 = esquema base de la unidad de almacenamiento.
-  /// v2 = se agregan los campos que el formulario de Leandy ya captura
-  ///      (telefono, marca, modelo, anio, placa, servicios, tecnico).
+  /// v2 = se agregan telefono, marca, modelo, anio, placa, servicios y tecnico.
+  /// v3 = se elimina codigo_qr y se persiste el total de la cita.
   /// OJO: subir la version NO borra la base, dispara `onUpgrade`, que es lo
   /// que permite a un dispositivo que ya instalo la v1 seguir funcionando.
-  static const int _versionBase = 2;
+  static const int _versionBase = 3;
 
   static const String tablaCitas = 'citas';
   static const String colId = 'id';
-  static const String colCodigoQr = 'codigo_qr';
   static const String colCliente = 'cliente';
   static const String colTelefono = 'telefono';
   static const String colVehiculo = 'vehiculo';
@@ -50,6 +49,7 @@ class DatabaseHelper {
   static const String colEstado = 'estado';
   static const String colCreadoEn = 'creado_en';
   static const String colActualizadoEn = 'actualizado_en';
+  static const String colTotal = 'total';
 
   /// Columnas que se agregan en v2, con su tipo y default.
   /// Estar en una constante evita duplicar los nombres entre `_crearEsquema`
@@ -83,18 +83,14 @@ class DatabaseHelper {
     );
   }
 
-  /// `onCreate` solo corre la PRIMERA vez que se crea el archivo. Si armara el
-  /// `CREATE TABLE` con la version vieja y despues subiera la version, los
-  /// dispositivos que ya tenian la v1 se quedarian sin las columnas nuevas y
-  /// la app truena con "no such column". Por eso v1 y v2 arman el MISMO esquema
-  /// completo y la migracion solo sirve para bases ya creadas.
+  /// `onCreate` crea directamente el esquema actual; las migraciones conservan
+  /// los datos de instalaciones que todavia tengan una version anterior.
   ///
   /// El SQL se arma en un solo string porque `execute` manda UNA sentencia
   /// completa: partir el CREATE TABLE en varias llamadas es SQL invalido.
   Future<void> _crearEsquema(Database db) async {
     final definiciones = <String>[
       '$colId INTEGER PRIMARY KEY AUTOINCREMENT',
-      '$colCodigoQr TEXT NOT NULL UNIQUE',
       '$colCliente TEXT NOT NULL',
       '$colVehiculo TEXT NOT NULL',
       ..._columnasV2.entries.map((e) => '${e.key} ${e.value}'),
@@ -102,27 +98,73 @@ class DatabaseHelper {
       '$colFechaCita TEXT NOT NULL',
       '$colEstado TEXT NOT NULL',
       '$colCreadoEn TEXT NOT NULL',
+      '$colTotal REAL NOT NULL DEFAULT 0',
     ];
 
     await db.execute('CREATE TABLE $tablaCitas (${definiciones.join(', ')})');
-
-    // Indice unico: tu escaner QR consulta por codigo. Con el indice la busqueda
-    // es O(log n) en vez de un recorrido secuencial de toda la tabla, y de yapa
-    // SQLite impide dos citas con el mismo QR (integridad a nivel motor).
-    await db.execute(
-      'CREATE UNIQUE INDEX idx_citas_codigo_qr ON $tablaCitas ($colCodigoQr)',
-    );
   }
 
-  /// Migracion 1 -> 2. Un ALTER TABLE por columna. Todo dentro de una
-  /// transaccion: si algo falla, SQLite revierte el paquete entero y la base
-  /// queda como estaba. Migrar a medias es peor que no migrar.
-  Future<void> _migrar(Database db, int versionAnterior, int versionNueva) async {
-    if (versionAnterior >= 2) return;
+  Future<void> _migrar(
+    Database db,
+    int versionAnterior,
+    int versionNueva,
+  ) async {
+    if (versionAnterior < 2) await _migrarAV2(db);
+    if (versionAnterior < 3) await _migrarAV3(db);
+  }
+
+  /// Migracion 1 -> 2. Un ALTER TABLE por columna dentro de una transaccion.
+  Future<void> _migrarAV2(Database db) async {
     await db.transaction((txn) async {
       for (final entrada in _columnasV2.entries) {
         await txn.execute('ALTER TABLE $tablaCitas ADD COLUMN ${entrada.key} ${entrada.value}');
       }
+    });
+  }
+
+  /// Migracion 2 -> 3. Reconstruye la tabla para retirar codigo_qr, que era
+  /// NOT NULL, y conservar todos los datos mientras agrega el total.
+  Future<void> _migrarAV3(Database db) async {
+    await db.transaction((txn) async {
+      const tablaNueva = 'citas_v3';
+      final definiciones = <String>[
+        '$colId INTEGER PRIMARY KEY AUTOINCREMENT',
+        '$colCliente TEXT NOT NULL',
+        '$colVehiculo TEXT NOT NULL',
+        ..._columnasV2.entries.map((e) => '${e.key} ${e.value}'),
+        '$colDescripcion TEXT NOT NULL DEFAULT \'\'',
+        '$colFechaCita TEXT NOT NULL',
+        '$colEstado TEXT NOT NULL',
+        '$colCreadoEn TEXT NOT NULL',
+        '$colTotal REAL NOT NULL DEFAULT 0',
+      ];
+      const columnasExistentes = [
+        colId,
+        colCliente,
+        colTelefono,
+        colVehiculo,
+        colMarca,
+        colModelo,
+        colAnio,
+        colPlaca,
+        colServicios,
+        colTecnico,
+        colDescripcion,
+        colFechaCita,
+        colEstado,
+        colCreadoEn,
+        colActualizadoEn,
+      ];
+
+      await txn.execute(
+        'CREATE TABLE $tablaNueva (${definiciones.join(', ')})',
+      );
+      await txn.execute(
+        'INSERT INTO $tablaNueva (${columnasExistentes.join(', ')}, $colTotal) '
+        'SELECT ${columnasExistentes.join(', ')}, 0 FROM $tablaCitas',
+      );
+      await txn.execute('DROP TABLE $tablaCitas');
+      await txn.execute('ALTER TABLE $tablaNueva RENAME TO $tablaCitas');
     });
   }
 
