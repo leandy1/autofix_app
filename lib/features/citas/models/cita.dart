@@ -52,6 +52,7 @@ class Cita implements EntidadPersistida {
     this.descripcion = '',
     required this.fechaCita,
     this.estado = EstadoCita.pendiente,
+    this.tallerId,
     this.creadoEn,
     this.actualizadoEn,
   });
@@ -72,6 +73,7 @@ class Cita implements EntidadPersistida {
   static const String _kDescripcion = 'descripcion';
   static const String _kFechaCita = 'fecha_cita';
   static const String _kEstado = 'estado';
+  static const String _kTallerId = 'taller_id';
   static const String _kCreadoEn = 'creado_en';
   static const String _kActualizadoEn = 'actualizado_en';
 
@@ -93,6 +95,18 @@ class Cita implements EntidadPersistida {
   final String descripcion;
   final DateTime fechaCita;
   final EstadoCita estado;
+
+  /// Id del taller AFILIADO donde se agenda la cita.
+  ///
+  /// `int?` y no `int` a proposito: las citas que ya existian antes de la v4 no
+  /// tienen taller, y las que crea el escaner QR todavia no lo_eligen. Nullable
+  /// significa "no sabemos todavia", que es distinto de "taller 0".
+  ///
+  /// Y es un id, NO el nombre del taller. Con el nombre no se puede responder
+  /// "dame las citas de Global Refriauto" de forma confiable, y dos filas con el
+  /// mismo nombre serian la misma cita a los ojos del sistema.
+  final int? tallerId;
+
   final DateTime? creadoEn;
 
   @override
@@ -127,6 +141,7 @@ class Cita implements EntidadPersistida {
     String? descripcion,
     DateTime? fechaCita,
     EstadoCita? estado,
+    int? tallerId,
     DateTime? creadoEn,
     DateTime? actualizadoEn,
   }) {
@@ -145,6 +160,7 @@ class Cita implements EntidadPersistida {
       descripcion: descripcion ?? this.descripcion,
       fechaCita: fechaCita ?? this.fechaCita,
       estado: estado ?? this.estado,
+      tallerId: tallerId ?? this.tallerId,
       creadoEn: creadoEn ?? this.creadoEn,
       actualizadoEn: actualizadoEn ?? this.actualizadoEn,
     );
@@ -168,6 +184,10 @@ class Cita implements EntidadPersistida {
       _kDescripcion: descripcion,
       _kFechaCita: fechaCita.toIso8601String(),
       _kEstado: estado.name,
+      // `tallerId` va siempre en el mapa, incluso cuando es null: es lo que
+      // limpia la columna si se desasigna el taller. Omitirla en un UPDATE
+      // dejaria el id viejo pegado a la cita.
+      _kTallerId: tallerId,
       _kCreadoEn: (creadoEn ?? DateTime.now()).toIso8601String(),
       _kActualizadoEn: (actualizadoEn ?? DateTime.now()).toIso8601String(),
     };
@@ -189,6 +209,11 @@ class Cita implements EntidadPersistida {
       descripcion: (map[_kDescripcion] as String?) ?? '',
       fechaCita: DateTime.parse(map[_kFechaCita]! as String),
       estado: EstadoCita.desdeNombre(map[_kEstado]! as String),
+      // `as num?` y no `as int?`: la columna es INTEGER, pero si alguien la
+      // creara como REAL (a mano, o con una base exportada de otro motor) el
+      // cast directo a int revienta con un TypeError al LEER una cita que si
+      // esta bien guardada.
+      tallerId: (map[_kTallerId] as num?)?.toInt(),
       creadoEn: DateTime.tryParse(map[_kCreadoEn]! as String),
       actualizadoEn: DateTime.tryParse(map[_kActualizadoEn] as String? ?? ''),
     );

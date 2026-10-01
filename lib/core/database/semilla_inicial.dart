@@ -19,6 +19,53 @@
 class SemillaInicial {
   SemillaInicial._();
 
+  /// Talleres AFILIADOS de la red AutoFix (v4).
+  ///
+  /// Directriz de Leandy: NO se buscan talleres libres en el mundo. El mapa solo
+  /// muestra los que estan en esta tabla, y por eso hay que sembrarla: sin
+  /// semilla, un dispositivo nuevo abre el mapa y no ve ningun taller, que es
+  /// indistinguible de "el mapa esta roto".
+  ///
+  /// NO es data de prueba: es la red de afiliados con la que se instala la app. A
+  /// partir de ahi el administrador la edita y la da de baja como cualquier otro
+  /// catalogo.
+  ///
+  /// Una sola lista de [TallerAfiliado] y no tres listas paralelas de
+  /// nombre/direccion/coordenada: con las paralelas, agregar un taller y olvidar
+  /// la coordenada no da error de compilacion, da un punto en medio del oceano.
+  /// Con un registro, el compilador exige los cuatro campos juntos.
+  ///
+  /// "AutoFix Central" entra a proposito: `dashboard_cliente_screen.dart` lo tiene
+  /// hardcodeado como taller preseleccionado y `agendar_cita_cliente_section.dart`
+  /// lo busca con `firstWhere`. Si la semilla no lo contiene, esa pantalla revienta
+  /// hasta que David migre el formulario a la base.
+  static const List<TallerAfiliado> talleres = <TallerAfiliado>[
+    // Santo Domingo, Gazcue: Av. 27 de Febrero con Av. Las Americas.
+    TallerAfiliado(
+      nombre: 'Global Refriauto',
+      direccion: 'Av. 27 de Febrero esq. Las Américas, Gazcue',
+      telefono: '809-555-0101',
+      latitud: 18.4184,
+      longitud: -69.9167,
+    ),
+    // Santo Domingo, Los Prados.
+    TallerAfiliado(
+      nombre: 'Taller Gómez',
+      direccion: 'Calle Olof Palme, Los Prados',
+      telefono: '809-555-0102',
+      latitud: 18.4801,
+      longitud: -69.8896,
+    ),
+    // Santiago de los Caballeros, centro.
+    TallerAfiliado(
+      nombre: 'AutoFix Central',
+      direccion: 'Av. Independencia, Santiago de los Caballeros',
+      telefono: '809-555-0103',
+      latitud: 19.4517,
+      longitud: -70.6970,
+    ),
+  ];
+
   static const List<String> tecnicos = <String>[
     'Técnico 1',
     'Técnico 2',
@@ -53,4 +100,32 @@ class SemillaInicial {
   ];
 
   static const int precioInicial = 0;
+}
+
+/// Un taller de la semilla, con los datos crudos.
+///
+/// Es un tipo propio y NO el `Taller` del dominio a proposito: la semilla se
+/// escribe en el archivo de constantes, y un `Taller` obliga a pasar por
+/// `EntidadPersistida`, que es un contrato de lo que YA esta en la base. Aqui no
+/// hay nada persistido todavia. El mapeo de uno a otro lo hace el `DatabaseHelper`
+/// al sembrar.
+class TallerAfiliado {
+  const TallerAfiliado({
+    required this.nombre,
+    required this.direccion,
+    required this.telefono,
+    required this.latitud,
+    required this.longitud,
+  });
+
+  final String nombre;
+  final String direccion;
+  final String telefono;
+
+  /// Coordenadas en grados decimales, con 4 decimales a proposito: 4 decimales
+  /// equivalen a unos 11 metros, que es la precision razonable para "este local
+  /// esta en esta esquina". Con 2 decimales el punto cae a mas de un kilómetro,
+  /// que en una ciudad es otra calle.
+  final double latitud;
+  final double longitud;
 }

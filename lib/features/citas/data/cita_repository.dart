@@ -67,6 +67,22 @@ class CitaRepository implements BaseRepository<Cita> {
     return filas.map(Cita.fromMap).toList();
   }
 
+  /// Citas de un taller especifico, de la mas reciente a la mas vieja.
+  ///
+  /// El filtro va en SQL (`taller_id = ?`) y no en Dart porque es la consulta
+  /// del historial: "mis citas en Global Refriauto". Con Dart habia que traer la
+  /// tabla entera y descartar, y con la base creciendo eso se nota.
+  Future<List<Cita>> obtenerPorTaller(int tallerId) async {
+    final db = await _helper.base;
+    final filas = await db.query(
+      tabla,
+      where: '${DatabaseHelper.colTallerId} = ?',
+      whereArgs: [tallerId],
+      orderBy: '${DatabaseHelper.colFechaCita} DESC',
+    );
+    return filas.map(Cita.fromMap).toList();
+  }
+
   // ------------------------------ UPDATE ------------------------------
   @override
   Future<int> actualizar(Cita cita) async {

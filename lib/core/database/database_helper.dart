@@ -32,9 +32,10 @@ class DatabaseHelper {
   /// v2 = se agregan los campos que el formulario de Leandy ya captura
   ///      (telefono, marca, modelo, anio, placa, servicios, tecnico).
   /// v3 = los catalogos de Configuracion (tecnicos, tipos de servicio, estados).
+  /// v4 = la red de talleres AFILIADOS y el vinculo de la cita con el taller.
   /// OJO: subir la version NO borra la base, dispara `onUpgrade`, que es lo
   /// que permite a un dispositivo que ya instalo la v1 seguir funcionando.
-  static const int _versionBase = 3;
+  static const int _versionBase = 4;
 
   static const String tablaCitas = 'citas';
   static const String colId = 'id';
@@ -70,6 +71,51 @@ class DatabaseHelper {
   static const String colActivo = 'activo';
   static const String colPrecio = 'precio';
 
+  // ------------------------------------------------------------------
+  // Talleres afiliados (v4)
+  //
+  // Directriz de Leandy: el mapa NO busca talleres libres en el mundo. Solo
+  // muestra los que estan en esta tabla, que es la red de afiliados de la
+  // empresa. Por eso `talleres` se siembra y se administra, y no se consulta
+  // a ningun servicio externo.
+  //
+  // `citas.taller_id` es lo que ata una cita al taller donde se agenda. Sin
+  // esa columna no hay forma de responder "dame las citas del Taller Gomez":
+  // el nombre del taller no sirve, porque dos filas con el mismo nombre
+  //Serian la misma cita a los ojos del sistema.
+  // ------------------------------------------------------------------
+
+  static const String tablaTalleres = 'talleres';
+
+  static const String colDireccion = 'direccion';
+  static const String colLatitud = 'latitud';
+  static const String colLongitud = 'longitud';
+  static const String colTallerId = 'taller_id';
+
+  // `colTelefono` NO se redeclara aca: ya existe arriba para `citas.telefono`, y
+  // el mismo nombre de columna significa lo mismo en las dos tablas (el telefono
+  // de un contacto, en texto, con guiones). Reutilizar la constante es lo que
+  // evita que un dia alguien escriba 'telefono' de una forma y 'fono' de otra.
+
+  /// Columnas de `talleres`, en el orden en que se declaran.
+  ///
+  /// `latitud`/`longitud` son REAL y no INTEGER a proposito: son grados
+  /// decimales. Con INTEGER, `18.4184` se trunca a 18 y el taller cae 46 km al
+  /// norte, en el Atlantico.
+  ///
+  /// `telefono` es TEXT y no INTEGER: en Republica Dominicana se escribe con
+  /// guiones ('809-555-0101').
+  static const Map<String, String> _columnasTalleres = <String, String>{
+    colNombre: 'TEXT NOT NULL',
+    colDireccion: 'TEXT NOT NULL DEFAULT \'\'',
+    colTelefono: 'TEXT NOT NULL DEFAULT \'\'',
+    colLatitud: 'REAL NOT NULL DEFAULT 0',
+    colLongitud: 'REAL NOT NULL DEFAULT 0',
+    colActivo: 'INTEGER NOT NULL DEFAULT 1',
+    colCreadoEn: 'TEXT NOT NULL',
+    colActualizadoEn: 'TEXT NOT NULL',
+  };
+
   /// Columnas comunes a los tres catalogos, en el orden en que se declaran.
   ///
   /// Tenerlas en una constante evita duplicar los nombres entre la creacion y la
@@ -96,6 +142,23 @@ class DatabaseHelper {
     colTecnico: 'TEXT NOT NULL DEFAULT \'\'',
     colActualizadoEn: 'TEXT NOT NULL DEFAULT \'\'',
   };
+
+  /// Columna que se agrega a `citas` en la v4.
+  ///
+  /// INTEGER y no TEXT, aunque el tipo "TEXT" suene mas generico: el id de
+  /// `talleres` es un INTEGER, y si la columna fuera TEXT, SQLite guardaria el
+  /// 1 como la cadena '1'. Despues un `WHERE taller_id = 1` (numero) no
+  /// encuentra la fila, porque '1' != 1 en la comparacion, y el filtro de
+  /// "mis citas" devuelve vacio sin dar ningun error. Ese es el tipo de bug que
+  /// no aparece hasta que alguien pregunta por un historial.
+  ///
+  /// NULL y no NOT NULL: las citas que ya existen (v1 a v3) no tienen taller, y
+  /// las que crea el modulo del escaner QR todavia no lo_eligen. La columna
+  /// acepta null hasta que el formulario de David la empiece a mandar.
+  ///
+  /// OJO: no lleva `REFERENCES talleres(id)`. Ver la nota de `_crearTalleres`
+  /// para por que la FK va en el indice y no en la declaracion de la columna.
+  static const String _columnaTallerIdV4 = '$colTallerId INTEGER';
 
   Database? _base;
 
@@ -134,6 +197,10 @@ class DatabaseHelper {
       '$colFechaCita TEXT NOT NULL',
       '$colEstado TEXT NOT NULL',
       '$colCreadoEn TEXT NOT NULL',
+      // La v4. Va al final y sin NOT NULL a proposito: las citas que ya existen
+      // (creadas en la v1, v2 o v3) no tienen taller, y una columna NOT NULL
+      // sin default haria que el `ALTER TABLE` de la migracion fallara.
+      _columnaTallerIdV4,
     ];
 
     await db.execute('CREATE TABLE $tablaCitas (${definiciones.join(', ')})');
@@ -145,8 +212,80 @@ class DatabaseHelper {
       'CREATE UNIQUE INDEX idx_citas_codigo_qr ON $tablaCitas ($colCodigoQr)',
     );
 
+    // `talleres` ANTES que el indice de `citas.taller_id`: una FK necesita que
+    // la tabla que referencia exista.
+    await _crearTalleres(db);
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_citas_taller_id '
+      'ON $tablaCitas ($colTallerId)',
+    );
+
     await _crearCatalogos(db);
     await _sembrarCatalogos(db);
+    await _sembrarTalleres(db);
+  }
+
+  /// Crea la tabla de talleres afiliados.
+  ///
+  /// `IF NOT EXISTS` por la misma razon que los catalogos: esta funcion la
+  /// llaman los dos caminos (creacion nueva y migracion) y no importa cual
+  /// llegue primero.
+  ///
+  /// Sobre la FK de `citas.taller_id` a `talleres.id`: NO va declarada como
+  /// `REFERENCES` en la columna, a proposito. SQLite no permite agregar una
+  /// columna con `REFERENCES` usando `ALTER TABLE` si la tabla ya tiene filas, y
+  /// mas importante: con `PRAGMA foreign_keys = ON` (que esta activo en
+  /// `onConfigure`), una FK restrictiva hace que borrar un taller con historial
+  /// falle, y el admin no tiene forma de dar de baja un taller. Por eso la
+  /// relacion se garantiza en la aplicacion, no en el motor: el
+  /// `TallerRepository` filtra por `activo` y nunca borra fisicamente un taller
+  /// que tenga citas. Es la baja logica la que evita perder el historial.
+  Future<void> _crearTalleres(DatabaseExecutor db) async {
+    final definiciones = <String>[
+      '$colId INTEGER PRIMARY KEY AUTOINCREMENT',
+      ..._columnasTalleres.entries.map((e) => '${e.key} ${e.value}'),
+    ];
+
+    await db.execute(
+      'CREATE TABLE IF NOT EXISTS $tablaTalleres (${definiciones.join(', ')})',
+    );
+
+    // `COLLATE NOCASE` para que el admin no pueda dar de alta "Global Refriauto"
+    // y "global refriauto" como dos afiliados distintos. Sin esto, el mapa
+    // muestra dos circulos orange en la misma esquina.
+    await db.execute(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_${tablaTalleres}_nombre '
+      'ON $tablaTalleres ($colNombre COLLATE NOCASE)',
+    );
+  }
+
+  /// Siembra la red de talleres afiliados.
+  ///
+  /// El chequeo de vacio por tabla NO es paranoia, es el mismo motivo que en
+  /// `_sembrarCatalogos`: los dos caminos pueden correr, y sin el chequeo los
+  /// tres talleres se duplican.
+  Future<void> _sembrarTalleres(DatabaseExecutor db) async {
+    final existentes = await db.query(
+      tablaTalleres,
+      columns: <String>[colId],
+      limit: 1,
+    );
+    if (existentes.isNotEmpty) return;
+
+    final ahora = DateTime.now().toIso8601String();
+
+    for (final t in SemillaInicial.talleres) {
+      await db.insert(tablaTalleres, <String, Object?>{
+        colNombre: t.nombre,
+        colDireccion: t.direccion,
+        colTelefono: t.telefono,
+        colLatitud: t.latitud,
+        colLongitud: t.longitud,
+        colActivo: 1,
+        colCreadoEn: ahora,
+        colActualizadoEn: ahora,
+      });
+    }
   }
 
   /// Crea los tres catalogos de Configuracion con el mismo molde.
@@ -233,7 +372,8 @@ class DatabaseHelper {
   }
 
   /// Migracion por pasos: 1 -> 2 agrega columnas a `citas`, 2 -> 3 agrega los
-  /// catalogos de Configuracion.
+  /// catalogos de Configuracion, 3 -> 4 agrega los talleres afiliados y el
+  /// vinculo `citas.taller_id`.
   ///
   /// Antes esto era `if (versionAnterior >= 2) return;`, que con una v3 nueva
   /// impidia hacer exactamente lo mismo que hacia: al agregar pasos hay que
@@ -260,6 +400,28 @@ class DatabaseHelper {
         // inicial: si no, el admin veria sus citas pero las tres tarjetas de
         // Configuracion vacias en un taller que ya venia funcionando.
         await _sembrarCatalogos(txn);
+      }
+
+      if (versionAnterior < 4) {
+        // Orden obligatorio: primero el `ALTER TABLE` de `citas`, despues la
+        // tabla `talleres`. Al reves, el indice de `taller_id` no tendria tabla
+        // a la que apuntar y el `CREATE INDEX` falla.
+        //
+        // `taller_id` se agrega con `ALTER TABLE` y NO va en `_crearEsquema` de
+        // las versiones viejas: por eso el paso es explicito aqui, en vez de
+        // meterse en el bucle de `_columnasV2`.
+        await txn.execute(
+          'ALTER TABLE $tablaCitas ADD COLUMN $_columnaTallerIdV4',
+        );
+        await _crearTalleres(txn);
+        await txn.execute(
+          'CREATE INDEX IF NOT EXISTS idx_citas_taller_id '
+          'ON $tablaCitas ($colTallerId)',
+        );
+        // Un dispositivo que ya venia usando la app entra por aca y recibe la
+        // red de afiliados: si no, su mapa abriria en blanco y pareceria que el
+        // mapa esta roto.
+        await _sembrarTalleres(txn);
       }
     });
   }
