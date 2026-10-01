@@ -30,6 +30,13 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+
+  # Capa de persistencia de Citas (Sandy -> Leandy).
+  # `sqflite` motor, `path` rutas del .db, `intl` formato de fechas.
+  sqflite: ^2.4.4
+  path: ^1.9.1
+  intl: ^0.20.3
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -39,6 +46,10 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+
+  # sqflite sobre FFI: permite correr los tests de repositorio contra una
+  # base real en el escritorio, sin emulador.
+  sqflite_common_ffi: ^2.4.3
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
