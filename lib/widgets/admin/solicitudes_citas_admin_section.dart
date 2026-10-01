@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/demo_admin_data.dart';
 import '../../models/solicitud_cita_cliente.dart';
+import '../../screens/admin/impresoras_bluetooth_screen.dart';
 import '../../models/servicio_taller.dart';
 import '../../theme/app_colors.dart';
 
@@ -845,12 +846,10 @@ class CitaClasificadaAdminCard extends StatelessWidget {
                     const SizedBox(width: 8),
                     ElevatedButton.icon(
                       onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Vista de demostración: la impresión se conectará más adelante.',
-                            ),
-                            behavior: SnackBarBehavior.floating,
+                        Navigator.pop(dialogContext);
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const ImpresorasBluetoothScreen(),
                           ),
                         );
                       },
