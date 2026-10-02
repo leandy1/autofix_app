@@ -54,5 +54,19 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+
+        <!-- "Abrir en Maps": declaramos el esquema geo: para que Android 11+
+             (API 30) deje ver las apps que lo manejan. Sin esta entrada, la
+             visibilidad de paquetes hace que el sistema reporte que NADIE
+             entiende el intent, y `launchUrl` falla sin error visible.
+
+             OJO: esto NO agrega ninguna API de pago ni clave. El intent lo
+             resuelve Waze o Google Maps si estan instalados; si no hay ninguno,
+             Android lo abre en el navegador. El calculo de la ruta y el ETA
+             los hace esa app, no nosotros. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="geo"/>
+        </intent>
     </queries>
 </manifest>
