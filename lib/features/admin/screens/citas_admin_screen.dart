@@ -7,6 +7,7 @@ import 'package:autofix/features/citas/presentation/citas_controller.dart';
 import 'package:autofix/shared/models/cita_admin.dart';
 import 'package:autofix/shared/models/demo_admin_data.dart';
 import 'package:autofix/shared/theme/app_colors.dart';
+
 import 'dashboard_admin_screen.dart';
 import 'configuracion_admin_screen.dart';
 
@@ -339,12 +340,12 @@ class CitaAdminCard extends StatelessWidget {
                         letterSpacing: 0.1,
                       ),
                       items: statusOptions.map((label) {
-                            return DropdownMenuItem<String>(
-                              value: label,
-                              enabled: label != 'Atrasadas',
-                              child: Text(label),
-                            );
-                          }).toList(),
+                        return DropdownMenuItem<String>(
+                          value: label,
+                          enabled: label != 'Atrasadas',
+                          child: Text(label),
+                        );
+                      }).toList(),
                       onChanged: (nuevoEstado) {
                         if (nuevoEstado == null) return;
                         final nuevoEstadoEnum = switch (nuevoEstado) {
@@ -1173,9 +1174,7 @@ class _CitasScreenState extends State<CitasScreen> {
   void _mostrarErrorPersistencia() {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          _citasController.error ?? 'No se pudo guardar la cita.',
-        ),
+        content: Text(_citasController.error ?? 'No se pudo guardar la cita.'),
       ),
     );
   }
@@ -1617,9 +1616,9 @@ class _CitasScreenState extends State<CitasScreen> {
     required bool expanded,
     required VoidCallback onTap,
   }) {
-    final citas = _citasController.agruparPorEstado(
-      _fechaSeleccionada,
-    )[nombre] ?? const <cita_data.Cita>[];
+    final citas =
+        _citasController.agruparPorEstado(_fechaSeleccionada)[nombre] ??
+        const <cita_data.Cita>[];
     final cantidadVisible = citas.length;
     return Column(
       children: [
@@ -1736,7 +1735,7 @@ class _CitasScreenState extends State<CitasScreen> {
     );
   }
 
-  void _abrirFormularioNuevaCita() {
+  Future<void> _abrirFormularioNuevaCita() async {
     final clienteController = TextEditingController();
     final telefonoController = TextEditingController();
     final modeloController = TextEditingController();
@@ -1749,13 +1748,31 @@ class _CitasScreenState extends State<CitasScreen> {
     DateTime fecha = DateTime.now();
     TimeOfDay? hora;
     final Set<String> serviciosMarcados = {};
+    final formKey = GlobalKey<FormState>();
     bool guardando = false;
+    bool intentoGuardar = false;
 
-    showDialog(
+    await showDialog<void>(
       context: context,
+      useRootNavigator: true,
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
+            final hoy = DateTime.now();
+            final fechaCita = DateTime(
+              fecha.year,
+              fecha.month,
+              fecha.day,
+              hora?.hour ?? 0,
+              hora?.minute ?? 0,
+            );
+            final fechaAnterior = DateTime(
+              fecha.year,
+              fecha.month,
+              fecha.day,
+            ).isBefore(DateTime(hoy.year, hoy.month, hoy.day));
+            final horaAnterior =
+                hora != null && fechaCita.isBefore(hoy) && !fechaAnterior;
             return Dialog(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
@@ -1801,282 +1818,402 @@ class _CitasScreenState extends State<CitasScreen> {
                         child: SingleChildScrollView(
                           padding: const EdgeInsets.all(18),
 
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _tituloSeccionModal('DATOS DEL CLIENTE'),
-                              TextField(
-                                controller: clienteController,
-                                decoration: _decoracionCampo('Nombre completo')
-                                    .copyWith(hintText: 'Nombre del cliente'),
-                              ),
-                              const SizedBox(height: 10),
-                              TextField(
-                                controller: telefonoController,
-                                decoration: _decoracionCampo('Teléfono')
-                                    .copyWith(hintText: '809-000-0000'),
-                              ),
-                              const SizedBox(height: 16),
-                              _tituloSeccionModal('DATOS DEL VEHÍCULO'),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: DropdownButtonFormField<String>(
-                                      initialValue: marcaSeleccionada,
-                                      decoration: _decoracionCampo('Marca'),
-                                      hint: const Text(
-                                        'Seleccionar',
-                                        style: TextStyle(fontSize: 13),
+                          child: Form(
+                            key: formKey,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _tituloSeccionModal('DATOS DEL CLIENTE'),
+                                TextFormField(
+                                  controller: clienteController,
+                                  textCapitalization: TextCapitalization.words,
+                                  decoration: _decoracionCampo(
+                                    'Nombre completo',
+                                  ).copyWith(hintText: 'Nombre del cliente'),
+                                  validator: (valor) {
+                                    final nombre = valor?.trim() ?? '';
+                                    if (nombre.isEmpty) {
+                                      return 'Ingresa el nombre del cliente.';
+                                    }
+                                    if (nombre.length < 3) {
+                                      return 'El nombre debe tener al menos 3 caracteres.';
+                                    }
+                                    if (RegExp(r'\d').hasMatch(nombre)) {
+                                      return 'El nombre no puede contener números.';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                                const SizedBox(height: 10),
+                                TextFormField(
+                                  controller: telefonoController,
+                                  keyboardType: TextInputType.phone,
+                                  decoration: _decoracionCampo('Teléfono')
+                                      .copyWith(hintText: '809-000-0000'),
+                                  validator: (valor) {
+                                    final telefono = valor?.trim() ?? '';
+                                    if (telefono.isEmpty) {
+                                      return 'Ingresa el teléfono del cliente.';
+                                    }
+                                    if (!RegExp(r'^[+\d\s().-]+$')
+                                        .hasMatch(telefono)) {
+                                      return 'El teléfono contiene caracteres no válidos.';
+                                    }
+                                    final digitos = telefono.replaceAll(
+                                      RegExp(r'\D'),
+                                      '',
+                                    );
+                                    if (digitos.length < 10 ||
+                                        digitos.length > 15) {
+                                      return 'Ingresa un teléfono válido (10 a 15 dígitos).';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                                const SizedBox(height: 16),
+                                _tituloSeccionModal('DATOS DEL VEHÍCULO'),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: DropdownButtonFormField<String>(
+                                        initialValue: marcaSeleccionada,
+                                        decoration: _decoracionCampo('Marca'),
+                                        validator: (valor) => valor == null
+                                            ? 'Selecciona la marca.'
+                                            : null,
+                                        hint: const Text(
+                                          'Seleccionar',
+                                          style: TextStyle(fontSize: 13),
+                                        ),
+                                        items: demoMarcasVehiculo
+                                            .map(
+                                              (m) => DropdownMenuItem(
+                                                value: m,
+                                                child: Text(
+                                                  m,
+                                                  style: const TextStyle(
+                                                    fontSize: 13,
+                                                  ),
+                                                ),
+                                              ),
+                                            )
+                                            .toList(),
+                                        onChanged: (valor) => setDialogState(
+                                          () => marcaSeleccionada = valor,
+                                        ),
                                       ),
-                                      items: demoMarcasVehiculo
-                                          .map(
-                                            (m) => DropdownMenuItem(
-                                              value: m,
-                                              child: Text(
-                                                m,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: modeloController,
+                                        textCapitalization:
+                                            TextCapitalization.words,
+                                        decoration: _decoracionCampo('Modelo')
+                                            .copyWith(hintText: 'Ej: Corolla'),
+                                        validator: (valor) {
+                                          if (valor?.trim().isEmpty ?? true) {
+                                            return 'Ingresa el modelo.';
+                                          }
+                                          return null;
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: anioController,
+                                        keyboardType: TextInputType.number,
+                                        decoration: _decoracionCampo('Año')
+                                            .copyWith(hintText: '2020'),
+                                        validator: (valor) {
+                                          final anio = int.tryParse(
+                                            valor?.trim() ?? '',
+                                          );
+                                          final anioActual =
+                                              DateTime.now().year;
+                                          if (anio == null) {
+                                            return 'Ingresa un año válido.';
+                                          }
+                                          if (anio < 1900 ||
+                                              anio > anioActual + 1) {
+                                            return 'El año debe estar entre 1900 y ${anioActual + 1}.';
+                                          }
+                                          return null;
+                                        },
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: placaController,
+                                        decoration: _decoracionCampo('Placa')
+                                            .copyWith(hintText: 'A123456'),
+                                        textCapitalization:
+                                            TextCapitalization.characters,
+                                        validator: (valor) {
+                                          final placa = valor?.trim() ?? '';
+                                          if (placa.isEmpty) {
+                                            return 'Ingresa la placa.';
+                                          }
+                                          if (!RegExp(r'^[A-Za-z0-9-]{4,10}$')
+                                              .hasMatch(placa)) {
+                                            return 'Usa de 4 a 10 letras, números o guiones.';
+                                          }
+                                          return null;
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                _tituloSeccionModal('SERVICIOS'),
+                                const Text(
+                                  'Seleccionar servicios',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textGray,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Container(
+                                  key: const ValueKey('servicios-cita'),
+                                  decoration: BoxDecoration(
+                                    border: Border.all(
+                                      color: AppColors.inputBorder,
+                                    ),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 8,
+                                        ),
+                                        color: const Color(0xFFF3F5F8),
+                                        child: const Text(
+                                          'TIPOS DE SERVICIO',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w700,
+                                            color: AppColors.textGray,
+                                          ),
+                                        ),
+                                      ),
+                                      ...demoServiciosAdmin.map(
+                                        (servicio) => CheckboxListTile(
+                                          dense: true,
+                                          controlAffinity:
+                                              ListTileControlAffinity.leading,
+                                          value: serviciosMarcados.contains(
+                                            servicio.nombre,
+                                          ),
+                                          onChanged: (checked) {
+                                            setDialogState(() {
+                                              if (checked == true) {
+                                                serviciosMarcados.add(
+                                                  servicio.nombre,
+                                                );
+                                              } else {
+                                                serviciosMarcados.remove(
+                                                  servicio.nombre,
+                                                );
+                                              }
+                                            });
+                                          },
+                                          title: Text(
+                                            '${servicio.nombre} · ${servicio.precio}',
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (intentoGuardar &&
+                                    serviciosMarcados.isEmpty) ...[
+                                  const SizedBox(height: 6),
+                                  const Text(
+                                    'Selecciona al menos un servicio.',
+                                    style: TextStyle(
+                                      color: Color(0xFFB3261E),
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(height: 16),
+                                _tituloSeccionModal('ASIGNACIÓN'),
+                                DropdownButtonFormField<String>(
+                                  initialValue: tecnicoSeleccionado,
+                                  decoration: _decoracionCampo('Técnico'),
+                                  validator: (valor) => valor == null
+                                      ? 'Selecciona un técnico.'
+                                      : null,
+                                  hint: const Text(
+                                    'Seleccionar técnico',
+                                    style: TextStyle(fontSize: 13),
+                                  ),
+                                  items: demoTecnicosAdmin
+                                      .map(
+                                        (t) => DropdownMenuItem(
+                                          value: t,
+                                          child: Text(
+                                            t,
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                      .toList(),
+                                  onChanged: (valor) => setDialogState(
+                                    () => tecnicoSeleccionado = valor,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: InkWell(
+                                        onTap: () async {
+                                          final nuevaFecha =
+                                              await showDatePicker(
+                                                context: context,
+                                                initialDate: fecha,
+                                                firstDate: DateTime(
+                                                  hoy.year,
+                                                  hoy.month,
+                                                  hoy.day,
+                                                ),
+                                                lastDate: DateTime(2100),
+                                              );
+                                          if (nuevaFecha != null) {
+                                            setDialogState(
+                                              () => fecha = nuevaFecha,
+                                            );
+                                          }
+                                        },
+                                        child: InputDecorator(
+                                          decoration: _decoracionCampo('Fecha')
+                                              .copyWith(
+                                                errorText:
+                                                    intentoGuardar &&
+                                                        fechaAnterior
+                                                    ? 'La fecha no puede ser anterior a hoy.'
+                                                    : null,
+                                              ),
+                                          child: Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Text(
+                                                _formatearFechaCorta(fecha),
                                                 style: const TextStyle(
                                                   fontSize: 13,
                                                 ),
                                               ),
-                                            ),
-                                          )
-                                          .toList(),
-                                      onChanged: (valor) => setDialogState(
-                                        () => marcaSeleccionada = valor,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: TextField(
-                                      controller: modeloController,
-                                      decoration: _decoracionCampo('Modelo')
-                                          .copyWith(hintText: 'Ej: Corolla'),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: TextField(
-                                      controller: anioController,
-                                      keyboardType: TextInputType.number,
-                                      decoration: _decoracionCampo('Año')
-                                          .copyWith(hintText: '2020'),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: TextField(
-                                      controller: placaController,
-                                      decoration: _decoracionCampo('Placa')
-                                          .copyWith(hintText: 'A123456'),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-                              _tituloSeccionModal('SERVICIOS'),
-                              const Text(
-                                'Seleccionar servicios',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.textGray,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Container(
-                                decoration: BoxDecoration(
-                                  border: Border.all(
-                                    color: AppColors.inputBorder,
-                                  ),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Column(
-                                  children: [
-                                    Container(
-                                      width: double.infinity,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 8,
-                                      ),
-                                      color: const Color(0xFFF3F5F8),
-                                      child: const Text(
-                                        'TIPOS DE SERVICIO',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w700,
-                                          color: AppColors.textGray,
+                                              const Icon(
+                                                Icons.calendar_today_outlined,
+                                                size: 16,
+                                                color: AppColors.textGray,
+                                              ),
+                                            ],
+                                          ),
                                         ),
                                       ),
                                     ),
-                                    ...demoServiciosAdmin.map(
-                                      (servicio) => CheckboxListTile(
-                                        dense: true,
-                                        controlAffinity:
-                                            ListTileControlAffinity.leading,
-                                        value: serviciosMarcados.contains(
-                                          servicio.nombre,
-                                        ),
-                                        onChanged: (checked) {
-                                          setDialogState(() {
-                                            if (checked == true) {
-                                              serviciosMarcados.add(
-                                                servicio.nombre,
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: InkWell(
+                                        onTap: () async {
+                                          final nuevaHora =
+                                              await showTimePicker(
+                                                context: context,
+                                                initialTime:
+                                                    hora ?? TimeOfDay.now(),
                                               );
-                                            } else {
-                                              serviciosMarcados.remove(
-                                                servicio.nombre,
-                                              );
-                                            }
-                                          });
+                                          if (nuevaHora != null) {
+                                            setDialogState(
+                                              () => hora = nuevaHora,
+                                            );
+                                          }
                                         },
-                                        title: Text(
-                                          '${servicio.nombre} · ${servicio.precio}',
-                                          style: const TextStyle(fontSize: 13),
+                                        child: InputDecorator(
+                                          decoration: _decoracionCampo('Hora')
+                                              .copyWith(
+                                                errorText: intentoGuardar
+                                                    ? hora == null
+                                                          ? 'Selecciona la hora.'
+                                                          : horaAnterior
+                                                          ? 'La hora debe ser futura.'
+                                                          : null
+                                                    : null,
+                                              ),
+                                          child: Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Text(
+                                                hora == null
+                                                    ? '--:--'
+                                                    : hora!.format(context),
+                                                style: const TextStyle(
+                                                  fontSize: 13,
+                                                ),
+                                              ),
+                                              const Icon(
+                                                Icons.access_time,
+                                                size: 16,
+                                                color: AppColors.textGray,
+                                              ),
+                                            ],
+                                          ),
                                         ),
                                       ),
                                     ),
                                   ],
                                 ),
-                              ),
-                              const SizedBox(height: 16),
-                              _tituloSeccionModal('ASIGNACIÓN'),
-                              DropdownButtonFormField<String>(
-                                initialValue: tecnicoSeleccionado,
-                                decoration: _decoracionCampo('Técnico'),
-                                hint: const Text(
-                                  'Seleccionar técnico',
-                                  style: TextStyle(fontSize: 13),
-                                ),
-                                items: demoTecnicosAdmin
-                                    .map(
-                                      (t) => DropdownMenuItem(
-                                        value: t,
-                                        child: Text(
-                                          t,
-                                          style: const TextStyle(fontSize: 13),
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
-                                onChanged: (valor) => setDialogState(
-                                  () => tecnicoSeleccionado = valor,
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: InkWell(
-                                      onTap: () async {
-                                        final nuevaFecha = await showDatePicker(
-                                          context: context,
-                                          initialDate: fecha,
-                                          firstDate: DateTime(2020),
-                                          lastDate: DateTime(2100),
-                                        );
-                                        if (nuevaFecha != null) {
-                                          setDialogState(
-                                            () => fecha = nuevaFecha,
-                                          );
-                                        }
-                                      },
-                                      child: InputDecorator(
-                                        decoration: _decoracionCampo('Fecha'),
-                                        child: Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            Text(
-                                              _formatearFechaCorta(fecha),
-                                              style: const TextStyle(
-                                                fontSize: 13,
-                                              ),
+                                const SizedBox(height: 10),
+                                DropdownButtonFormField<String>(
+                                  initialValue: estadoSeleccionado,
+                                  decoration: _decoracionCampo('Estado'),
+                                  items: demoEstadosAdmin
+                                      .map(
+                                        (e) => DropdownMenuItem(
+                                          value: e,
+                                          child: Text(
+                                            e,
+                                            style: const TextStyle(
+                                              fontSize: 13,
                                             ),
-                                            const Icon(
-                                              Icons.calendar_today_outlined,
-                                              size: 16,
-                                              color: AppColors.textGray,
-                                            ),
-                                          ],
+                                          ),
                                         ),
-                                      ),
-                                    ),
+                                      )
+                                      .toList(),
+                                  onChanged: (valor) => setDialogState(
+                                    () => estadoSeleccionado =
+                                        valor ?? estadoSeleccionado,
                                   ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: InkWell(
-                                      onTap: () async {
-                                        final nuevaHora = await showTimePicker(
-                                          context: context,
-                                          initialTime: hora ?? TimeOfDay.now(),
-                                        );
-                                        if (nuevaHora != null) {
-                                          setDialogState(
-                                            () => hora = nuevaHora,
-                                          );
-                                        }
-                                      },
-                                      child: InputDecorator(
-                                        decoration: _decoracionCampo('Hora'),
-                                        child: Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            Text(
-                                              hora == null
-                                                  ? '--:--'
-                                                  : hora!.format(context),
-                                              style: const TextStyle(
-                                                fontSize: 13,
-                                              ),
-                                            ),
-                                            const Icon(
-                                              Icons.access_time,
-                                              size: 16,
-                                              color: AppColors.textGray,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-                              DropdownButtonFormField<String>(
-                                initialValue: estadoSeleccionado,
-                                decoration: _decoracionCampo('Estado'),
-                                items: demoEstadosAdmin
-                                    .map(
-                                      (e) => DropdownMenuItem(
-                                        value: e,
-                                        child: Text(
-                                          e,
-                                          style: const TextStyle(fontSize: 13),
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
-                                onChanged: (valor) => setDialogState(
-                                  () => estadoSeleccionado =
-                                      valor ?? estadoSeleccionado,
                                 ),
-                              ),
-                              const SizedBox(height: 10),
-                              TextField(
-                                controller: descripcionController,
-                                maxLines: 3,
-                                decoration: _decoracionCampo('Descripción')
-                                    .copyWith(
-                                      hintText:
-                                          'Notas adicionales sobre la cita...',
-                                    ),
-                              ),
-                            ],
+                                const SizedBox(height: 10),
+                                TextFormField(
+                                  controller: descripcionController,
+                                  maxLines: 3,
+                                  decoration: _decoracionCampo('Descripción')
+                                      .copyWith(
+                                        hintText: 'Notas adicionales sobre la cita...',
+                                      ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -2092,62 +2229,71 @@ class _CitasScreenState extends State<CitasScreen> {
                             onPressed: guardando
                                 ? null
                                 : () async {
-                              if (marcaSeleccionada == null || hora == null) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Selecciona la marca y la hora.',
-                                    ),
-                                  ),
-                                );
-                                return;
-                              }
+                                    setDialogState(() => intentoGuardar = true);
+                                    final formularioValido =
+                                        formKey.currentState?.validate() ??
+                                        false;
+                                    final fechaValida =
+                                        !fechaAnterior &&
+                                        hora != null &&
+                                        !horaAnterior;
+                                    final serviciosValidos =
+                                        serviciosMarcados.isNotEmpty;
+                                    if (!formularioValido ||
+                                        !fechaValida ||
+                                        !serviciosValidos) {
+                                      return;
+                                    }
 
-                              final estado = switch (estadoSeleccionado) {
-                                'Esperando Pieza' =>
-                                  cita_data.EstadoCita.esperandoPieza,
-                                'En proceso' => cita_data.EstadoCita.enProceso,
-                                'Completado' => cita_data.EstadoCita.completado,
-                                _ => cita_data.EstadoCita.pendiente,
-                              };
-                              final anio = anioController.text.trim();
-                              final cita = cita_data.Cita(
-                                cliente: clienteController.text.trim(),
-                                telefono: telefonoController.text.trim(),
-                                vehiculo: _vehiculoPersistible(
-                                  marca: marcaSeleccionada!,
-                                  modelo: modeloController.text,
-                                  anio: anio,
-                                  placa: placaController.text,
-                                ),
-                                marca: marcaSeleccionada!,
-                                modelo: modeloController.text.trim(),
-                                anio: int.tryParse(anio) ?? 0,
-                                placa: placaController.text.trim(),
-                                servicios: serviciosMarcados.toList(),
-                                fechaCita: DateTime(
-                                  fecha.year,
-                                  fecha.month,
-                                  fecha.day,
-                                  hora!.hour,
-                                  hora!.minute,
-                                ),
-                                estado: estado,
-                                descripcion: descripcionController.text.trim(),
-                                tecnico: tecnicoSeleccionado ?? '',
-                                total: 0,
-                              );
+                                    final estado = switch (estadoSeleccionado) {
+                                      'Esperando Pieza' =>
+                                        cita_data.EstadoCita.esperandoPieza,
+                                      'En proceso' =>
+                                        cita_data.EstadoCita.enProceso,
+                                      'Completado' =>
+                                        cita_data.EstadoCita.completado,
+                                      _ => cita_data.EstadoCita.pendiente,
+                                    };
+                                    final anio = anioController.text.trim();
+                                    final cita = cita_data.Cita(
+                                      cliente: clienteController.text.trim(),
+                                      telefono: telefonoController.text.trim(),
+                                      vehiculo: _vehiculoPersistible(
+                                        marca: marcaSeleccionada!,
+                                        modelo: modeloController.text,
+                                        anio: anio,
+                                        placa: placaController.text,
+                                      ),
+                                      marca: marcaSeleccionada!,
+                                      modelo: modeloController.text.trim(),
+                                      anio: int.tryParse(anio) ?? 0,
+                                      placa: placaController.text.trim(),
+                                      servicios: serviciosMarcados.toList(),
+                                      fechaCita: DateTime(
+                                        fecha.year,
+                                        fecha.month,
+                                        fecha.day,
+                                        hora!.hour,
+                                        hora!.minute,
+                                      ),
+                                      estado: estado,
+                                      descripcion: descripcionController.text
+                                          .trim(),
+                                      tecnico: tecnicoSeleccionado ?? '',
+                                      total: 0,
+                                    );
 
-                              setDialogState(() => guardando = true);
-                              final guardada = await _citasController.guardar(cita);
-                              if (!context.mounted) return;
-                              if (!guardada) {
-                                setDialogState(() => guardando = false);
-                                _mostrarErrorPersistencia();
-                                return;
-                              }
-                              Navigator.of(context).pop();
-                            },
+                                    setDialogState(() => guardando = true);
+                                    final guardada = await _citasController
+                                        .guardar(cita);
+                                    if (!context.mounted) return;
+                                    if (!guardada) {
+                                      setDialogState(() => guardando = false);
+                                      _mostrarErrorPersistencia();
+                                      return;
+                                    }
+                                    Navigator.of(context).pop();
+                                  },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.orangePrimary,
                               foregroundColor: Colors.white,
@@ -2166,7 +2312,9 @@ class _CitasScreenState extends State<CitasScreen> {
                                   )
                                 : const Text(
                                     'Guardar Cita',
-                                    style: TextStyle(fontWeight: FontWeight.w700),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                    ),
                                   ),
                           ),
                         ),
@@ -2180,6 +2328,12 @@ class _CitasScreenState extends State<CitasScreen> {
         );
       },
     );
+    clienteController.dispose();
+    telefonoController.dispose();
+    modeloController.dispose();
+    anioController.dispose();
+    placaController.dispose();
+    descripcionController.dispose();
   }
 
   InputDecoration _decoracionCampo(String label) {
