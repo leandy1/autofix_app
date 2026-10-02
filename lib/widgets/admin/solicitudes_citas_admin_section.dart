@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/demo_admin_data.dart';
 import '../../models/solicitud_cita_cliente.dart';
+import '../../screens/admin/impresoras_bluetooth_screen.dart';
 import '../../models/servicio_taller.dart';
 import '../../theme/app_colors.dart';
 
@@ -11,6 +12,58 @@ class SolicitudesCitasAdminSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final solicitudes = demoSolicitudesAdmin;
+    final icono = Container(
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(
+        color: AppColors.orangePrimary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(11),
+      ),
+      child: const Icon(
+        Icons.move_to_inbox_outlined,
+        color: AppColors.orangePrimary,
+      ),
+    );
+    const encabezado = Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Solicitudes de clientes',
+            style: TextStyle(
+              color: AppColors.labelDark,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          SizedBox(height: 3),
+          Text(
+            'Revisa, acepta o gestiona las citas solicitadas.',
+            style: TextStyle(color: AppColors.textGray, fontSize: 11),
+          ),
+          SizedBox(height: 3),
+          Text(
+            'Datos de demostración; las acciones no se guardan.',
+            style: TextStyle(color: AppColors.textGray, fontSize: 10),
+          ),
+        ],
+      ),
+    );
+    final contador = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.orangePrimary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        '${solicitudes.length} nuevas',
+        style: const TextStyle(
+          color: AppColors.orangePrimary,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -28,65 +81,32 @@ class SolicitudesCitasAdminSection extends StatelessWidget {
               ),
             ],
           ),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: AppColors.orangePrimary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(11),
-                ),
-                child: const Icon(
-                  Icons.move_to_inbox_outlined,
-                  color: AppColors.orangePrimary,
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxWidth < 380) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(
-                      'Solicitudes de clientes',
-                      style: TextStyle(
-                        color: AppColors.labelDark,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [icono, const SizedBox(width: 12), encabezado],
                     ),
-                    SizedBox(height: 3),
-                    Text(
-                      'Revisa, acepta o gestiona las citas solicitadas.',
-                      style: TextStyle(color: AppColors.textGray, fontSize: 11),
-                    ),
+                    const SizedBox(height: 10),
+                    Align(alignment: Alignment.centerRight, child: contador),
                   ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.orangePrimary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  '${solicitudes.length} nuevas',
-                  style: const TextStyle(
-                    color: AppColors.orangePrimary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              SizedBox(height: 3),
-              Text(
-                'Datos de demostración; las acciones no se guardan.',
-                style: TextStyle(color: AppColors.textGray, fontSize: 10),
-              ),
-            ],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  icono,
+                  const SizedBox(width: 12),
+                  encabezado,
+                  const SizedBox(width: 10),
+                  contador,
+                ],
+              );
+            },
           ),
         ),
         const SizedBox(height: 10),
@@ -554,38 +574,299 @@ class CitaClasificadaAdminCard extends StatelessWidget {
           const Divider(height: 1, color: Color(0xFFE7EAF0)),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 9, 16, 9),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: Text(
-                    'RD\$ —',
-                    style: TextStyle(
-                      color: AppColors.completado,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'RD\$ —',
+                        style: TextStyle(
+                          color: AppColors.completado,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    OutlinedButton(
+                      onPressed: () =>
+                          _mostrarDetalle(context, previewOnly: previewOnly),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.headerNavy,
+                        side: const BorderSide(color: AppColors.inputBorder),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: const Text('Ver detalle'),
+                    ),
+                  ],
+                ),
+                if (solicitud.estado == EstadoSolicitudCita.completada) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _mostrarRecibo(context),
+                      icon: const Icon(Icons.receipt_long_outlined, size: 17),
+                      label: const Text('Imprimir recibo'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.greenAccent,
+                        side: const BorderSide(color: AppColors.greenAccent),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
                     ),
                   ),
-                ),
-                OutlinedButton(
-                  onPressed: () =>
-                      _mostrarDetalle(context, previewOnly: previewOnly),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.headerNavy,
-                    side: const BorderSide(color: AppColors.inputBorder),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 10,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: const Text('Ver detalle'),
-                ),
+                ],
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _mostrarRecibo(BuildContext context) {
+    final vehicle = _parseVehicle(solicitud.vehiculo);
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 440,
+            maxHeight: MediaQuery.sizeOf(context).height * 0.88,
+          ),
+          child: Column(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: AppColors.orangePrimary,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.build_rounded,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          const Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'AutoFix',
+                                style: TextStyle(
+                                  color: AppColors.headerNavy,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              Text(
+                                'RECIBO DE SERVICIO',
+                                style: TextStyle(
+                                  color: AppColors.textGray,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.8,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.greenAccent.withValues(
+                              alpha: 0.12,
+                            ),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.check_circle,
+                                color: AppColors.greenAccent,
+                                size: 15,
+                              ),
+                              SizedBox(width: 6),
+                              Text(
+                                'SERVICIO COMPLETADO',
+                                style: TextStyle(
+                                  color: AppColors.greenAccent,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.4,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      const Divider(color: AppColors.inputBorder),
+                      _ReciboDato(
+                        label: 'Recibo',
+                        value:
+                            'REC-2026-${solicitud.id.toString().padLeft(4, '0')}',
+                      ),
+                      _ReciboDato(
+                        label: 'Fecha',
+                        value: _formatSchedule(context),
+                      ),
+                      const SizedBox(height: 14),
+                      const _CitaDetailSectionTitle('CLIENTE'),
+                      _ReciboDato(label: 'Nombre', value: solicitud.cliente),
+                      _ReciboDato(label: 'Teléfono', value: solicitud.telefono),
+                      const SizedBox(height: 14),
+                      const _CitaDetailSectionTitle('VEHÍCULO'),
+                      _ReciboDato(label: 'Vehículo', value: vehicle.name),
+                      _ReciboDato(label: 'Placa', value: vehicle.plate),
+                      const SizedBox(height: 18),
+                      const Divider(color: AppColors.inputBorder),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'SERVICIO',
+                                style: TextStyle(
+                                  color: AppColors.textGray,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              'IMPORTE',
+                              style: TextStyle(
+                                color: AppColors.textGray,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      for (final servicio in solicitud.servicios)
+                        _ReciboDato(label: servicio, value: 'RD\$ —'),
+                      const Divider(color: AppColors.inputBorder),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 10),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'TOTAL',
+                                style: TextStyle(
+                                  color: AppColors.headerNavy,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              'RD\$ —',
+                              style: TextStyle(
+                                color: AppColors.headerNavy,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(color: AppColors.inputBorder),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Gracias por confiar en AutoFix.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: AppColors.textGray,
+                          fontSize: 12,
+                        ),
+                      ),
+                      if (previewOnly) ...[
+                        const SizedBox(height: 9),
+                        const Text(
+                          'Vista de demostración · Los importes se completarán más adelante.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: AppColors.placeholderGray,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              const Divider(height: 1, color: AppColors.inputBorder),
+              Padding(
+                padding: const EdgeInsets.all(14),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(dialogContext),
+                      child: const Text('Cerrar'),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(dialogContext);
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const ImpresorasBluetoothScreen(),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.print_outlined, size: 17),
+                      label: const Text('Imprimir'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.headerNavy,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1492,6 +1773,43 @@ class _VehicleFields {
   final String plate;
 
   String get name => '$brand $model $year';
+}
+
+class _ReciboDato extends StatelessWidget {
+  const _ReciboDato({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(color: AppColors.textGray, fontSize: 12),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              style: const TextStyle(
+                color: AppColors.labelDark,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _CitaDetailSectionTitle extends StatelessWidget {
