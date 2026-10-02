@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../../models/demo_admin_data.dart';
-import '../../models/solicitud_cita_cliente.dart';
-import '../../models/servicio_taller.dart';
-import '../../theme/app_colors.dart';
+import 'package:autofix/shared/models/demo_admin_data.dart';
+import 'package:autofix/shared/models/servicio_taller.dart';
+import 'package:autofix/shared/models/solicitud_cita_cliente.dart';
+import 'package:autofix/shared/theme/app_colors.dart';
+import 'package:autofix/features/admin/screens/impresoras_bluetooth_screen.dart';
 
 class SolicitudesCitasAdminSection extends StatelessWidget {
   const SolicitudesCitasAdminSection({super.key});
@@ -845,12 +846,10 @@ class CitaClasificadaAdminCard extends StatelessWidget {
                     const SizedBox(width: 8),
                     ElevatedButton.icon(
                       onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Vista de demostración: la impresión se conectará más adelante.',
-                            ),
-                            behavior: SnackBarBehavior.floating,
+                        Navigator.pop(dialogContext);
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const ImpresorasBluetoothScreen(),
                           ),
                         );
                       },
@@ -1003,7 +1002,7 @@ class CitaClasificadaAdminCard extends StatelessWidget {
                             ('Placa', vehicle.plate.toUpperCase()),
                             (
                               'Técnico',
-                              previewOnly ? 'Técnico 2' : 'Sin asignar',
+                                previewOnly ? 'Técnico 2' : 'Sin asignar',
                             ),
                           ],
                         ),

@@ -1,4 +1,4 @@
-import '../../../core/data/base_repository.dart';
+import 'package:autofix/core/data/base_repository.dart';
 
 /// Estado que el administrador puede ASIGNARLE a una cita.
 ///

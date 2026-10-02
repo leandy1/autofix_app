@@ -1,8 +1,8 @@
 import 'package:sqflite/sqflite.dart';
 
-import '../../../core/data/base_repository.dart';
-import '../../../core/database/database_helper.dart';
-import '../models/tipo_servicio.dart';
+import 'package:autofix/core/data/base_repository.dart';
+import 'package:autofix/core/database/database_helper.dart';
+import 'package:autofix/features/configuracion/models/tipo_servicio.dart';
 
 /// Acceso a datos de Tipos de Servicio.
 ///

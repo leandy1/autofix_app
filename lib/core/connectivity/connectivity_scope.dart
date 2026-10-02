@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 
-import '../connectivity/connectivity_service.dart';
+import 'package:autofix/core/connectivity/connectivity_service.dart';
 
 /// Inyecta el [ConnectivityService] en el arbol de widgets.
 ///

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../models/cliente_dashboard_data.dart';
-import '../../theme/app_colors.dart';
+import 'package:autofix/shared/models/cliente_dashboard_data.dart';
+import 'package:autofix/shared/theme/app_colors.dart';
 import 'cliente_section_widgets.dart';
 
 class TallerMapaPin extends StatelessWidget {

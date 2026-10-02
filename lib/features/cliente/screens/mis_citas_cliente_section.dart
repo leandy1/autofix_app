@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
 
-import '../../models/demo_cliente_data.dart';
-import '../../models/cliente_dashboard_data.dart';
-import '../../models/solicitud_cita_cliente.dart';
-import '../../theme/app_colors.dart';
-import '../../widgets/cliente/cliente_section_widgets.dart';
+import 'package:autofix/features/cliente/widgets/cliente_section_widgets.dart';
+import 'package:autofix/shared/models/cliente_dashboard_data.dart';
+import 'package:autofix/shared/models/demo_cliente_data.dart';
+import 'package:autofix/shared/models/solicitud_cita_cliente.dart';
+import 'package:autofix/shared/theme/app_colors.dart';
 
 class MisCitasClienteSection extends StatelessWidget {
   const MisCitasClienteSection({super.key});

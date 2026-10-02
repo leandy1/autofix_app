@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../core/connectivity/connectivity_scope.dart';
-import '../core/connectivity/connectivity_service.dart';
-import '../core/connectivity/widgets/conectivity_banner.dart';
+import 'package:autofix/core/connectivity/connectivity_scope.dart';
+import 'package:autofix/core/connectivity/connectivity_service.dart';
+import 'package:autofix/core/connectivity/widgets/conectivity_banner.dart';
 
 /// Punto de integracion de la unidad de Conectividad. NO es el root de la app:
 /// envuelve al `AutoFixApp` de Leandy para no pelearnos el `main.dart`.

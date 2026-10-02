@@ -1,4 +1,4 @@
-import '../../../core/data/base_repository.dart';
+import 'package:autofix/core/data/base_repository.dart';
 
 /// Trabajo que el taller ofrece: "Frenos", "Cambio de aceite", etc.
 ///

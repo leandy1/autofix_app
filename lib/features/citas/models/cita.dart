@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import '../../../core/data/base_repository.dart';
+import 'package:autofix/core/data/base_repository.dart';
 
 /// Estados que realmente se guardan.
 ///

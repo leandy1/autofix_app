@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../../models/demo_admin_data.dart';
-import '../../models/demo_cita_admin.dart';
-import '../../theme/app_colors.dart';
-import '../auth/login_screen.dart';
+import 'package:autofix/features/auth/screens/login_screen.dart';
+import 'package:autofix/shared/models/demo_admin_data.dart';
+import 'package:autofix/shared/theme/app_colors.dart';
 import 'citas_admin_screen.dart';
 import 'configuracion_admin_screen.dart';
 

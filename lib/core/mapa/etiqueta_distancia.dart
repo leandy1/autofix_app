@@ -15,7 +15,7 @@
 // Ejecutar:   flutter test test/core/mapa/etiqueta_distancia_test.dart
 // =============================================================================
 
-import '../../features/talleres/models/taller.dart';
+import 'package:autofix/features/talleres/models/taller.dart';
 
 /// Texto que se muestra cuando no hay GPS con el cual medir. Es una frase y no
 /// un '-': el usuario tiene que entender que la app no fallo, que no sabe donde

@@ -12,8 +12,8 @@
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:autofix/theme/app_colors.dart';
-import 'package:autofix/screens/cliente/talleres_mapa_screen.dart';
+import 'package:autofix/shared/theme/app_colors.dart';
+import 'package:autofix/features/cliente/screens/talleres_mapa_screen.dart';
 
 void main() {
   group('ColorMapa.aCss', () {

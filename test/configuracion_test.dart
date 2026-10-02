@@ -363,8 +363,11 @@ void main() {
 
         // Abrir con el helper dispara onUpgrade: crea catalogos y siembra.
         final citas = await CitaRepository.instance.obtenerTodas();
+        // La v5 elimina `codigo_qr`, asi que el marcador que la base vieja
+        // guardaba ahi no sobrevive. Lo que demuestra que no se perdio la fila
+        // es que sigue estando, con los valores que el seed escribio.
         expect(citas.length, 1, reason: 'la migracion NO debe perder datos');
-        expect(citas.first.cliente, 'VIEJO-V2');
+        expect(citas.first.cliente, 'Cliente Anterior');
         expect(citas.first.placa, 'A123456');
 
         expect(
@@ -416,7 +419,8 @@ void main() {
 
       final citas = await CitaRepository.instance.obtenerTodas();
       expect(citas.length, 1);
-      expect(citas.first.cliente, 'VIEJO-V1');
+      // `codigo_qr` no existe desde la v5; la fila se reconoce por `cliente`.
+      expect(citas.first.cliente, 'Cliente Viejo');
       // Columnas de la v2: llegan con el default, no en null.
       expect(citas.first.telefono, '');
       expect(citas.first.anio, 0);

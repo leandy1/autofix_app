@@ -3,8 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:autofix/app/conectividad_app.dart';
 import 'package:autofix/main.dart' show AutoFixApp;
-import 'package:autofix/screens/auth/login_screen.dart';
-import 'package:autofix/theme/app_colors.dart';
+import 'package:autofix/features/auth/screens/login_screen.dart';
+import 'package:autofix/shared/theme/app_colors.dart';
 
 /// El banner de Conectividad es el requisito: tiene que verse en TODA pantalla
 /// sin que cada una lo monte. Eso se rompe de formas que el analyzer no ve

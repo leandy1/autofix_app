@@ -13,7 +13,7 @@
 // =============================================================================
 
 import 'package:autofix/features/configuracion/models/tipo_servicio.dart';
-import 'package:autofix/screens/cliente/agendar_cita_cliente_section.dart';
+import 'package:autofix/features/cliente/screens/agendar_cita_cliente_section.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

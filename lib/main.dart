@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'app/conectividad_app.dart';
-import 'screens/auth/login_screen.dart';
+import 'package:autofix/app/conectividad_app.dart';
+import 'package:autofix/features/auth/screens/login_screen.dart';
 
 void main() {
   // Sin esto, `getDatabasesPath()` y los plugins de plataforma no pueden

@@ -409,8 +409,9 @@ void main() {
   });
 
   group('cita <-> taller', () {
-    Cita citaCon({String qr = 'QR-TALLER', int? tallerId}) => Cita(
-            cliente: 'Cliente',
+    // La v5 elimino `codigo_qr`, asi que cada cita se distingue por `cliente`.
+    Cita citaCon({String cliente = 'Cliente', int? tallerId}) => Cita(
+      cliente: cliente,
       vehiculo: 'Toyota Corolla',
       fechaCita: DateTime(2026, 10, 15, 10),
       tallerId: tallerId,
@@ -429,7 +430,9 @@ void main() {
 
     test('una cita SIN taller se guarda con null, no revienta', () async {
       // Las citas del escaner QR no eligen taller todavia.
-      final citaId = await CitaRepository.instance.crear(citaCon(qr: 'QR-SIN'));
+      final citaId = await CitaRepository.instance.crear(
+        citaCon(cliente: 'Cliente escaner'),
+      );
       expect(
         (await CitaRepository.instance.obtenerPorId(citaId))!.tallerId,
         isNull,
@@ -445,16 +448,19 @@ void main() {
       ))!.id!;
 
       await CitaRepository.instance.crear(
-        citaCon(qr: 'QR-A', tallerId: refriauto),
+        citaCon(cliente: 'Cliente Refriauto', tallerId: refriauto),
       );
-      await CitaRepository.instance.crear(citaCon(qr: 'QR-B', tallerId: gomez));
-      await CitaRepository.instance.crear(citaCon(qr: 'QR-C', tallerId: null));
+      await CitaRepository.instance.crear(
+        citaCon(cliente: 'Cliente Gomez', tallerId: gomez),
+      );
+      await CitaRepository.instance.crear(citaCon(cliente: 'Cliente suelto'));
 
       final delRefriauto = await CitaRepository.instance.obtenerPorTaller(
         refriauto,
       );
       expect(delRefriauto.length, 1);
-      expect(delRefriauto.first.cliente, 'QR-A');
+      expect(delRefriauto.first.cliente, 'Cliente Refriauto');
+      expect(delRefriauto.first.tallerId, refriauto);
     });
 
     test('el filtro por taller funciona con un id numerico de verdad', () async {
@@ -481,7 +487,7 @@ void main() {
       final citaId = await CitaRepository.instance.crear(
         citaCon(tallerId: tallerId),
       );
-      await CitaRepository.instance.crear(citaCon(qr: 'QR-OTRA', tallerId: tallerId));
+      await CitaRepository.instance.crear(citaCon(cliente: 'Cliente Otra', tallerId: tallerId));
 
       await CitaRepository.instance.cambiarEstado(
         citaId,
@@ -569,7 +575,8 @@ void main() {
       // Abrir con el helper dispara onUpgrade: agrega la columna y crea la tabla.
       final citas = await CitaRepository.instance.obtenerTodas();
       expect(citas.length, 1, reason: 'la migracion NO debe perder datos');
-      expect(citas.first.cliente, 'VIEJO-V3');
+      // `codigo_qr` desaparece en la v5, asi que la fila se reconoce por `cliente`.
+      expect(citas.first.cliente, 'Cliente Anterior');
       expect(citas.first.placa, '');
 
       // Las citas viejas no tienen taller: por eso la columna es nullable.
@@ -640,7 +647,8 @@ void main() {
 
       final citas = await CitaRepository.instance.obtenerTodas();
       expect(citas.length, 1);
-      expect(citas.first.cliente, 'VIEJO-V1');
+      // `codigo_qr` no existe desde la v5; la fila se reconoce por `cliente`.
+      expect(citas.first.cliente, 'Cliente Viejo');
       // Columnas de la v2 y de la v4: llegan con su default, no en null.
       expect(citas.first.telefono, '');
       expect(citas.first.anio, 0);

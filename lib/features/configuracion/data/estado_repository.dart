@@ -1,8 +1,8 @@
 import 'package:sqflite/sqflite.dart';
 
-import '../../../core/data/base_repository.dart';
-import '../../../core/database/database_helper.dart';
-import '../models/estado.dart';
+import 'package:autofix/core/data/base_repository.dart';
+import 'package:autofix/core/database/database_helper.dart';
+import 'package:autofix/features/configuracion/models/estado.dart';
 
 /// Acceso a datos del catalogo de Estados.
 ///

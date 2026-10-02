@@ -17,7 +17,7 @@
 
 import 'package:autofix/core/mapa/etiqueta_distancia.dart';
 import 'package:autofix/features/talleres/models/taller.dart';
-import 'package:autofix/screens/cliente/talleres_mapa_screen.dart';
+import 'package:autofix/features/cliente/screens/talleres_mapa_screen.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Santo Domingo centro: el punto desde el que se miden las distancias.

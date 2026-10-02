@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 
-import '../data/cita_repository.dart';
-import '../models/cita.dart';
+import 'package:autofix/features/citas/data/cita_repository.dart';
+import 'package:autofix/features/citas/models/cita.dart';
 
 /// Estado y logica de la pantalla de citas.
 ///

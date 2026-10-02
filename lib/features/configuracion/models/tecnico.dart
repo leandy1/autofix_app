@@ -1,4 +1,4 @@
-import '../../../core/data/base_repository.dart';
+import 'package:autofix/core/data/base_repository.dart';
 
 /// Tecnico del taller: la persona a la que se le asigna una cita.
 ///

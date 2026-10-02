@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import '../../../core/data/base_repository.dart';
+import 'package:autofix/core/data/base_repository.dart';
 
 /// Taller AFILIADO a AutoFix: uno de los pocos que la empresa tiene en su red.
 ///

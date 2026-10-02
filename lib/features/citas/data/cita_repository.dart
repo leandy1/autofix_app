@@ -1,8 +1,8 @@
 import 'package:sqflite/sqflite.dart';
 
-import '../../../core/data/base_repository.dart';
-import '../../../core/database/database_helper.dart';
-import '../models/cita.dart';
+import 'package:autofix/core/data/base_repository.dart';
+import 'package:autofix/core/database/database_helper.dart';
+import 'package:autofix/features/citas/models/cita.dart';
 
 /// Acceso a datos de citas. Implementa el contrato base para que el resto de
 /// la app no dependa de SQLite: cambiar a Drift o a una API toca solo esto.

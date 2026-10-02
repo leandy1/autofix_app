@@ -2,12 +2,12 @@ import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:sqflite/sqflite.dart' show DatabaseException;
 
-import '../data/estado_repository.dart';
-import '../data/tecnico_repository.dart';
-import '../data/tipo_servicio_repository.dart';
-import '../models/estado.dart';
-import '../models/tecnico.dart';
-import '../models/tipo_servicio.dart';
+import 'package:autofix/features/configuracion/data/estado_repository.dart';
+import 'package:autofix/features/configuracion/data/tecnico_repository.dart';
+import 'package:autofix/features/configuracion/data/tipo_servicio_repository.dart';
+import 'package:autofix/features/configuracion/models/estado.dart';
+import 'package:autofix/features/configuracion/models/tecnico.dart';
+import 'package:autofix/features/configuracion/models/tipo_servicio.dart';
 
 /// Estado y logica de la pantalla de Configuracion.
 ///
