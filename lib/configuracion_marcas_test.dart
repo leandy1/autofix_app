@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'screens/admin/configuracion_admin_screen_marcas.dart';
+import 'screens/admin/configuracion_admin_screen.dart';
 
 void main() {
   runApp(const ConfiguracionMarcasTestApp());

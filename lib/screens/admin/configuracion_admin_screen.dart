@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../models/demo_admin_data.dart';
+import '../../models/vehicle_make.dart';
+import '../../services/car_api_service.dart';
+import '../../services/vehicle_catalog_service.dart';
 import '../../theme/app_colors.dart';
 import 'dashboard_admin_screen.dart';
 import 'citas_admin_screen.dart';
@@ -16,15 +19,51 @@ class ConfiguracionScreen extends StatefulWidget {
 class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
   // Controladores solo para que los campos de texto funcionen visualmente.
   // Los botones "Agregar" no guardan nada — eso se conecta en otro archivo.
-  final TextEditingController _nombreServicioController = TextEditingController();
-  final TextEditingController _precioServicioController = TextEditingController();
+  final TextEditingController _nombreServicioController =
+      TextEditingController();
+  final TextEditingController _precioServicioController =
+      TextEditingController();
   final TextEditingController _tecnicoController = TextEditingController();
   final TextEditingController _estadoController = TextEditingController();
   final TextEditingController _marcaController = TextEditingController();
   final TextEditingController _grupoController = TextEditingController();
+  final CarApiService _carApiService = CarApiService();
+  late final VehicleCatalogService _vehicleCatalogService =
+      VehicleCatalogService(carApi: _carApiService);
+  List<VehicleMake> _marcasDisponibles = [];
+  bool _cargandoMarcas = false;
+  String? _errorMarcas;
 
   // Solo para la demo visual del acordeón "Grupos de Servicios".
   bool _grupoDemoExpandido = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarMarcas();
+  }
+
+  Future<void> _cargarMarcas() async {
+    setState(() {
+      _cargandoMarcas = true;
+      _errorMarcas = null;
+    });
+
+    try {
+      final marcas = await _vehicleCatalogService.getMakes();
+      if (!mounted) return;
+      setState(() {
+        _marcasDisponibles = marcas;
+        _cargandoMarcas = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMarcas = 'No se pudieron cargar las marcas.';
+        _cargandoMarcas = false;
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -48,8 +87,14 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Configuración del Sistema',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.textDark)),
+            const Text(
+              'Configuración del Sistema',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textDark,
+              ),
+            ),
             const SizedBox(height: 16),
             _buildTiposDeServicioCard(),
             const SizedBox(height: 16),
@@ -67,12 +112,7 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
               items: demoEstadosConfiguracion,
             ),
             const SizedBox(height: 16),
-            _buildListaSimpleCard(
-              titulo: 'Marcas de Vehículo',
-              hint: 'Ej: Nissan',
-              controller: _marcaController,
-              items: demoMarcasConfiguracion,
-            ),
+            _buildMarcasVehiculoCard(),
             const SizedBox(height: 16),
             _buildGruposDeServiciosCard(),
           ],
@@ -97,9 +137,23 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text('AutoFix', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
-            Text('SISTEMA DE GESTIÓN',
-                style: TextStyle(color: Colors.white60, fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 0.8)),
+            Text(
+              'AutoFix',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            Text(
+              'SISTEMA DE GESTIÓN',
+              style: TextStyle(
+                color: Colors.white60,
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.8,
+              ),
+            ),
           ],
         ),
       ),
@@ -109,7 +163,13 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
           child: CircleAvatar(
             backgroundColor: AppColors.orangePrimary,
             radius: 18,
-            child: const Text('L', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            child: const Text(
+              'L',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ),
       ],
@@ -129,8 +189,18 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('AutoFix', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800)),
-                    Text('SISTEMA DE GESTIÓN', style: TextStyle(color: Colors.white60, fontSize: 11)),
+                    Text(
+                      'AutoFix',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    Text(
+                      'SISTEMA DE GESTIÓN',
+                      style: TextStyle(color: Colors.white60, fontSize: 11),
+                    ),
                   ],
                 ),
               ),
@@ -139,15 +209,22 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
               icon: Icons.grid_view_rounded,
               label: 'Dashboard',
               selected: false,
-              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DashboardScreen())),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const DashboardScreen()),
+              ),
             ),
             _drawerItem(
               icon: Icons.calendar_today_outlined,
               label: 'Citas',
               selected: false,
-              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CitasScreen())),
+              onTap: () => Navigator.of(context)
+                  .push(MaterialPageRoute(builder: (_) => const CitasScreen())),
             ),
-            _drawerItem(icon: Icons.settings_outlined, label: 'Configuración', selected: true),
+            _drawerItem(
+              icon: Icons.settings_outlined,
+              label: 'Configuración',
+              selected: true,
+            ),
             const Spacer(),
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 20),
@@ -158,8 +235,15 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
                     (route) => false,
                   );
                 },
-                icon: const Icon(Icons.logout, size: 18, color: Colors.redAccent),
-                label: const Text('Cerrar Sesión', style: TextStyle(color: Colors.redAccent)),
+                icon: const Icon(
+                  Icons.logout,
+                  size: 18,
+                  color: Colors.redAccent,
+                ),
+                label: const Text(
+                  'Cerrar Sesión',
+                  style: TextStyle(color: Colors.redAccent),
+                ),
               ),
             ),
           ],
@@ -177,10 +261,16 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
     VoidCallback? onTap,
   }) {
     return Material(
-      color: selected ? Colors.white.withValues(alpha: 0.06) : Colors.transparent,
+      color: selected
+          ? Colors.white.withValues(alpha: 0.06)
+          : Colors.transparent,
       child: ListTile(
         onTap: onTap,
-        leading: Icon(icon, color: selected ? AppColors.orangePrimary : Colors.white70, size: 20),
+        leading: Icon(
+          icon,
+          color: selected ? AppColors.orangePrimary : Colors.white70,
+          size: 20,
+        ),
         title: Text(
           label,
           style: TextStyle(
@@ -189,7 +279,11 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
             fontSize: 14,
           ),
         ),
-        shape: selected ? const Border(left: BorderSide(color: AppColors.orangePrimary, width: 3)) : null,
+        shape: selected
+            ? const Border(
+                left: BorderSide(color: AppColors.orangePrimary, width: 3),
+              )
+            : null,
       ),
     );
   }
@@ -202,12 +296,25 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
       decoration: BoxDecoration(
         color: AppColors.cardWhite,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(titulo, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textDark)),
+          Text(
+            titulo,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textDark,
+            ),
+          ),
           const SizedBox(height: 12),
           child,
         ],
@@ -217,7 +324,10 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
 
   /// Campo de texto + botón "Agregar" — el botón no hace nada por ahora,
   /// solo está ahí para que se vea y se sienta el diseño completo.
-  Widget _buildCampoAgregar({required TextEditingController controller, required String hint}) {
+  Widget _buildCampoAgregar({
+    required TextEditingController controller,
+    required String hint,
+  }) {
     return Row(
       children: [
         Expanded(
@@ -234,9 +344,14 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
             foregroundColor: Colors.white,
             elevation: 0,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
-          child: const Text('Agregar', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+          child: const Text(
+            'Agregar',
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+          ),
         ),
       ],
     );
@@ -245,11 +360,22 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
   InputDecoration _decoracionInput(String hint) {
     return InputDecoration(
       hintText: hint,
-      hintStyle: const TextStyle(color: AppColors.placeholderGray, fontSize: 13),
+      hintStyle: const TextStyle(
+        color: AppColors.placeholderGray,
+        fontSize: 13,
+      ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.inputBorder)),
-      focusedBorder:
-          OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.orangePrimary, width: 1.5)),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: AppColors.inputBorder),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(
+          color: AppColors.orangePrimary,
+          width: 1.5,
+        ),
+      ),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
     );
   }
@@ -264,7 +390,10 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          TextField(controller: _nombreServicioController, decoration: _decoracionInput('Ej: Cambio de frenos')),
+          TextField(
+            controller: _nombreServicioController,
+            decoration: _decoracionInput('Ej: Cambio de frenos'),
+          ),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -282,10 +411,18 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
                   backgroundColor: AppColors.orangePrimary,
                   foregroundColor: Colors.white,
                   elevation: 0,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
-                child: const Text('Agregar', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                child: const Text(
+                  'Agregar',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                ),
               ),
             ],
           ),
@@ -300,6 +437,43 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
   // ---------------------------------------------------------------------
   // Secciones simples: Técnicos, Estados, Marcas de Vehículo.
   // ---------------------------------------------------------------------
+
+  Widget _buildMarcasVehiculoCard() {
+    return _sectionCard(
+      titulo: 'Marcas de Vehículo',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildCampoAgregar(controller: _marcaController, hint: 'Ej: Nissan'),
+          const SizedBox(height: 12),
+          if (_cargandoMarcas)
+            const Center(child: CircularProgressIndicator())
+          else if (_errorMarcas != null)
+            Text(
+              _errorMarcas!,
+              style: const TextStyle(color: Colors.redAccent, fontSize: 13),
+            )
+          else if (_marcasDisponibles.isNotEmpty)
+            SizedBox(
+              height:
+                  (_marcasDisponibles.length < 10
+                      ? _marcasDisponibles.length
+                      : 10) *
+                  38,
+              child: Scrollbar(
+                thumbVisibility: _marcasDisponibles.length > 10,
+                child: ListView.builder(
+                  itemCount: _marcasDisponibles.length,
+                  itemExtent: 38,
+                  itemBuilder: (context, index) =>
+                      _filaItemDemo(nombre: _marcasDisponibles[index].name),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildListaSimpleCard({
     required String titulo,
@@ -323,15 +497,26 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
   Widget _filaItemDemo({required String nombre, String? precio}) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 10),
-      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF0F1F3)))),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Color(0xFFF0F1F3))),
+      ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(nombre, style: const TextStyle(fontSize: 13, color: AppColors.textDark)),
+          Text(
+            nombre,
+            style: const TextStyle(fontSize: 13, color: AppColors.textDark),
+          ),
           Row(
             children: [
               if (precio != null) ...[
-                Text(precio, style: const TextStyle(fontSize: 13, color: AppColors.textGray)),
+                Text(
+                  precio,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textGray,
+                  ),
+                ),
                 const SizedBox(width: 10),
               ],
               const Icon(Icons.close, size: 16, color: Colors.redAccent),
@@ -355,7 +540,10 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildCampoAgregar(controller: _grupoController, hint: 'Ej: Electricidad'),
+          _buildCampoAgregar(
+            controller: _grupoController,
+            hint: 'Ej: Electricidad',
+          ),
           const SizedBox(height: 12),
           _buildGrupoDemoAcordeon(),
         ],
@@ -365,7 +553,10 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
 
   Widget _buildGrupoDemoAcordeon() {
     return Container(
-      decoration: BoxDecoration(border: Border.all(color: const Color(0xFFE5E7EB)), borderRadius: BorderRadius.circular(8)),
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        borderRadius: BorderRadius.circular(8),
+      ),
       child: Column(
         children: [
           ListTile(
@@ -374,29 +565,44 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
               style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
             ),
             leading: InkWell(
-              onTap: () => setState(() => _grupoDemoExpandido = !_grupoDemoExpandido),
+              onTap: () =>
+                  setState(() => _grupoDemoExpandido = !_grupoDemoExpandido),
               child: AnimatedRotation(
                 turns: _grupoDemoExpandido ? 0.5 : 0,
                 duration: const Duration(milliseconds: 200),
-                child: const Icon(Icons.keyboard_arrow_down, color: AppColors.textGray),
+                child: const Icon(
+                  Icons.keyboard_arrow_down,
+                  color: AppColors.textGray,
+                ),
               ),
             ),
-            trailing: const Icon(Icons.close, size: 18, color: Colors.redAccent),
+            trailing: const Icon(
+              Icons.close,
+              size: 18,
+              color: Colors.redAccent,
+            ),
           ),
           if (_grupoDemoExpandido) ...[
             for (final servicio in demoGruposServiciosAdmin.first.servicios)
-              _filaItemDemo(
-                nombre: servicio.nombre,
-                precio: servicio.precio,
-              ),
+              _filaItemDemo(nombre: servicio.nombre, precio: servicio.precio),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
               child: SizedBox(
                 width: double.infinity,
                 child: TextButton.icon(
                   onPressed: _abrirSelectorDeServiciosDemo,
-                  icon: const Icon(Icons.add, size: 16, color: AppColors.orangePrimary),
-                  label: const Text('Agregar Servicio', style: TextStyle(color: AppColors.orangePrimary, fontWeight: FontWeight.w600)),
+                  icon: const Icon(
+                    Icons.add,
+                    size: 16,
+                    color: AppColors.orangePrimary,
+                  ),
+                  label: const Text(
+                    'Agregar Servicio',
+                    style: TextStyle(
+                      color: AppColors.orangePrimary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -417,7 +623,9 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return Dialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               child: Padding(
                 padding: const EdgeInsets.all(20),
                 child: ConstrainedBox(
@@ -426,8 +634,14 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Seleccionar Servicios',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textDark)),
+                      const Text(
+                        'Seleccionar Servicios',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textDark,
+                        ),
+                      ),
                       const SizedBox(height: 12),
                       ...demoServiciosAdmin.map((servicio) {
                         final marcado = seleccionados.contains(servicio.nombre);
@@ -456,11 +670,15 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
                         children: [
                           TextButton(
                             onPressed: () => Navigator.of(context).pop(),
-                            child: const Text('Cancelar', style: TextStyle(color: AppColors.textGray)),
+                            child: const Text(
+                              'Cancelar',
+                              style: TextStyle(color: AppColors.textGray),
+                            ),
                           ),
                           const SizedBox(width: 8),
                           ElevatedButton(
-                            onPressed: () => Navigator.of(context).pop(), // Solo cierra, no guarda.
+                            onPressed: () => Navigator.of(context)
+                                .pop(), // Solo cierra, no guarda.
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.orangePrimary,
                               foregroundColor: Colors.white,
