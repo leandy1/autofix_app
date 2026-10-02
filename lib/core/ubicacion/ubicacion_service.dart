@@ -121,6 +121,31 @@ class UbicacionService {
     }
   }
 
+  /// Devuelve la posición SOLO si el permiso ya está concedido. Nunca pregunta.
+  ///
+  /// Para las pantallas que quieren escribir "a 2.5 km" cuando puedan y callar
+  /// cuando no. La diferencia con [obtenerPosicion] no es de sabor: preguntar el
+  /// permiso desde el formulario de cita interrumpe una tarea que el usuario ya
+  /// está haciendo por otra razón, y el resultado es un formulario con un
+  /// diálogo del sistema encima. El mapa sí lo pide, porque ahí el GPS es la
+  /// función principal de la pantalla; el formulario solo lo aprovecha si ya
+  /// está de acuerdo.
+  ///
+  /// Devuelve `null` en todos los casos sin posicion -- permiso no concedido,
+  /// GPS apagado, o la posicion que no llego a tiempo -- porque a quien la llama
+  /// le da igual POR QUE no hay dato: solo quiere saber si lo puede pintar.
+  Future<Position?> obtenerPosicionSiEstaPermitido() async {
+    final permiso = await Geolocator.checkPermission();
+    if (permiso == LocationPermission.denied ||
+        permiso == LocationPermission.deniedForever) {
+      return null;
+    }
+
+    // El permiso ya está, así que `obtenerPosicion` no vuelve a preguntar.
+    final resultado = await obtenerPosicion();
+    return resultado.esOk ? resultado.position : null;
+  }
+
   /// Abre los ajustes de la aplicación (para el caso deniedForever).
   ///
   /// ⚠️ UX: NO lo llames solo. Muestra un botón "Abrir ajustes" y que el usuario

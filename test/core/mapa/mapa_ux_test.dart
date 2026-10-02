@@ -15,6 +15,7 @@
 // Ejecutar:   flutter test test/core/mapa/mapa_ux_test.dart
 // =============================================================================
 
+import 'package:autofix/core/mapa/etiqueta_distancia.dart';
 import 'package:autofix/features/talleres/models/taller.dart';
 import 'package:autofix/screens/cliente/talleres_mapa_screen.dart';
 import 'package:flutter_test/flutter_test.dart';

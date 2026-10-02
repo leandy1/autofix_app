@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../core/mapa/etiqueta_distancia.dart';
+import '../../core/ubicacion/ubicacion_service.dart';
 import '../../features/citas/data/cita_repository.dart';
 import '../../features/citas/models/cita.dart';
 import '../../features/configuracion/data/tipo_servicio_repository.dart';
@@ -98,11 +102,43 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
   List<Taller> _talleres = const <Taller>[];
   bool _cargandoTalleres = true;
 
+  /// Donde esta el cliente, SOLO si ya dio permiso de ubicacion.
+  ///
+  /// Son dos `double?` y no una `Position` porque aca no se necesita precision,
+  /// timestamp ni nada mas: lo unico que sale de aca es la distancia, y eso son
+  /// dos coordenadas. Ademas, serian dos valoresnullables que se mueven juntos,
+  /// y una `Position` nullable es un estado mas que puede quedar a medias.
+  double? _latitudUsuario;
+  double? _longitudUsuario;
+
   @override
   void initState() {
     super.initState();
     _cargarTalleres();
     _cargarServicios();
+    unawaited(_cargarPosicionSiHayPermiso());
+  }
+
+  /// Lee la ubicacion para poder escribir "a 2.5 km" en el selector.
+  ///
+  /// NO pide permiso: usa [UbicacionService.obtenerPosicionSiEstaPermitido], que
+  /// devuelve `null` si el cliente todavia no lo concedio. Preguntar desde aca
+  /// seria Interruptir el formulario con un dialogo del sistema a un usuario que
+  /// solo quiere dejar su cita; el mapa ya se encargo de preguntar, y cuando lo
+  /// hizo esta llamada encuentra el permiso dado y escribe la distancia sola.
+  ///
+  /// Si no hay posicion, no se muestra ninguna. Un "Distancia no disponible" en
+  /// el selector se leeria como que al taller le falta un dato, cuando lo que
+  /// falta es el nuestro.
+  Future<void> _cargarPosicionSiHayPermiso() async {
+    final posicion = await const UbicacionService()
+        .obtenerPosicionSiEstaPermitido();
+    if (posicion == null || !mounted) return;
+
+    setState(() {
+      _latitudUsuario = posicion.latitude;
+      _longitudUsuario = posicion.longitude;
+    });
   }
 
   Future<void> _cargarTalleres() async {
@@ -159,6 +195,22 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
     return null;
   }
 
+  /// "a 2.5 km de ti", o `null` si todavia no sabemos donde esta el cliente.
+  String? _distanciaDe(Taller taller) =>
+      etiquetaDistanciaSiHayGps(taller, _latitudUsuario, _longitudUsuario);
+
+  /// Direccion del taller, con la distancia cuando la hay.
+  ///
+  /// La distancia se joins al final con un punto y coma, no con un guion: "Av.
+  /// Las Americas; a 2.5 km de ti" se lee como dos datos del mismo lugar, en
+  /// cambio "Av. Las Americas - 2.5 km" parece un rango de direcciones.
+  String _subtituloDe(Taller taller) {
+    final distancia = _distanciaDe(taller);
+    final direccion = taller.direccion;
+
+    return distancia == null ? direccion : '$direccion; $distancia';
+  }
+
   Future<void> _seleccionarTaller() async {
     if (_talleres.isEmpty) {
       _mostrarAviso('No hay talleres afiliados disponibles.');
@@ -190,7 +242,7 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
                     color: AppColors.orangePrimary,
                   ),
                   title: Text(taller.nombre),
-                  subtitle: Text(taller.direccion),
+                  subtitle: Text(_subtituloDe(taller)),
                   trailing: taller.id == widget.tallerSeleccionadoId
                       ? const Icon(
                           Icons.check_circle,
@@ -363,12 +415,19 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
         // lista. El filtro por texto que estaba acá se leía como "buscá donde
         // quieras" y llevaba a un mensaje de "no encontramos talleres" cuando lo
         // que pasó fue que el taller no está en nuestra red.
+        //
+        // La distancia va en el mismo subtitulo que la direccion, y solo si hay
+        // GPS: es el mismo dato que el mapa muestra, y el cliente no tiene por
+        // que saltarse al mapa para saber si le queda cerca.
         TallerSeleccionTile(
           icon: Icons.location_on_outlined,
           title:
               tallerActual?.nombre ??
               (_cargandoTalleres ? 'Cargando talleres...' : 'Sin seleccionar'),
-          subtitle: tallerActual?.direccion ?? 'Toca para ver los afiliados',
+          subtitle:
+              tallerActual == null
+              ? 'Toca para ver los afiliados'
+              : _subtituloDe(tallerActual),
           onTap: _seleccionarTaller,
         ),
         const SizedBox(height: 8),

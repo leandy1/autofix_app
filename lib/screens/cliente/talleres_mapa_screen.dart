@@ -6,6 +6,7 @@ import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/mapa/estilos_mapa.dart';
+import '../../core/mapa/etiqueta_distancia.dart';
 import '../../core/ubicacion/ubicacion_service.dart';
 import '../../features/talleres/data/taller_repository.dart';
 import '../../features/talleres/models/taller.dart';
@@ -25,11 +26,6 @@ const double kZoomConUbicacion = 13.5;
 /// ciudad" sino una esquina concreta: a 13.5 el taller queda en el medio de un
 /// mapa de tres kilometros y no se ve ni el local ni la cuadra.
 const double kZoomTaller = 15.0;
-
-/// Texto que se muestra cuando no hay GPS con el cual medir. Es una frase y no
-/// un '-': el usuario tiene que entender que la app no fallo, que no sabe donde
-/// esta el.
-const String kDistanciaNoDisponible = 'Distancia no disponible';
 
 // =============================================================================
 // Funciones puras de la pantalla.
@@ -74,24 +70,6 @@ List<Taller> ordenarPorCercania(
           .distanciaKmDesde(latitudUsuario, longitudUsuario)
           .compareTo(b.distanciaKmDesde(latitudUsuario, longitudUsuario)),
     );
-}
-
-/// "a 2.5 km de ti", o [kDistanciaNoDisponible] si no hay GPS.
-///
-/// Un decimal y no mas: por debajo de 100 m la distancia deja de servir para
-/// decidir a donde ir, y mostrar "0.0 km" al lado de un taller que queda a tres
-/// cuadras hace pensar que el calculo esta roto.
-String etiquetaDistancia(
-  Taller taller,
-  double? latitudUsuario,
-  double? longitudUsuario,
-) {
-  if (latitudUsuario == null || longitudUsuario == null) {
-    return kDistanciaNoDisponible;
-  }
-
-  final km = taller.distanciaKmDesde(latitudUsuario, longitudUsuario);
-  return 'a ${km.toStringAsFixed(1)} km de ti';
 }
 
 /// Intent `geo:` para abrir la RUTA en la app de mapas del telefono.
@@ -187,6 +165,14 @@ class _TalleresMapaScreenState extends State<TalleresMapaScreen> {
   /// los recibe: sin esta lista no hay forma de limpiarlos entre recargas.
   List<Circle> _circulosPintados = const <Circle>[];
 
+  /// Etiquetas de nombre actualmente en el mapa. Mismo contrato que
+  /// [_circulosPintados]: `addSymbols` las devuelve y `removeSymbols` las recibe.
+  ///
+  /// Son una lista aparte y no "un Symbol por circulo" porque son dos anotaciones
+  /// distintas que comparten la misma posicion, y borrarlas mezcladas en una sola
+  /// lista haria que un tap se atribuyera al elemento equivocado.
+  List<Symbol> _simbolosPintados = const <Symbol>[];
+
   bool _cargando = true;
   String _error = '';
   EstadoUbicacion _estadoError = EstadoUbicacion.errorDesconocido;
@@ -271,15 +257,22 @@ class _TalleresMapaScreenState extends State<TalleresMapaScreen> {
     unawaited(_pintarSobreElMapa());
   }
 
-  /// Dibuja un círculo por cada taller.
+  /// Dibuja un círculo por cada taller, con su nombre encima.
   ///
   /// Va en un método aparte porque los talleres se leen de forma asíncrona y
   /// pueden llegar antes o después de que el estilo esté listo. Con los dos
   /// caminos apuntando aquí, da igual el orden.
   ///
-  /// El segundo argumento de `addCircles` es la clave del diseño: `data` viaja
-  /// adherido a cada círculo y `onCircleTapped` lo devuelve. Así el taller que el
-  /// usuario tocó se sabe exactamente, en vez de adivinar por cercanía.
+  /// El segundo argumento de `addCircles` y de `addSymbols` es la clave del
+  /// diseño: `data` viaja adherido a cada anotación y `onCircleTapped` /
+  /// `onSymbolTapped` lo devuelven. Así el taller que el usuario tocó se sabe
+  /// exactamente, en vez de adivinar por cercanía.
+  ///
+  /// Círculo y etiqueta se pintan como DOS anotaciones y no como una sola con
+  /// `iconImage`: los nombres de los talleres no son los nombres de los glyphs del
+  /// estilo (que son los de CartoDB), así que la etiqueta tiene que ser texto
+  /// generado. Y al ser texto, necesita halo: sin el, "Taller Gómez" en naranja
+  /// sobre un mapa beige se pierde en el borde de una carretera.
   Future<void> _pintarSobreElMapa() async {
     final mapa = _mapa;
     if (mapa == null || _talleres.isEmpty) return;
@@ -288,8 +281,12 @@ class _TalleresMapaScreenState extends State<TalleresMapaScreen> {
       await mapa.removeCircles(_circulosPintados);
       _circulosPintados = const <Circle>[];
     }
+    if (_simbolosPintados.isNotEmpty) {
+      await mapa.removeSymbols(_simbolosPintados);
+      _simbolosPintados = const <Symbol>[];
+    }
 
-    final pintados = await mapa.addCircles(
+    _circulosPintados = await mapa.addCircles(
       [
         for (final t in _talleres)
           CircleOptions(
@@ -305,24 +302,75 @@ class _TalleresMapaScreenState extends State<TalleresMapaScreen> {
       ],
     );
 
-    _circulosPintados = pintados;
+    // El circulo tiene 9 px de radio mas 2 de borde: la etiqueta arranca un
+    // poco mas abajo de eso para no quedar encima del pin. `textOffset` se mide
+    // en lineas de texto, no en pixeles, asi que el 1.3 de abajo es "un poco mas
+    // de una linea hacia abajo" y se lee igual a cualquier tamano de fuente.
+    _simbolosPintados = await mapa.addSymbols(
+      [
+        for (final t in _talleres)
+          SymbolOptions(
+            geometry: LatLng(t.latitud, t.longitud),
+            textField: t.nombre,
+            textSize: 11,
+            textColor: AppColors.labelDark.aCss,
+            textHaloColor: AppColors.cardWhite.aCss,
+            textHaloWidth: 1.8,
+            textAnchor: 'top',
+            textOffset: const Offset(0, 1.3),
+            textJustify: 'center',
+          ),
+      ],
+      [
+        for (final t in _talleres) <String, dynamic>{'tallerId': t.id},
+      ],
+    );
   }
 
-  /// `onCircleTapped` entrega el círculo tocado, que ya trae su `data`. No hace
-  /// falta inferir nada ni buscar el más cercano.
-  void _registrarTapEnMapa(MapLibreMapController mapa) {
-    mapa.onCircleTapped.add((circle) {
-      final id = (circle.data as Map?)?['tallerId'] as int?;
-      if (id == null) return;
+  /// Centro y ficha, en ese orden, para las TRES entradas al taller.
+  ///
+  /// Circulo, etiqueta y tarjeta del modal terminan acá. No por DRY de manual sino
+  /// porque las tres son la misma intencion del usuario -- "quiero ver este
+  /// taller" -- y mientras cada una hizo lo que pudo (una animaba la camara, otra
+  /// no, otra abria la ficha) el cliente tenia que adivinar cual de las tres iba
+  /// a hacer que.
+  Future<void> _explorarTaller(Taller taller) async {
+    // La camara y la ficha van a la vez, no en serie. Esperar a que termine la
+    // animacion para abrir la hoja de abajo hace que el tap se sienta como si no
+    // se hubiera registrado.
+    unawaited(_centrarEn(taller));
+    await _mostrarFicha(taller);
+  }
 
-      // `orElse` evita el `StateError` si el taller se dio de baja entre la
-      // consulta y el tap.
-      final taller = _talleres.firstWhere(
-        (t) => t.id == id,
-        orElse: () => _talleres.first,
-      );
-      _mostrarFicha(taller);
+  /// Conecta los callbacks de anotaciones con el mapa.
+  ///
+  /// `onCircleTapped` y `onSymbolTapped` entregan la anotación tocada, que ya trae
+  /// su `data`. No hace falta inferir nada ni buscar el más cercano: los dos
+  /// caminos llegan al mismo `_explorarTaller`.
+  void _registrarCallbacksEnMapa(MapLibreMapController mapa) {
+    mapa.onCircleTapped.add((circle) {
+      _abrirSiHayTaller(circle.data);
     });
+
+    // La etiqueta se dibuja PEGADA al circulo, asi que sin esto el nombre seria lo
+    // unico que se puede tocar en la mitad de la pantalla.
+    mapa.onSymbolTapped.add((symbol) {
+      _abrirSiHayTaller(symbol.data);
+    });
+  }
+
+  /// Traduce el `data` de una anotacion al taller y lo explora.
+  void _abrirSiHayTaller(dynamic data) {
+    final id = (data as Map?)?['tallerId'] as int?;
+    if (id == null) return;
+
+    // `orElse` evita el `StateError` si el taller se dio de baja entre la
+    // consulta y el tap.
+    final taller = _talleres.firstWhere(
+      (t) => t.id == id,
+      orElse: () => _talleres.first,
+    );
+    unawaited(_explorarTaller(taller));
   }
 
   /// Ficha del taller con su distancia y la acción de agendar.
@@ -453,17 +501,26 @@ class _TalleresMapaScreenState extends State<TalleresMapaScreen> {
 
   /// La lista de afiliados, en el modal del boton flotante.
   ///
-  /// El tap NO elige taller ni salta a la seccion de agendar: elige donde mira
-  /// la camara. Es un cambio de intencion deliberado. Con la tira horizontal de
-  /// antes, tocar una tarjeta abria directamente la ficha con "Agendar cita", de
-  /// modo que explorar la red y agendar eran el mismo gesto, y el mapa no
-  /// mostraba nunca el taller que el usuario todavia no habia tocado.
+  /// El modal DEVUELVE el taller tocado con `Navigator.pop(context, taller)` en
+  /// vez de tener el boton que lo pops y seguir tocando estado desde adentro. Con
+  /// el `pop` sin resultado habia que hacer dos cosas en el `onTap` -- cerrar y
+  /// animar -- y no se podia garantizar el orden entre la hoja cerrandose y la
+  /// ficha del otro taller apareciendo: dos `showModalBottomSheet` seguidos se
+  /// pisan. Devolviendo el taller, la hoja se cierra sola y la apertura siguiente
+  /// ocurre en el `await` de [_explorarTaller], ya con el modal deshecho.
+  ///
+  /// Tocar una tarjeta NO elige taller en el formulario ni salta a la seccion de
+  /// agendar: elige donde mira la camara y muestra la ficha. Es un cambio de
+  /// intencion deliberado. Con la tira horizontal de antes, tocar una tarjeta
+  /// abria directamente la ficha con "Agendar cita", de modo que explorar la red
+  /// y agendar eran el mismo gesto, y el mapa no mostraba nunca el taller que el
+  /// usuario todavia no habia tocado.
   ///
   /// Aqui el modal es una navegacion de Exploracion -- "muestrame donde esta" --
-  /// y la cita se agenda aparte, desde la ficha de un circulo o tocando "Abrir
-  /// en Maps". Si ademas se emitiera `onTallerSelected`, el dashboard saltaria
-  /// a la pantalla de agendar mientras el usuario todavia esta mirando el mapa,
-  /// y nunca podria recorrer mas de un taller.
+  /// y la cita se agenda aparte, desde "Agendar cita" en la ficha. Si ademas se
+  /// emitiera `onTallerSelected`, el dashboard saltaria a la pantalla de agendar
+  /// mientras el usuario todavia esta mirando el mapa, y nunca podria recorrer
+  /// mas de un taller.
   ///
   /// El check del modal marca el taller que YA venia elegido, para que el
   /// usuario sepa cual tiene en el formulario. Ese estado no se cambia desde
@@ -480,7 +537,7 @@ class _TalleresMapaScreenState extends State<TalleresMapaScreen> {
 
     final pos = _posicion;
 
-    await showModalBottomSheet<void>(
+    final elegido = await showModalBottomSheet<Taller>(
       context: context,
       showDragHandle: true,
       builder: (context) {
@@ -513,10 +570,7 @@ class _TalleresMapaScreenState extends State<TalleresMapaScreen> {
                         pos?.longitude,
                       ),
                       esElElegido: taller.id == widget.tallerSeleccionadoId,
-                      onTap: () {
-                        Navigator.pop(context);
-                        unawaited(_centrarEn(taller));
-                      },
+                      onTap: () => Navigator.pop(context, taller),
                       onAbrirEnMaps: () => unawaited(_abrirEnMaps(taller)),
                     );
                   },
@@ -527,6 +581,11 @@ class _TalleresMapaScreenState extends State<TalleresMapaScreen> {
         );
       },
     );
+
+    // `null` es el cierre del usuario: arrastro la hoja para abajo o toco fuera.
+    if (elegido == null || !mounted) return;
+
+    await _explorarTaller(elegido);
   }
 
   /// Anima la camara hasta un taller.
@@ -608,7 +667,7 @@ class _TalleresMapaScreenState extends State<TalleresMapaScreen> {
 
           onMapCreated: (controlador) {
             _mapa = controlador;
-            _registrarTapEnMapa(controlador);
+            _registrarCallbacksEnMapa(controlador);
 
             if (_talleres.isNotEmpty) unawaited(_pintarSobreElMapa());
           },
@@ -619,9 +678,26 @@ class _TalleresMapaScreenState extends State<TalleresMapaScreen> {
           // dispositivo los marcadores desaparecen.
           onStyleLoadedCallback: _alCargarEstilo,
 
-          // No pide permisos ni falla si están denegados: simplemente no se dibuja
-          // el punto azul. Los permisos los pide `_ubicar`.
-          myLocationEnabled: true,
+          // `myLocationEnabled` atado a `_posicion`, y NO en `true` fijo, es el
+          // arreglo del punto azul que no aparecia. Lo que pasaba: el plugin crea
+          // su componente de ubicacion cuando carga el estilo, y en ese instante
+          // el permiso todavia no estaba concedido (el dialogo del sistema
+          // apenas se esta mostrando), asi que el lado nativo lo descarta con
+          // "missing location permissions". Despues el permiso se concede, la
+          // posicion llega, pero como el parametro sigue siendo `true` -- el
+          // MISMO valor -- `didUpdateWidget` no manda ninguna actualizacion al
+          // mapa nativo y el componente, que quedo en null, nunca se vuelve a
+          // crear. El punto azul no aparecia hasta rotar el telefono.
+          //
+          // Atarlo a `_posicion` hace que el valor CAMBIE de `false` a `true` en
+          // el `setState` de `_ubicar`, y ahi si viaja la orden que el nativo
+          // necesita para activar el componente. De paso no le pedimos al mapa
+          // que dibuje una ubicacion que todavia no tenemos.
+          //
+          // `MyLocationRenderMode.normal` se puede dejar fijo con el flag en
+          // false: el unico assert del plugin es para los modos que necesitan
+          // GPS, y `normal` es justamente el que no.
+          myLocationEnabled: _posicion != null,
           myLocationRenderMode: MyLocationRenderMode.normal,
         ),
 
@@ -737,7 +813,7 @@ class _TituloLista extends StatelessWidget {
             ),
           ),
           Text(
-            'Toca para ver en el mapa',
+            'Toca para ver sus datos',
             style: TextStyle(
               fontSize: 11,
               color: AppColors.textGray.withValues(alpha: 0.9),
@@ -1005,7 +1081,7 @@ class _Leyenda extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _Punto(color: AppColors.blueAccent, etiqueta: 'Vos'),
+            _Punto(color: AppColors.blueAccent, etiqueta: 'Tú'),
             SizedBox(width: 14),
             _Punto(color: AppColors.orangePrimary, etiqueta: 'Afiliados'),
           ],
