@@ -1,6 +1,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Necesaria para que connectivity_plus detecte los cambios de red -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+
+    <!-- INTERNET: descarga los tiles del mapa y el estilo de MapLibre.
+         CRÍTICO: antes este permiso solo estaba declarado en src/debug/ y
+         src/profile/, que es lo que usa `flutter run`. En un build release el
+         mapa salía en blanco sin dar ningún error. Por eso va en main/. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- Ubicación: para localizar al cliente y ordenar los talleres por cercanía -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+
     <application
         android:label="autofix"
         android:name="${applicationName}"

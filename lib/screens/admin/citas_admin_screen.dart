@@ -804,10 +804,11 @@ class _CitasScreenState extends State<CitasScreen> {
                                           firstDate: DateTime(2020),
                                           lastDate: DateTime(2100),
                                         );
-                                        if (nuevaFecha != null)
+                                        if (nuevaFecha != null) {
                                           setDialogState(
                                             () => fecha = nuevaFecha,
                                           );
+                                        }
                                       },
                                       child: InputDecorator(
                                         decoration: _decoracionCampo('Fecha'),
@@ -839,10 +840,11 @@ class _CitasScreenState extends State<CitasScreen> {
                                           context: context,
                                           initialTime: hora ?? TimeOfDay.now(),
                                         );
-                                        if (nuevaHora != null)
+                                        if (nuevaHora != null) {
                                           setDialogState(
                                             () => hora = nuevaHora,
                                           );
+                                        }
                                       },
                                       child: InputDecorator(
                                         decoration: _decoracionCampo('Hora'),

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../../models/cliente_dashboard_data.dart';
-import '../../models/demo_cliente_data.dart';
+import '../../features/citas/data/cita_repository.dart';
+import '../../features/citas/models/cita.dart';
+import '../../features/talleres/data/taller_repository.dart';
+import '../../features/talleres/models/taller.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/cliente/agenda_cliente_widgets.dart';
 import '../../widgets/cliente/cliente_section_widgets.dart';
@@ -10,11 +12,18 @@ class AgendarCitaClienteSection extends StatefulWidget {
   const AgendarCitaClienteSection({
     required this.tallerSeleccionado,
     required this.onTallerSelected,
+    this.tallerSeleccionadoId,
     super.key,
   });
 
+  /// Nombre del taller, solo para mostrarlo en pantalla.
   final String tallerSeleccionado;
-  final ValueChanged<String> onTallerSelected;
+
+  /// Identificador del taller. Es el dato que se guarda en `citas.taller_id`;
+  /// el nombre es una etiqueta y puede repetirse o cambiar.
+  final int? tallerSeleccionadoId;
+
+  final ValueChanged<Taller> onTallerSelected;
 
   @override
   State<AgendarCitaClienteSection> createState() =>
@@ -22,6 +31,16 @@ class AgendarCitaClienteSection extends StatefulWidget {
 }
 
 class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
+  /// Catálogo de servicios que el cliente puede marcar. La base no tiene tabla
+  /// de servicios (ni precios), así que por ahora son las opciones fijas de la
+  /// pantalla; cuando exista, esto pasa a leerse del repositorio.
+  static const _serviciosDisponibles = [
+    'Cambio de aceite y filtro',
+    'Frenos',
+    'Suspensión y dirección',
+    'Transmisión y caja',
+  ];
+
   final TextEditingController _busquedaTallerController =
       TextEditingController();
   final TextEditingController _clienteController = TextEditingController();
@@ -37,6 +56,25 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
   bool _vehiculoFormularioVisible = false;
   bool _vehiculoSeleccionado = false;
 
+  /// Talleres afiliados reales, leídos de la base local.
+  List<Taller> _talleres = const <Taller>[];
+  bool _cargandoTalleres = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarTalleres();
+  }
+
+  Future<void> _cargarTalleres() async {
+    final talleres = await TallerRepository.instance.obtenerActivos();
+    if (!mounted) return;
+    setState(() {
+      _talleres = talleres;
+      _cargandoTalleres = false;
+    });
+  }
+
   @override
   void dispose() {
     _busquedaTallerController.dispose();
@@ -50,10 +88,10 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
     super.dispose();
   }
 
-  List<TallerCliente> get _talleresFiltrados {
+  List<Taller> get _talleresFiltrados {
     final query = _busquedaTallerController.text.trim().toLowerCase();
-    if (query.isEmpty) return const [];
-    return talleresCliente
+    if (query.isEmpty) return const <Taller>[];
+    return _talleres
         .where(
           (taller) =>
               taller.nombre.toLowerCase().contains(query) ||
@@ -62,8 +100,27 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
         .toList();
   }
 
+  /// Resuelve el taller seleccionado por `id`, que es la clave fiable.
+  /// Devuelve `null` en vez de lanzar si aún no hay nada seleccionado o si el
+  /// taller ya no está activo: antes esto era un `firstWhere` sin `orElse` que
+  /// reventaba la pantalla cuando el nombre no coincidía con la lista.
+  Taller? get _tallerActual {
+    for (final taller in _talleres) {
+      if (taller.id == widget.tallerSeleccionadoId) return taller;
+    }
+    for (final taller in _talleres) {
+      if (taller.nombre == widget.tallerSeleccionado) return taller;
+    }
+    return null;
+  }
+
   Future<void> _seleccionarTaller() async {
-    final taller = await showModalBottomSheet<String>(
+    if (_talleres.isEmpty) {
+      _mostrarAviso('No hay talleres afiliados disponibles.');
+      return;
+    }
+
+    final taller = await showModalBottomSheet<Taller>(
       context: context,
       showDragHandle: true,
       builder: (context) => SafeArea(
@@ -79,7 +136,7 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
                 ),
               ),
             ),
-            for (final taller in talleresCliente)
+            for (final taller in _talleres)
               Material(
                 color: AppColors.cardWhite,
                 child: ListTile(
@@ -88,14 +145,14 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
                     color: AppColors.orangePrimary,
                   ),
                   title: Text(taller.nombre),
-                  subtitle: Text('${taller.distancia} · ${taller.direccion}'),
-                  trailing: widget.tallerSeleccionado == taller.nombre
+                  subtitle: Text(taller.direccion),
+                  trailing: taller.id == widget.tallerSeleccionadoId
                       ? const Icon(
                           Icons.check_circle,
                           color: AppColors.greenAccent,
                         )
                       : null,
-                  onTap: () => Navigator.pop(context, taller.nombre),
+                  onTap: () => Navigator.pop(context, taller),
                 ),
               ),
             const SizedBox(height: 12),
@@ -129,17 +186,89 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
     setState(() => _horaSeleccionada = hora);
   }
 
-  void _seleccionarTallerDesdeBusqueda(TallerCliente taller) {
-    widget.onTallerSelected(taller.nombre);
+  void _seleccionarTallerDesdeBusqueda(Taller taller) {
+    widget.onTallerSelected(taller);
     _busquedaTallerController.clear();
     FocusScope.of(context).unfocus();
     setState(() {});
   }
 
-  void _enviarSolicitud() {
-    _mostrarAviso(
-      'Vista de demostración: la solicitud no se envía ni se guarda.',
+  /// Junta la fecha y la hora en un solo `DateTime` para `citas.fecha_cita`.
+  DateTime get _fechaCita => DateTime(
+    _fechaSeleccionada.year,
+    _fechaSeleccionada.month,
+    _fechaSeleccionada.day,
+    _horaSeleccionada.hour,
+    _horaSeleccionada.minute,
+  );
+
+  String get _vehiculoResumen {
+    final partes = [
+      _marcaController.text.trim(),
+      _modeloController.text.trim(),
+      _anioController.text.trim(),
+    ].where((p) => p.isNotEmpty).toList();
+    return partes.isEmpty ? 'Por definir' : partes.join(' ');
+  }
+
+  Future<void> _enviarSolicitud() async {
+    final cliente = _clienteController.text.trim();
+    if (cliente.isEmpty) {
+      _mostrarAviso('Escribe tu nombre completo.');
+      return;
+    }
+
+    // Sin `taller_id` la cita quedaría huérfana y el taller no podría verla.
+    final tallerId = widget.tallerSeleccionadoId;
+    if (tallerId == null) {
+      _mostrarAviso('Selecciona un taller para tu cita.');
+      return;
+    }
+
+    final cita = Cita(
+      cliente: cliente,
+      telefono: _telefonoController.text.trim(),
+      vehiculo: _vehiculoResumen,
+      marca: _marcaController.text.trim(),
+      modelo: _modeloController.text.trim(),
+      anio: int.tryParse(_anioController.text.trim()) ?? 0,
+      placa: _placaController.text.trim().toUpperCase(),
+      servicios: _serviciosSeleccionados.toList(),
+      descripcion: _descripcionController.text.trim(),
+      fechaCita: _fechaCita,
+      tallerId: tallerId,
+      // No hay catálogo de servicios con precios en la base, así que el cliente
+      // no puede calcular un total real. Queda en 0 hasta que administración lo
+      // registre.
+      total: 0,
     );
+
+    try {
+      await CitaRepository.instance.crear(cita);
+    } catch (_) {
+      _mostrarAviso('No pudimos guardar tu cita. Intenta de nuevo.');
+      return;
+    }
+
+    if (!mounted) return;
+    _resetearFormulario();
+    _mostrarAviso('Cita guardada con éxito.');
+  }
+
+  /// Limpia lo ya enviado para que un doble toque no duplique la cita.
+  void _resetearFormulario() {
+    _clienteController.clear();
+    _telefonoController.clear();
+    _descripcionController.clear();
+    _marcaController.clear();
+    _modeloController.clear();
+    _anioController.clear();
+    _placaController.clear();
+    setState(() {
+      _serviciosSeleccionados.clear();
+      _vehiculoFormularioVisible = false;
+      _vehiculoSeleccionado = false;
+    });
   }
 
   void _mostrarAviso(String mensaje) {
@@ -150,9 +279,7 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
 
   @override
   Widget build(BuildContext context) {
-    final tallerActual = talleresCliente.firstWhere(
-      (taller) => taller.nombre == widget.tallerSeleccionado,
-    );
+    final tallerActual = _tallerActual;
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -251,12 +378,12 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
                           ),
                         ),
                         subtitle: Text(
-                          '${_talleresFiltrados[index].direccion} · ${_talleresFiltrados[index].distancia}',
+                          _talleresFiltrados[index].direccion,
                           style: const TextStyle(fontSize: 11),
                         ),
                         trailing:
-                            widget.tallerSeleccionado ==
-                                _talleresFiltrados[index].nombre
+                            _talleresFiltrados[index].id ==
+                                widget.tallerSeleccionadoId
                             ? const Icon(
                                 Icons.check_circle,
                                 color: AppColors.greenAccent,
@@ -276,8 +403,10 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
         const SizedBox(height: 10),
         TallerSeleccionTile(
           icon: Icons.location_on_outlined,
-          title: tallerActual.nombre,
-          subtitle: '${tallerActual.direccion} · ${tallerActual.distancia}',
+          title:
+              tallerActual?.nombre ??
+              (_cargandoTalleres ? 'Cargando talleres...' : 'Sin seleccionar'),
+          subtitle: tallerActual?.direccion ?? 'Toca para elegir un taller',
           onTap: _seleccionarTaller,
         ),
         const SizedBox(height: 18),
@@ -330,7 +459,7 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
                   ),
                 ),
               ),
-              for (final servicio in serviciosCliente)
+              for (final servicio in _serviciosDisponibles)
                 Material(
                   color: AppColors.cardWhite,
                   child: CheckboxListTile(
@@ -394,8 +523,9 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
           onPressed: _enviarSolicitud,
         ),
         const SizedBox(height: 10),
-        const Text(
-          'Diseño de demostración. Los datos no se envían ni se guardan.',
+        Text(
+          'Guardamos tu cita en el dispositivo. El taller la confirma y le '
+          'llega el detalle de lo que necesitas.',
           textAlign: TextAlign.center,
           style: TextStyle(color: AppColors.textGray, fontSize: 12),
         ),
