@@ -2,11 +2,47 @@ import 'package:flutter/material.dart';
 
 import '../../features/citas/data/cita_repository.dart';
 import '../../features/citas/models/cita.dart';
+import '../../features/configuracion/data/tipo_servicio_repository.dart';
+import '../../features/configuracion/models/tipo_servicio.dart';
 import '../../features/talleres/data/taller_repository.dart';
 import '../../features/talleres/models/taller.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/cliente/agenda_cliente_widgets.dart';
 import '../../widgets/cliente/cliente_section_widgets.dart';
+
+/// "RD$ 1,250" -- pesos dominicanos con separador de miles.
+///
+/// Top-level y no metodo del widget para que el test la verifique, por la misma
+/// razon que `aCss` vive fuera del `State`: un separador mal puesto no rompe
+/// la app, imprime "RD$ 12500" y queda como si el taller cobrara 125 mil.
+///
+/// El separador de miles se pone con un `replaceAllMapped` sobre el string y no
+/// con `intl`: `NumberFormat` con locale `es_DO` depende de los datos de locale
+/// que trae el paquete, y si no estan cargados revienta en runtime con un error
+/// de locale, no con uno de formato. Un patron regular no puede fallar asi.
+///
+/// Decimales a proposito ausentes: [TipoServicio.precio] es un entero y la
+/// semilla los siembra en 0. El día que haga falta centavos, se suman enteros
+/// de centavos y se divide acá.
+String formatearPesosDR(int monto) {
+  final conSeparadores = monto
+      .toString()
+      .replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+$)'), (m) => '${m[1]},');
+
+  return 'RD\$ $conSeparadores';
+}
+
+/// Fila de precio de un servicio en el selector.
+///
+/// Un precio en 0 NO es un servicio gratis: es un servicio cuyo precio nadie ha
+/// cargado todavía. Decir "RD$ 0" es una afirmación sobre el taller, y si esta
+/// mal es una de las que hacen perder plata. Por eso sale "Por definir".
+///
+/// No lo confunde con el `total = 0` que se guarda en la cita: ese es un dato
+/// honesto de que la aritmética dio cero, este es un dato de que falta
+/// configuracion.
+String etiquetaPrecio(int precio) =>
+    precio > 0 ? formatearPesosDR(precio) : 'Precio por definir';
 
 class AgendarCitaClienteSection extends StatefulWidget {
   const AgendarCitaClienteSection({
@@ -31,18 +67,16 @@ class AgendarCitaClienteSection extends StatefulWidget {
 }
 
 class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
-  /// Catálogo de servicios que el cliente puede marcar. La base no tiene tabla
-  /// de servicios (ni precios), así que por ahora son las opciones fijas de la
-  /// pantalla; cuando exista, esto pasa a leerse del repositorio.
-  static const _serviciosDisponibles = [
-    'Cambio de aceite y filtro',
-    'Frenos',
-    'Suspensión y dirección',
-    'Transmisión y caja',
-  ];
+  /// Catálogo de servicios REAL de la base, no una lista fija del widget.
+  ///
+  /// Antes eran cuatro literales y el admin no podía cambiar nada: los servicios
+  /// "Alineación y balanceo" y "Cambio de gomas" que él sí tenía cargados en
+  /// Configuración no se podían marcar en la cita. La fuente de verdad de qué
+  /// ofrece el taller es `tipos_servicio`, y el precio de cada uno sale de ahí
+  /// para el total.
+  List<TipoServicio> _serviciosDisponibles = const <TipoServicio>[];
+  bool _cargandoServicios = true;
 
-  final TextEditingController _busquedaTallerController =
-      TextEditingController();
   final TextEditingController _clienteController = TextEditingController();
   final TextEditingController _telefonoController = TextEditingController();
   final TextEditingController _descripcionController = TextEditingController();
@@ -50,6 +84,10 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
   final TextEditingController _modeloController = TextEditingController();
   final TextEditingController _anioController = TextEditingController();
   final TextEditingController _placaController = TextEditingController();
+
+  /// Nombres de los servicios marcados. Se guardan por NOMBRE y no por id
+  /// porque es lo que viaja en `Cita.servicios` (JSON de texto). El precio se
+  /// cruza contra el catálogo al enviar; ver [TipoServicio.totalDe].
   final Set<String> _serviciosSeleccionados = {};
   DateTime _fechaSeleccionada = DateTime.now();
   TimeOfDay _horaSeleccionada = const TimeOfDay(hour: 9, minute: 0);
@@ -64,6 +102,7 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
   void initState() {
     super.initState();
     _cargarTalleres();
+    _cargarServicios();
   }
 
   Future<void> _cargarTalleres() async {
@@ -75,9 +114,27 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
     });
   }
 
+  /// Lee el catálogo de servicios.
+  ///
+  /// `activo = 1` solamente: un servicio dado de baja sigue existiendo en la
+  /// tabla para las citas viejas que lo nombran, igual que los talleres, pero no
+  /// se ofrece a un cliente nuevo.
+  Future<void> _cargarServicios() async {
+    final todos = await TipoServicioRepository.instance.obtenerTodas();
+    if (!mounted) return;
+    setState(() {
+      _serviciosDisponibles =
+          todos.where((s) => s.activo).toList(growable: false);
+      _cargandoServicios = false;
+    });
+  }
+
+  /// Total estimado de la cita, con los precios que el admin tiene cargados.
+  int get _totalEstimado =>
+      TipoServicio.totalDe(_serviciosDisponibles, _serviciosSeleccionados);
+
   @override
   void dispose() {
-    _busquedaTallerController.dispose();
     _clienteController.dispose();
     _telefonoController.dispose();
     _descripcionController.dispose();
@@ -86,18 +143,6 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
     _anioController.dispose();
     _placaController.dispose();
     super.dispose();
-  }
-
-  List<Taller> get _talleresFiltrados {
-    final query = _busquedaTallerController.text.trim().toLowerCase();
-    if (query.isEmpty) return const <Taller>[];
-    return _talleres
-        .where(
-          (taller) =>
-              taller.nombre.toLowerCase().contains(query) ||
-              taller.direccion.toLowerCase().contains(query),
-        )
-        .toList();
   }
 
   /// Resuelve el taller seleccionado por `id`, que es la clave fiable.
@@ -186,13 +231,6 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
     setState(() => _horaSeleccionada = hora);
   }
 
-  void _seleccionarTallerDesdeBusqueda(Taller taller) {
-    widget.onTallerSelected(taller);
-    _busquedaTallerController.clear();
-    FocusScope.of(context).unfocus();
-    setState(() {});
-  }
-
   /// Junta la fecha y la hora en un solo `DateTime` para `citas.fecha_cita`.
   DateTime get _fechaCita => DateTime(
     _fechaSeleccionada.year,
@@ -237,10 +275,15 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
       descripcion: _descripcionController.text.trim(),
       fechaCita: _fechaCita,
       tallerId: tallerId,
-      // No hay catálogo de servicios con precios en la base, así que el cliente
-      // no puede calcular un total real. Queda en 0 hasta que administración lo
-      // registre.
-      total: 0,
+      // Suma de los precios del catálogo (`tipos_servicio.precio`) de los
+      // servicios marcados. Es el mismo valor que muestra el resumen de abajo
+      // del formulario: el cliente ve lo que se guarda, no otra cuenta.
+      //
+      // Da 0 mientras el admin no cargue precios -- la semilla los siembra en 0
+      // a proposito, porque en el diseño original no se sabian todavía. No es
+      // un total inventado: es el total real de un catálogo que hoy vale 0.
+      // Cuando `Configuración` tenga los precios, este numero cambia solo.
+      total: _totalEstimado,
     );
 
     try {
@@ -314,100 +357,36 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
         const SizedBox(height: 18),
         etiquetaFormularioCliente('Taller'),
         const SizedBox(height: 8),
-        TextField(
-          controller: _busquedaTallerController,
-          onChanged: (_) => setState(() {}),
-          decoration:
-              clienteInputDecoration(
-                'Buscar taller',
-                hintText: 'Nombre del taller o sector',
-                prefixIcon: Icons.search,
-              ).copyWith(
-                suffixIcon: _busquedaTallerController.text.isEmpty
-                    ? null
-                    : IconButton(
-                        tooltip: 'Limpiar búsqueda',
-                        onPressed: () {
-                          _busquedaTallerController.clear();
-                          setState(() {});
-                        },
-                        icon: const Icon(Icons.close),
-                      ),
-              ),
-        ),
-        if (_busquedaTallerController.text.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          if (_talleresFiltrados.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 10),
-              child: Text(
-                'No encontramos talleres con esa búsqueda.',
-                style: TextStyle(color: AppColors.textGray, fontSize: 12),
-              ),
-            )
-          else
-            Container(
-              decoration: BoxDecoration(
-                color: AppColors.cardWhite,
-                border: Border.all(color: AppColors.inputBorder),
-                borderRadius: BorderRadius.circular(11),
-              ),
-              child: Column(
-                children: [
-                  for (
-                    var index = 0;
-                    index < _talleresFiltrados.length;
-                    index++
-                  ) ...[
-                    if (index > 0)
-                      const Divider(height: 1, color: AppColors.inputBorder),
-                    Material(
-                      color: Colors.transparent,
-                      child: ListTile(
-                        dense: true,
-                        leading: const Icon(
-                          Icons.location_on_outlined,
-                          color: AppColors.orangePrimary,
-                        ),
-                        title: Text(
-                          _talleresFiltrados[index].nombre,
-                          style: const TextStyle(
-                            color: AppColors.labelDark,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        subtitle: Text(
-                          _talleresFiltrados[index].direccion,
-                          style: const TextStyle(fontSize: 11),
-                        ),
-                        trailing:
-                            _talleresFiltrados[index].id ==
-                                widget.tallerSeleccionadoId
-                            ? const Icon(
-                                Icons.check_circle,
-                                color: AppColors.greenAccent,
-                                size: 19,
-                              )
-                            : null,
-                        onTap: () => _seleccionarTallerDesdeBusqueda(
-                          _talleresFiltrados[index],
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-        ],
-        const SizedBox(height: 10),
+
+        // Sin campo de búsqueda. La directriz de Leandy es que no hay búsqueda
+        // libre de talleres: lo que existe son los afiliados, y se eligen de una
+        // lista. El filtro por texto que estaba acá se leía como "buscá donde
+        // quieras" y llevaba a un mensaje de "no encontramos talleres" cuando lo
+        // que pasó fue que el taller no está en nuestra red.
         TallerSeleccionTile(
           icon: Icons.location_on_outlined,
           title:
               tallerActual?.nombre ??
               (_cargandoTalleres ? 'Cargando talleres...' : 'Sin seleccionar'),
-          subtitle: tallerActual?.direccion ?? 'Toca para elegir un taller',
+          subtitle: tallerActual?.direccion ?? 'Toca para ver los afiliados',
           onTap: _seleccionarTaller,
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            const Icon(
+              Icons.info_outline,
+              size: 13,
+              color: AppColors.textGray,
+            ),
+            const SizedBox(width: 6),
+            const Expanded(
+              child: Text(
+                'Solo agenda en talleres afiliados de AutoFix.',
+                style: TextStyle(color: AppColors.textGray, fontSize: 11),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 18),
         etiquetaFormularioCliente('Vehículo'),
@@ -459,29 +438,74 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
                   ),
                 ),
               ),
-              for (final servicio in _serviciosDisponibles)
-                Material(
-                  color: AppColors.cardWhite,
-                  child: CheckboxListTile(
-                    dense: true,
-                    activeColor: AppColors.orangePrimary,
-                    controlAffinity: ListTileControlAffinity.leading,
-                    value: _serviciosSeleccionados.contains(servicio),
-                    title: Text(servicio, style: const TextStyle(fontSize: 13)),
-                    onChanged: (seleccionado) {
-                      setState(() {
-                        if (seleccionado == true) {
-                          _serviciosSeleccionados.add(servicio);
-                        } else {
-                          _serviciosSeleccionados.remove(servicio);
-                        }
-                      });
-                    },
+              if (_cargandoServicios)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  child: Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
                   ),
-                ),
+                )
+              else if (_serviciosDisponibles.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                  child: Text(
+                    'Todavía no hay servicios configurados.',
+                    style: TextStyle(color: AppColors.textGray, fontSize: 12),
+                  ),
+                )
+              else
+                for (final servicio in _serviciosDisponibles)
+                  Material(
+                    color: AppColors.cardWhite,
+                    child: CheckboxListTile(
+                      dense: true,
+                      activeColor: AppColors.orangePrimary,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      value: _serviciosSeleccionados.contains(servicio.nombre),
+                      title: Text(
+                        servicio.nombre,
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                      // El precio va en la fila y no solo en el total de abajo:
+                      // el cliente tiene que ver por qué sube el número antes de
+                      // marcar la casilla, no después.
+                      subtitle: Text(
+                        etiquetaPrecio(servicio.precio),
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: servicio.precio > 0
+                              ? AppColors.labelDark
+                              : AppColors.textGray,
+                        ),
+                      ),
+                      onChanged: (seleccionado) {
+                        setState(() {
+                          if (seleccionado == true) {
+                            _serviciosSeleccionados.add(servicio.nombre);
+                          } else {
+                            _serviciosSeleccionados.remove(servicio.nombre);
+                          }
+                        });
+                      },
+                    ),
+                  ),
             ],
           ),
         ),
+
+        // Solo cuando hay algo marcado: un "Total estimado: RD$ 0" debajo de
+        // una lista sin nada elegido le dice al cliente que su cita vale cero,
+        // que es un mensaje distinto del que dice la verdad ("todavía no
+        // elegiste nada").
+        if (_serviciosSeleccionados.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          _ResumenTotal(total: _totalEstimado),
+        ],
         const SizedBox(height: 20),
         etiquetaFormularioCliente('Fecha y hora preferidas'),
         const SizedBox(height: 10),
@@ -531,6 +555,75 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
         ),
         const SizedBox(height: 20),
       ],
+    );
+  }
+}
+
+/// Total estimado de los servicios marcados.
+///
+/// Dice "estimado" y no "total" a proposito: estos son los precios de catálogo,
+/// no una cotización. El técnico puede encontrar otra cosa al abrir el carro y
+/// el precio final lo acuerda el taller con el cliente. Prometer un total firme
+/// acá es una promesa que la app no puede cumplir.
+///
+/// Cuando el total da 0 porque el catálogo todavía no tiene precios cargados,
+/// el texto lo aclara en vez de mostrar "RD$ 0" pelado.
+class _ResumenTotal extends StatelessWidget {
+  const _ResumenTotal({required this.total});
+
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    final sinPrecios = total == 0;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.orangePrimary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: AppColors.orangePrimary.withValues(alpha: 0.30),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.receipt_long_outlined,
+            size: 18,
+            color: AppColors.orangePrimary,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Total estimado',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.labelDark,
+                  ),
+                ),
+                if (sinPrecios)
+                  const Text(
+                    'Sin precios cargados todavía',
+                    style: TextStyle(fontSize: 10, color: AppColors.textGray),
+                  ),
+              ],
+            ),
+          ),
+          Text(
+            formatearPesosDR(total),
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: AppColors.orangePrimary,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
