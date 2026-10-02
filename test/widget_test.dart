@@ -1,3 +1,4 @@
+import 'package:connectivity_plus_platform_interface/connectivity_plus_platform_interface.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -6,12 +7,33 @@ import 'package:autofix/main.dart' show AutoFixApp;
 import 'package:autofix/features/auth/screens/login_screen.dart';
 import 'package:autofix/shared/theme/app_colors.dart';
 
+import 'support/red_falsa.dart';
+
 /// El banner de Conectividad es el requisito: tiene que verse en TODA pantalla
 /// sin que cada una lo monte. Eso se rompe de formas que el analyzer no ve
 /// (alguien saca el `builder`, o mueve el `ConectividadApp` por fuera del
 /// `MaterialApp` y cada `Scaffold` tapa el banner), asi que va fijo en test.
 void main() {
   Widget montarApp() => const ConectividadApp(child: AutoFixApp());
+
+  late RedFalsa red;
+  late ConnectivityPlatform plataformaOriginal;
+
+  setUp(() {
+    plataformaOriginal = ConnectivityPlatform.instance;
+    // Red sin conexión DECIDIDA, no deducida. Antes esto se apoyaba en que el
+    // plugin real no está registrado en el test y el servicio asumía "offline":
+    // el banner aparecía por accidente, y el mismo test pasaba aunque el
+    // banner se hubiera roto. El tiempo real de reacción lo cubre
+    // `conectividad_test.dart`.
+    red = RedFalsa(estado: const [ConnectivityResult.none]);
+    ConnectivityPlatform.instance = red;
+  });
+
+  tearDown(() async {
+    ConnectivityPlatform.instance = plataformaOriginal;
+    await red.dispose();
+  });
 
   testWidgets('el banner queda montado dentro del Navigator', (tester) async {
     await tester.pumpWidget(montarApp());

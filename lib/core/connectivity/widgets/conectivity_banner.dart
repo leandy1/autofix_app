@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
-import 'package:autofix/shared/theme/app_colors.dart';
+import 'package:autofix/core/connectivity/connectivity_service.dart';
 import 'package:autofix/core/connectivity/connectivity_scope.dart';
+import 'package:autofix/shared/theme/app_colors.dart';
 
 /// Banner global de estado de red.
 ///
@@ -23,7 +24,10 @@ class ConectivityBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hayConexion = ConnectivityScope.of(context).hayConexion;
+    // `desconectado`, NO `!hayConexion`: mientras el estado es desconocido no
+    // hay evidencia de un corte, y acusarlo seria una banda roja Mentirosa en
+    // cada arranque (y al abrir la app sin permiso de red, etc.).
+    final desconectado = ConnectivityScope.of(context).desconectado;
 
     // `AnimatedSize` en vez de un `if` con SizedBox: cuando la variable del
     // banner pasa de 0 a 30, el layout se desliza en 250ms en vez de saltar.
@@ -32,7 +36,7 @@ class ConectivityBanner extends StatelessWidget {
       duration: const Duration(milliseconds: 250),
       curve: Curves.easeOut,
       alignment: Alignment.topCenter,
-      child: !hayConexion
+      child: desconectado
           ? Material(
               color: AppColors.atrasadas,
               child: SafeArea(
@@ -71,12 +75,17 @@ class ConectivityChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hayConexion = ConnectivityScope.of(context).hayConexion;
+    // El chip SI distingue los tres estados: "comprobando..." es informacion
+    // honesta mientras la plataforma no responde, y en una pantalla chica el
+    // espacio es escaso.
+    final estado = ConnectivityScope.of(context).estado;
+    final hayConexion = estado == EstadoRed.conectado;
+    final desconocido = estado == EstadoRed.desconocido;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: hayConexion ? AppColors.greenAccent : AppColors.atrasadas,
+        color: colorEstadoRed(estado),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
@@ -89,7 +98,11 @@ class ConectivityChip extends StatelessWidget {
           ),
           const SizedBox(width: 6),
           Text(
-            hayConexion ? 'En linea' : 'Sin conexion',
+            desconocido
+                ? 'Comprobando...'
+                : hayConexion
+                ? 'En linea'
+                : 'Sin conexion',
             style: const TextStyle(
               color: Colors.white,
               fontSize: 12,
@@ -101,3 +114,13 @@ class ConectivityChip extends StatelessWidget {
     );
   }
 }
+
+/// El color del chip segun el estado.
+///
+/// `desconocido` va en gris y no en rojo: todavia no hay un corte, y pintar de
+/// alarma un estado transitorio entrena al usuario a ignorar la alarma real.
+Color colorEstadoRed(EstadoRed estado) => switch (estado) {
+  EstadoRed.conectado => AppColors.greenAccent,
+  EstadoRed.desconocido => AppColors.placeholderGray,
+  EstadoRed.desconectado => AppColors.atrasadas,
+};
