@@ -102,7 +102,11 @@ void main() {
       expect(guardado, isNotNull);
       expect(guardado!.latitud, refriauto.latitud);
       expect(guardado.longitud, refriauto.longitud);
-      expect(guardado.latitud, closeTo(18.4184, 0.0001));
+      // Coordenadas reales del local. El assert contra el literal es el que
+      // atrapa el truncado a entero: si la columna volviera a ser INTEGER,
+      // esto daria 18.0 y pasaria igual que con el round-trip de arriba.
+      expect(guardado.latitud, closeTo(18.4624868, 0.0000001));
+      expect(guardado.longitud, closeTo(-69.9517036, 0.0000001));
     });
 
     test('taller_id es INTEGER, no TEXT', () async {

@@ -41,12 +41,15 @@ class SemillaInicial {
   /// hasta que David migre el formulario a la base.
   static const List<TallerAfiliado> talleres = <TallerAfiliado>[
     // Santo Domingo, Gazcue: Av. 27 de Febrero con Av. Las Americas.
+    // Coordenadas reales, tomadas del punto del local en Google Maps. Se
+    // corregieron en esta rama: antes eran una aproximacion a la esquina y el
+    // pin caia a unas cuadras del taller.
     TallerAfiliado(
       nombre: 'Global Refriauto',
       direccion: 'Av. 27 de Febrero esq. Las Américas, Gazcue',
       telefono: '809-555-0101',
-      latitud: 18.4184,
-      longitud: -69.9167,
+      latitud: 18.4624868,
+      longitud: -69.9517036,
     ),
     // Santo Domingo, Los Prados.
     TallerAfiliado(
@@ -122,10 +125,11 @@ class TallerAfiliado {
   final String direccion;
   final String telefono;
 
-  /// Coordenadas en grados decimales, con 4 decimales a proposito: 4 decimales
-  /// equivalen a unos 11 metros, que es la precision razonable para "este local
-  /// esta en esta esquina". Con 2 decimales el punto cae a mas de un kilómetro,
-  /// que en una ciudad es otra calle.
+  /// Coordenadas en grados decimales, y con 4 decimales o mas a proposito: 4
+  /// decimales equivalen a unos 11 metros, que es la precision razonable para
+  /// "este local esta en esta esquina". Con 2 decimales el punto cae a mas de un
+  /// kilometro, que en una ciudad es otra calle. Si en Maps el punto viene con
+  /// 6 o 7 decimales se copian tal cual: no hay nada que ganar redondeando.
   final double latitud;
   final double longitud;
 }
