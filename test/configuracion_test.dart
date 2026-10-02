@@ -364,7 +364,7 @@ void main() {
         // Abrir con el helper dispara onUpgrade: crea catalogos y siembra.
         final citas = await CitaRepository.instance.obtenerTodas();
         expect(citas.length, 1, reason: 'la migracion NO debe perder datos');
-        expect(citas.first.codigoQr, 'VIEJO-V2');
+        expect(citas.first.cliente, 'VIEJO-V2');
         expect(citas.first.placa, 'A123456');
 
         expect(
@@ -416,7 +416,7 @@ void main() {
 
       final citas = await CitaRepository.instance.obtenerTodas();
       expect(citas.length, 1);
-      expect(citas.first.codigoQr, 'VIEJO-V1');
+      expect(citas.first.cliente, 'VIEJO-V1');
       // Columnas de la v2: llegan con el default, no en null.
       expect(citas.first.telefono, '');
       expect(citas.first.anio, 0);

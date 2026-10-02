@@ -39,7 +39,6 @@ enum EstadoCita {
 class Cita implements EntidadPersistida {
   const Cita({
     this.id,
-    required this.codigoQr,
     required this.cliente,
     this.telefono = '',
     required this.vehiculo,
@@ -55,12 +54,12 @@ class Cita implements EntidadPersistida {
     this.tallerId,
     this.creadoEn,
     this.actualizadoEn,
+    this.total = 0,
   });
 
   static const String etiquetaAtrasadas = 'ATRASADAS';
 
   static const String _kId = 'id';
-  static const String _kQr = 'codigo_qr';
   static const String _kCliente = 'cliente';
   static const String _kTelefono = 'telefono';
   static const String _kVehiculo = 'vehiculo';
@@ -76,13 +75,12 @@ class Cita implements EntidadPersistida {
   static const String _kTallerId = 'taller_id';
   static const String _kCreadoEn = 'creado_en';
   static const String _kActualizadoEn = 'actualizado_en';
+  static const String _kTotal = 'total';
 
   @override
   final int? id;
 
-  /// Llave con el QR fisico del vehiculo. UNIQUE en la base: es lo que consulta
-  /// el modulo de escaneo.
-  final String codigoQr;
+
   final String cliente;
   final String telefono;
   final String vehiculo;
@@ -111,6 +109,7 @@ class Cita implements EntidadPersistida {
 
   @override
   final DateTime? actualizadoEn;
+  final int total;
 
   /// "La hora ya paso y todavia no se completo". No es "la fecha es de ayer".
   ///
@@ -128,7 +127,6 @@ class Cita implements EntidadPersistida {
 
   Cita copyWith({
     int? id,
-    String? codigoQr,
     String? cliente,
     String? telefono,
     String? vehiculo,
@@ -144,10 +142,10 @@ class Cita implements EntidadPersistida {
     int? tallerId,
     DateTime? creadoEn,
     DateTime? actualizadoEn,
+    int? total,
   }) {
     return Cita(
       id: id ?? this.id,
-      codigoQr: codigoQr ?? this.codigoQr,
       cliente: cliente ?? this.cliente,
       telefono: telefono ?? this.telefono,
       vehiculo: vehiculo ?? this.vehiculo,
@@ -163,6 +161,7 @@ class Cita implements EntidadPersistida {
       tallerId: tallerId ?? this.tallerId,
       creadoEn: creadoEn ?? this.creadoEn,
       actualizadoEn: actualizadoEn ?? this.actualizadoEn,
+      total: total ?? this.total,
     );
   }
 
@@ -170,7 +169,6 @@ class Cita implements EntidadPersistida {
     return {
       // El id solo va si ya existe: mandarlo en null en un INSERT lo rompe.
       if (id != null) _kId: id,
-      _kQr: codigoQr,
       _kCliente: cliente,
       _kTelefono: telefono,
       _kVehiculo: vehiculo,
@@ -190,13 +188,13 @@ class Cita implements EntidadPersistida {
       _kTallerId: tallerId,
       _kCreadoEn: (creadoEn ?? DateTime.now()).toIso8601String(),
       _kActualizadoEn: (actualizadoEn ?? DateTime.now()).toIso8601String(),
+      _kTotal: total,
     };
   }
 
   factory Cita.fromMap(Map<String, Object?> map) {
     return Cita(
       id: map[_kId] as int?,
-      codigoQr: map[_kQr] as String,
       cliente: map[_kCliente] as String,
       telefono: (map[_kTelefono] as String?) ?? '',
       vehiculo: map[_kVehiculo] as String,
@@ -207,15 +205,20 @@ class Cita implements EntidadPersistida {
       servicios: _leerServicios(map[_kServicios]),
       tecnico: (map[_kTecnico] as String?) ?? '',
       descripcion: (map[_kDescripcion] as String?) ?? '',
-      fechaCita: DateTime.parse(map[_kFechaCita]! as String),
-      estado: EstadoCita.desdeNombre(map[_kEstado]! as String),
-      // `as num?` y no `as int?`: la columna es INTEGER, pero si alguien la
-      // creara como REAL (a mano, o con una base exportada de otro motor) el
-      // cast directo a int revienta con un TypeError al LEER una cita que si
-      // esta bien guardada.
+      fechaCita: DateTime.parse(map[_kFechaCita] as String),
+      estado: EstadoCita.desdeNombre(map[_kEstado] as String),
       tallerId: (map[_kTallerId] as num?)?.toInt(),
-      creadoEn: DateTime.tryParse(map[_kCreadoEn]! as String),
-      actualizadoEn: DateTime.tryParse(map[_kActualizadoEn] as String? ?? ''),
+      creadoEn: () {
+        final v = map[_kCreadoEn];
+        if (v == null || (v is String && v.isEmpty)) return null;
+        return DateTime.tryParse(v as String);
+      }(),
+      actualizadoEn: () {
+        final v = map[_kActualizadoEn];
+        if (v == null || (v is String && v.isEmpty)) return null;
+        return DateTime.tryParse(v as String);
+      }(),
+      total: (map[_kTotal] as int?) ?? 0,
     );
   }
 

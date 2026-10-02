@@ -28,8 +28,7 @@ void main() {
     await DatabaseHelper.resetParaPruebas();
   });
 
-  Cita nueva({String qr = 'QR-001'}) => Cita(
-        codigoQr: qr,
+  Cita nueva() => Cita(
         cliente: 'Ana Torres',
         vehiculo: 'Toyota Hilux',
         fechaCita: DateTime(2026, 10, 1, 9, 30),
@@ -100,18 +99,7 @@ void main() {
       expect(controller.hayCitas, isFalse);
     });
 
-    test('un QR repetido deja el error en el controller, sin romper la vista', () async {
-      final controller = nuevoController();
-      await controller.cargar();
-      await controller.guardar(nueva(qr: 'TALLER-77'));
 
-      final ok = await controller.guardar(nueva(qr: 'TALLER-77'));
-
-      expect(ok, isFalse);
-      expect(controller.error, isNotNull);
-      // La lista sigue consistente: no se duoduplica.
-      expect(controller.citas.length, 1);
-    });
   });
 
   group('agrupacion por estado (logica que estaba en el repositorio)', () {
@@ -130,13 +118,13 @@ void main() {
       final manana = DateTime(2026, 10, 1, 9, 30);
 
       await controller.guardar(
-        nueva(qr: 'A').copyWith(fechaCita: manana, estado: EstadoCita.pendiente),
+        nueva().copyWith(fechaCita: manana, estado: EstadoCita.pendiente),
       );
       await controller.guardar(
-        nueva(qr: 'B').copyWith(fechaCita: manana, estado: EstadoCita.completado),
+        nueva().copyWith(fechaCita: manana, estado: EstadoCita.completado),
       );
       await controller.guardar(
-        nueva(qr: 'C').copyWith(fechaCita: manana, estado: EstadoCita.enProceso),
+        nueva().copyWith(fechaCita: manana, estado: EstadoCita.enProceso),
       );
 
       final mapa = controller.agruparPorEstado(
@@ -152,7 +140,7 @@ void main() {
 
     test('una cita de hoy que ya paso la hora cae en ATRASADAS', () async {
       final controller = nuevoController();
-      await controller.guardar(nueva(qr: 'VENCIDA'));
+      await controller.guardar(nueva());
 
       final mapa = controller.agruparPorEstado(
         DateTime(2026, 10, 1),
@@ -166,10 +154,10 @@ void main() {
     test('filtra por dia: lo de otro dia no aparece', () async {
       final controller = nuevoController();
       await controller.guardar(
-        nueva(qr: 'HOY').copyWith(fechaCita: DateTime(2026, 10, 1, 9, 30)),
+        nueva().copyWith(fechaCita: DateTime(2026, 10, 1, 9, 30)),
       );
       await controller.guardar(
-        nueva(qr: 'OTRO').copyWith(fechaCita: DateTime(2026, 9, 30, 9, 30)),
+        nueva().copyWith(fechaCita: DateTime(2026, 9, 30, 9, 30)),
       );
 
       final mapa = controller.agruparPorEstado(

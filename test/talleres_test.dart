@@ -406,8 +406,7 @@ void main() {
 
   group('cita <-> taller', () {
     Cita citaCon({String qr = 'QR-TALLER', int? tallerId}) => Cita(
-      codigoQr: qr,
-      cliente: 'Cliente',
+            cliente: 'Cliente',
       vehiculo: 'Toyota Corolla',
       fechaCita: DateTime(2026, 10, 15, 10),
       tallerId: tallerId,
@@ -451,7 +450,7 @@ void main() {
         refriauto,
       );
       expect(delRefriauto.length, 1);
-      expect(delRefriauto.first.codigoQr, 'QR-A');
+      expect(delRefriauto.first.cliente, 'QR-A');
     });
 
     test('el filtro por taller funciona con un id numerico de verdad', () async {
@@ -566,7 +565,7 @@ void main() {
       // Abrir con el helper dispara onUpgrade: agrega la columna y crea la tabla.
       final citas = await CitaRepository.instance.obtenerTodas();
       expect(citas.length, 1, reason: 'la migracion NO debe perder datos');
-      expect(citas.first.codigoQr, 'VIEJO-V3');
+      expect(citas.first.cliente, 'VIEJO-V3');
       expect(citas.first.placa, '');
 
       // Las citas viejas no tienen taller: por eso la columna es nullable.
@@ -590,8 +589,7 @@ void main() {
 
       final nuevaId = await CitaRepository.instance.crear(
         Cita(
-          codigoQr: 'NUEVA-CON-TALLER',
-          cliente: 'Cliente Nuevo',
+                    cliente: 'Cliente Nuevo',
           vehiculo: 'Kia Rio',
           fechaCita: DateTime(2026, 11, 3, 14),
           tallerId: tallerId,
@@ -638,7 +636,7 @@ void main() {
 
       final citas = await CitaRepository.instance.obtenerTodas();
       expect(citas.length, 1);
-      expect(citas.first.codigoQr, 'VIEJO-V1');
+      expect(citas.first.cliente, 'VIEJO-V1');
       // Columnas de la v2 y de la v4: llegan con su default, no en null.
       expect(citas.first.telefono, '');
       expect(citas.first.anio, 0);

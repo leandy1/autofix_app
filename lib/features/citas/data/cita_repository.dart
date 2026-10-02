@@ -126,18 +126,7 @@ class CitaRepository implements BaseRepository<Cita> {
     );
   }
 
-  /// Lo que consume el escaner de QR: devuelve `null` si el codigo no es de
-  /// ninguna cita, que es el caso normal y no un error.
-  Future<Cita?> obtenerPorCodigoQr(String codigoQr) async {
-    final db = await _helper.base;
-    final filas = await db.query(
-      tabla,
-      where: '${DatabaseHelper.colCodigoQr} = ?',
-      whereArgs: [codigoQr],
-      limit: 1,
-    );
-    return filas.isEmpty ? null : Cita.fromMap(filas.first);
-  }
+
 
   /// 'AAAA-MM-DD'. SQLite ordena los timestamps ISO por prefijo, asi que el
   /// filtro por dia es un `LIKE '2026-10-01%'` y no un BETWEEN de dos strings.

@@ -33,9 +33,10 @@ class DatabaseHelper {
   ///      (telefono, marca, modelo, anio, placa, servicios, tecnico).
   /// v3 = los catalogos de Configuracion (tecnicos, tipos de servicio, estados).
   /// v4 = la red de talleres AFILIADOS y el vinculo de la cita con el taller.
+  /// v5 = se elimina codigo_qr de citas y se agrega total (histórico inmutable).
   /// OJO: subir la version NO borra la base, dispara `onUpgrade`, que es lo
   /// que permite a un dispositivo que ya instalo la v1 seguir funcionando.
-  static const int _versionBase = 4;
+  static const int _versionBase = 5;
 
   static const String tablaCitas = 'citas';
   static const String colId = 'id';
@@ -54,6 +55,7 @@ class DatabaseHelper {
   static const String colEstado = 'estado';
   static const String colCreadoEn = 'creado_en';
   static const String colActualizadoEn = 'actualizado_en';
+  static const String colTotal = 'total';
 
   // ------------------------------------------------------------------
   // Catalogos de Configuracion (v3)
@@ -189,7 +191,7 @@ class DatabaseHelper {
   Future<void> _crearEsquema(Database db) async {
     final definiciones = <String>[
       '$colId INTEGER PRIMARY KEY AUTOINCREMENT',
-      '$colCodigoQr TEXT NOT NULL UNIQUE',
+      // codigo_qr ELIMINADO (v5)
       '$colCliente TEXT NOT NULL',
       '$colVehiculo TEXT NOT NULL',
       ..._columnasV2.entries.map((e) => '${e.key} ${e.value}'),
@@ -201,16 +203,11 @@ class DatabaseHelper {
       // (creadas en la v1, v2 o v3) no tienen taller, y una columna NOT NULL
       // sin default haria que el `ALTER TABLE` de la migracion fallara.
       _columnaTallerIdV4,
+      '$colTotal INTEGER NOT NULL DEFAULT 0', // v5
     ];
 
     await db.execute('CREATE TABLE $tablaCitas (${definiciones.join(', ')})');
-
-    // Indice unico: tu escaner QR consulta por codigo. Con el indice la busqueda
-    // es O(log n) en vez de un recorrido secuencial de toda la tabla, y de yapa
-    // SQLite impide dos citas con el mismo QR (integridad a nivel motor).
-    await db.execute(
-      'CREATE UNIQUE INDEX idx_citas_codigo_qr ON $tablaCitas ($colCodigoQr)',
-    );
+    // Índice de QR ELIMINADO (v5)
 
     // `talleres` ANTES que el indice de `citas.taller_id`: una FK necesita que
     // la tabla que referencia exista.
@@ -422,6 +419,64 @@ class DatabaseHelper {
         // red de afiliados: si no, su mapa abriria en blanco y pareceria que el
         // mapa esta roto.
         await _sembrarTalleres(txn);
+      }
+
+      if (versionAnterior < 5) {
+        // Eliminar índice de codigo_qr si existe y reconstruir tabla sin codigo_qr + total
+        await txn.execute('DROP INDEX IF EXISTS idx_citas_codigo_qr');
+
+        await txn.execute('''
+          CREATE TABLE citas_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cliente TEXT NOT NULL,
+            telefono TEXT NOT NULL DEFAULT '',
+            vehiculo TEXT NOT NULL,
+            marca TEXT NOT NULL DEFAULT '',
+            modelo TEXT NOT NULL DEFAULT '',
+            anio INTEGER NOT NULL DEFAULT 0,
+            placa TEXT NOT NULL DEFAULT '',
+            servicios TEXT NOT NULL DEFAULT '[]',
+            tecnico TEXT NOT NULL DEFAULT '',
+            descripcion TEXT NOT NULL DEFAULT '',
+            fecha_cita TEXT NOT NULL,
+            estado TEXT NOT NULL,
+            creado_en TEXT NOT NULL,
+            actualizado_en TEXT NOT NULL DEFAULT '',
+            taller_id INTEGER,
+            total INTEGER NOT NULL DEFAULT 0
+          )
+        ''');
+
+        await txn.execute('''
+          INSERT INTO citas_new (
+            id, cliente, telefono, vehiculo, marca, modelo, anio, placa,
+            servicios, tecnico, descripcion, fecha_cita, estado,
+            creado_en, actualizado_en, taller_id, total
+          )
+          SELECT
+            id,
+            cliente,
+            COALESCE(telefono, '') AS telefono,
+            vehiculo,
+            COALESCE(marca, '') AS marca,
+            COALESCE(modelo, '') AS modelo,
+            COALESCE(anio, 0) AS anio,
+            COALESCE(placa, '') AS placa,
+            COALESCE(servicios, '[]') AS servicios,
+            COALESCE(tecnico, '') AS tecnico,
+            COALESCE(descripcion, '') AS descripcion,
+            fecha_cita,
+            estado,
+            creado_en,
+            COALESCE(actualizado_en, '') AS actualizado_en,
+            taller_id,
+            0 AS total
+          FROM citas
+        ''');
+
+        await txn.execute('DROP TABLE citas');
+        await txn.execute('ALTER TABLE citas_new RENAME TO citas');
+        await txn.execute('CREATE INDEX IF NOT EXISTS idx_citas_taller_id ON citas (taller_id)');
       }
     });
   }

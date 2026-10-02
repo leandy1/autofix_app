@@ -97,9 +97,7 @@ class CitasController extends ChangeNotifier {
     return true;
   }
 
-  /// Lee una cita por QR fisico. `null` significa que el codigo no pertenece a
-  /// AutoFix: es un resultado valido, no un error.
-  Future<Cita?> buscarPorQr(String codigoQr) => _repo.obtenerPorCodigoQr(codigoQr);
+
 
   /// Citas del dia agrupadas por la etiqueta que consume la UI.
   ///

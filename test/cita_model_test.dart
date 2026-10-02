@@ -5,7 +5,6 @@ void main() {
   group('Cita', () {
     final cita = Cita(
       id: 1,
-      codigoQr: 'QR-001',
       cliente: 'Ana Torres',
       vehiculo: 'Toyota Hilux',
       descripcion: 'Cambio de aceite',
@@ -18,7 +17,6 @@ void main() {
       final recuperada = Cita.fromMap(cita.toMap());
 
       expect(recuperada.id, cita.id);
-      expect(recuperada.codigoQr, cita.codigoQr);
       expect(recuperada.cliente, cita.cliente);
       expect(recuperada.vehiculo, cita.vehiculo);
       expect(recuperada.descripcion, cita.descripcion);
@@ -28,7 +26,6 @@ void main() {
 
     test('no incluye la clave id cuando la cita todavia no fue insertada', () {
       final sinId = Cita(
-        codigoQr: 'QR-002',
         cliente: 'Luis Paz',
         vehiculo: 'Honda Civic',
         fechaCita: DateTime(2026, 10, 2, 10),
@@ -84,12 +81,12 @@ void main() {
       // chequeo real por PRAGMA vive en `cita_repository_test.dart`.
       final claves = cita.toMap().keys.toSet();
       expect(claves, containsAll(<String>{
-        'codigo_qr',
         'cliente',
         'vehiculo',
         'fecha_cita',
         'estado',
         'servicios',
+        'total',
       }));
     });
 

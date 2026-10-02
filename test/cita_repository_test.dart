@@ -26,8 +26,7 @@ void main() {
     await DatabaseHelper.resetParaPruebas();
   });
 
-  Cita nueva({String qr = 'QR-001', String cliente = 'Ana Torres'}) => Cita(
-    codigoQr: qr,
+  Cita nueva({String cliente = 'Ana Torres'}) => Cita(
     cliente: cliente,
     vehiculo: 'Toyota Hilux',
     descripcion: 'Cambio de aceite',
@@ -44,23 +43,15 @@ void main() {
   });
 
   test('READ: obtenerTodas devuelve lo que se guardo', () async {
-    await CitaRepository.instance.crear(nueva(qr: 'QR-A'));
-    await CitaRepository.instance.crear(nueva(qr: 'QR-B', cliente: 'Luis Paz'));
+    await CitaRepository.instance.crear(nueva());
+    await CitaRepository.instance.crear(nueva(cliente: 'Luis Paz'));
 
     final todas = await CitaRepository.instance.obtenerTodas();
     expect(todas.length, 2);
     expect(todas.map((c) => c.cliente), containsAll(['Ana Torres', 'Luis Paz']));
   });
 
-  test('READ: el companero de QR resuelve por codigo y null si no existe', () async {
-    await CitaRepository.instance.crear(nueva(qr: 'TALLER-77'));
 
-    final porQr = await CitaRepository.instance.obtenerPorCodigoQr('TALLER-77');
-    expect(porQr?.vehiculo, 'Toyota Hilux');
-
-    final inexistente = await CitaRepository.instance.obtenerPorCodigoQr('NO-EXISTE');
-    expect(inexistente, isNull);
-  });
 
   test('UPDATE: los cambios quedan persistidos', () async {
     final id = await CitaRepository.instance.crear(nueva());
@@ -96,13 +87,7 @@ void main() {
     expect(await CitaRepository.instance.obtenerPorId(id), isNull);
   });
 
-  test('UNIQUE: un codigo QR repetido se rechaza', () async {
-    await CitaRepository.instance.crear(nueva(qr: 'TALLER-77'));
-    expect(
-      () => CitaRepository.instance.crear(nueva(qr: 'TALLER-77')),
-      throwsA(isA<Exception>()),
-    );
-  });
+
 
   test('el esquema recien creado tiene TODAS las columnas que usa el modelo', () async {
     // Este test es el que atrapo el bug de `vehiculo`: si el CREATE TABLE se
@@ -179,7 +164,7 @@ void main() {
             await db.execute(esquemaV1);
             await db.execute(
               "INSERT INTO citas (codigo_qr, cliente, vehiculo, fecha_cita, estado, creado_en) "
-              "VALUES ('VIEJO-1', 'Cliente Anterior', 'Ford Ranger', '2026-01-05T10:00:00.000', 'pendiente', '2026-01-01T09:00:00.000')",
+              "VALUES ('OLD-1', 'Cliente Anterior', 'Ford Ranger', '2026-01-05T10:00:00.000', 'pendiente', '2026-01-01T09:00:00.000')",
             );
           },
         ),
@@ -190,7 +175,6 @@ void main() {
       final citas = await CitaRepository.instance.obtenerTodas();
 
       expect(citas.length, 1, reason: 'la migracion NO debe perder datos');
-      expect(citas.first.codigoQr, 'VIEJO-1');
       expect(citas.first.cliente, 'Cliente Anterior');
       expect(citas.first.vehiculo, 'Ford Ranger');
       // Columnas nuevas: llegan con el default, no en null.
@@ -219,7 +203,7 @@ void main() {
       await DatabaseHelper.instance.cerrar();
       expect(await CitaRepository.instance.obtenerTodas(), isEmpty);
 
-      final id = await CitaRepository.instance.crear(nueva(qr: 'POST-MIGRA'));
+      final id = await CitaRepository.instance.crear(nueva());
       expect(id, greaterThan(0));
     });
   });
