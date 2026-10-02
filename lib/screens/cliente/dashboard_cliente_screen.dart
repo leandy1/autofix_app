@@ -117,6 +117,7 @@ class _DashboardClienteScreenState extends State<DashboardClienteScreen> {
                 child: switch (_selectedSection) {
                   0 => TalleresMapaScreen(
                     embeddido: true,
+                    tallerSeleccionadoId: _tallerSeleccionadoId,
                     onTallerSelected: _seleccionarTaller,
                   ),
                   1 => AgendarCitaClienteSection(
