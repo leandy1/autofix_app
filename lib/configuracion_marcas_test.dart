@@ -17,7 +17,7 @@ class ConfiguracionMarcasTestApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
       ),
-      home: const ConfiguracionScreenMarcas(),
+      home: const ConfiguracionScreen(),
     );
   }
 }

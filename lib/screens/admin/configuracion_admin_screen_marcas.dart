@@ -9,14 +9,14 @@ import 'dashboard_admin_screen.dart';
 import 'citas_admin_screen.dart';
 import '../auth/login_screen.dart';
 
-class ConfiguracionScreenMarcas extends StatefulWidget {
-  const ConfiguracionScreenMarcas({super.key});
+class ConfiguracionScreen extends StatefulWidget {
+  const ConfiguracionScreen({super.key});
 
   @override
-  State<ConfiguracionScreenMarcas> createState() => _ConfiguracionScreenMarcasState();
+  State<ConfiguracionScreen> createState() => _ConfiguracionScreenState();
 }
 
-class _ConfiguracionScreenMarcasState extends State<ConfiguracionScreenMarcas> {
+class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
   // Controladores solo para que los campos de texto funcionen visualmente.
   // Los botones "Agregar" no guardan nada — eso se conecta en otro archivo.
   final TextEditingController _nombreServicioController = TextEditingController();
