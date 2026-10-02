@@ -1404,7 +1404,9 @@ class _CitasScreenState extends State<CitasScreen> {
       descripcion: cita.descripcion,
       fechaCita: fechaCita,
       estado: estado,
-      total: cita.total,
+      // `Cita` de v5 guarda el total como `int`; `CitaAdmin` lo maneja como
+      // `double` para el formateo de moneda. La conversion va en el puente.
+      total: cita.total.round(),
     );
   }
 
@@ -1444,7 +1446,7 @@ class _CitasScreenState extends State<CitasScreen> {
       estado: estado,
       descripcion: cita.descripcion,
       tecnico: cita.tecnico,
-      total: cita.total,
+      total: cita.total.toDouble(),
     );
   }
 

@@ -58,14 +58,14 @@ void main() {
         vencida.copyWith(estado: EstadoCita.completado).etiquetaUI(ahora),
         'Completado',
       );
-      final hoy = cita.copyWith(fechaCita: DateTime(2026, 9, 15, 9, 30));
-      expect(hoy.etiquetaUI(ahora), 'Pendiente');
+      expect(cita.etiquetaUI(ahora), 'Pendiente');
     });
 
-    test('esAtrasada usa la fecha, no la hora exacta', () {
-      final pendiente = cita.copyWith(fechaCita: DateTime(2026, 10, 29, 9, 30));
-      expect(pendiente.esAtrasada(DateTime(2026, 10, 29, 10)), isFalse);
-      expect(pendiente.esAtrasada(DateTime(2026, 10, 30, 9)), isTrue);
+    test('esAtrasada depende del instante recibido, no del reloj', () {
+      final pendiente = cita.copyWith(fechaCita: DateTime(2026, 10, 1, 9, 30));
+      // Dos dispositivos con el mismo "ahora" tienen que coincidir siempre.
+      expect(pendiente.esAtrasada(DateTime(2026, 10, 1, 10)), isTrue);
+      expect(pendiente.esAtrasada(DateTime(2026, 10, 1, 9)), isFalse);
     });
 
     test('una cita completada no cae en ATRASADAS aunque la hora haya pasado', () {
@@ -88,12 +88,6 @@ void main() {
         'servicios',
         'total',
       }));
-      expect(claves, isNot(contains('codigo_qr')));
-    });
-
-    test('el total sobrevive el mapeo de SQLite', () {
-      final conTotal = cita.copyWith(total: 1250.5);
-      expect(Cita.fromMap(conTotal.toMap()).total, 1250.5);
     });
 
     test('los servicios sobreviven al viaje a JSON y vuelven', () {

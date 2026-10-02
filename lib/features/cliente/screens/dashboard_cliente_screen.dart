@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
-import 'package:autofix/features/auth/screens/login_screen.dart';
+import 'package:autofix/features/talleres/data/taller_repository.dart';
+import 'package:autofix/features/talleres/models/taller.dart';
 import 'package:autofix/shared/theme/app_colors.dart';
+import 'package:autofix/features/auth/screens/login_screen.dart';
 import 'agendar_cita_cliente_section.dart';
 import 'mis_citas_cliente_section.dart';
-import 'talleres_cliente_section.dart';
+import 'talleres_mapa_screen.dart';
 
 class DashboardClienteScreen extends StatefulWidget {
   const DashboardClienteScreen({super.key});
@@ -17,27 +19,50 @@ class _DashboardClienteScreenState extends State<DashboardClienteScreen> {
   int _selectedSection = 0;
   String _selectedWorkshop = 'AutoFix Central';
 
+  /// Identificador del taller elegido. Viaja del mapa al formulario y es lo que
+  /// se guarda en `citas.taller_id`.
+  int? _tallerSeleccionadoId;
+
   static const _sectionTitles = [
     'Talleres cercanos',
     'Agendar cita',
     'Mis citas',
   ];
 
+  @override
+  void initState() {
+    super.initState();
+    _resolverTallerInicial();
+  }
+
+  /// El nombre por defecto es 'AutoFix Central', pero el formulario necesita el
+  /// `id` para poder guardar. Se resuelve contra la base; si ese taller no
+  /// existe, queda sin seleccionar y el usuario elige uno desde el mapa.
+  Future<void> _resolverTallerInicial() async {
+    final taller = await TallerRepository.instance.obtenerPorNombre(
+      _selectedWorkshop,
+    );
+    if (!mounted || taller == null) return;
+    setState(() => _tallerSeleccionadoId = taller.id);
+  }
+
   void _changeSection(int index) {
     setState(() => _selectedSection = index);
   }
 
-  void _selectWorkshop(String workshop) {
+  /// Punto único de selección: lo usan el mapa y el selector del formulario.
+  void _seleccionarTaller(Taller taller) {
     setState(() {
-      _selectedWorkshop = workshop;
+      _selectedWorkshop = taller.nombre;
+      _tallerSeleccionadoId = taller.id;
       _selectedSection = 1;
     });
   }
 
   void _cerrarSesion() {
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-    );
+    Navigator.of(
+      context,
+    ).pushReplacement(MaterialPageRoute(builder: (_) => const LoginScreen()));
   }
 
   @override
@@ -90,14 +115,19 @@ class _DashboardClienteScreenState extends State<DashboardClienteScreen> {
               child: KeyedSubtree(
                 key: ValueKey(_selectedSection),
                 child: switch (_selectedSection) {
-                  0 => TalleresClienteSection(
-                    tallerSeleccionado: _selectedWorkshop,
-                    onTallerSelected: _selectWorkshop,
+                  0 => TalleresMapaScreen(
+                    embeddido: true,
+                    tallerSeleccionadoId: _tallerSeleccionadoId,
+                    onTallerSelected: _seleccionarTaller,
                   ),
                   1 => AgendarCitaClienteSection(
                     tallerSeleccionado: _selectedWorkshop,
+                    tallerSeleccionadoId: _tallerSeleccionadoId,
                     onTallerSelected: (taller) {
-                      setState(() => _selectedWorkshop = taller);
+                      setState(() {
+                        _selectedWorkshop = taller.nombre;
+                        _tallerSeleccionadoId = taller.id;
+                      });
                     },
                   ),
                   _ => const MisCitasClienteSection(),

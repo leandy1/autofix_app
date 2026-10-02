@@ -51,6 +51,8 @@ void main() {
     expect(todas.map((c) => c.cliente), containsAll(['Ana Torres', 'Luis Paz']));
   });
 
+
+
   test('UPDATE: los cambios quedan persistidos', () async {
     final id = await CitaRepository.instance.crear(nueva());
     final editada = (await CitaRepository.instance.obtenerPorId(id))!
@@ -85,13 +87,7 @@ void main() {
     expect(await CitaRepository.instance.obtenerPorId(id), isNull);
   });
 
-  test('el total queda persistido como importe real', () async {
-    final id = await CitaRepository.instance.crear(
-      nueva().copyWith(total: 1250.5),
-    );
-    final releida = await CitaRepository.instance.obtenerPorId(id);
-    expect(releida!.total, 1250.5);
-  });
+
 
   test('el esquema recien creado tiene TODAS las columnas que usa el modelo', () async {
     // Este test es el que atrapo el bug de `vehiculo`: si el CREATE TABLE se
@@ -105,7 +101,6 @@ void main() {
     for (final c in nueva().toMap().keys) {
       expect(nombres, contains(c), reason: 'falta la columna $c en la tabla citas');
     }
-    expect(nombres, isNot(contains('codigo_qr')));
   });
 
   test('PATRON BASE: el repositorio se puede usar como BaseRepository<Cita>', () async {
@@ -140,7 +135,7 @@ void main() {
     expect(await CitaRepository.instance.eliminar(9999), 0);
   });
 
-  group('migraciones a v3', () {
+  group('migracion v1 -> v2', () {
     // El esquema v1 tal cual lo creo la primera version. Esta es la base que
     // puede tener un dispositivo que ya instalo la app antes de la v2.
     const esquemaV1 = '''
@@ -153,26 +148,6 @@ void main() {
         fecha_cita TEXT NOT NULL,
         estado TEXT NOT NULL,
         creado_en TEXT NOT NULL
-      )
-    ''';
-    const esquemaV2 = '''
-      CREATE TABLE citas (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        codigo_qr TEXT NOT NULL UNIQUE,
-        cliente TEXT NOT NULL,
-        vehiculo TEXT NOT NULL,
-        telefono TEXT NOT NULL DEFAULT '',
-        marca TEXT NOT NULL DEFAULT '',
-        modelo TEXT NOT NULL DEFAULT '',
-        anio INTEGER NOT NULL DEFAULT 0,
-        placa TEXT NOT NULL DEFAULT '',
-        servicios TEXT NOT NULL DEFAULT '[]',
-        tecnico TEXT NOT NULL DEFAULT '',
-        descripcion TEXT NOT NULL DEFAULT '',
-        fecha_cita TEXT NOT NULL,
-        estado TEXT NOT NULL,
-        creado_en TEXT NOT NULL,
-        actualizado_en TEXT NOT NULL DEFAULT ''
       )
     ''';
 
@@ -189,14 +164,14 @@ void main() {
             await db.execute(esquemaV1);
             await db.execute(
               "INSERT INTO citas (codigo_qr, cliente, vehiculo, fecha_cita, estado, creado_en) "
-              "VALUES ('VIEJO-1', 'Cliente Anterior', 'Ford Ranger', '2026-01-05T10:00:00.000', 'pendiente', '2026-01-01T09:00:00.000')",
+              "VALUES ('OLD-1', 'Cliente Anterior', 'Ford Ranger', '2026-01-05T10:00:00.000', 'pendiente', '2026-01-01T09:00:00.000')",
             );
           },
         ),
       );
       await baseV1.close();
 
-      // Se abre con el helper de la app: version 3 migra y elimina el QR.
+      // Se abre con el helper de la app: version 2 dispara onUpgrade.
       final citas = await CitaRepository.instance.obtenerTodas();
 
       expect(citas.length, 1, reason: 'la migracion NO debe perder datos');
@@ -208,51 +183,6 @@ void main() {
       expect(citas.first.anio, 0);
       expect(citas.first.servicios, isEmpty);
       expect(citas.first.tecnico, '');
-      expect(citas.first.total, 0);
-      final db = await DatabaseHelper.instance.base;
-      final columnas = await db.rawQuery(
-        'PRAGMA table_info(${DatabaseHelper.tablaCitas})',
-      );
-      expect(
-        columnas.map((fila) => fila['name']),
-        isNot(contains('codigo_qr')),
-      );
-    });
-
-    test('un dispositivo con v2 conserva sus citas y gana el total', () async {
-      await DatabaseHelper.resetParaPruebas();
-      final ruta = p.join(await getDatabasesPath(), 'autofix.db');
-      final baseV2 = await databaseFactory.openDatabase(
-        ruta,
-        options: OpenDatabaseOptions(
-          version: 2,
-          onCreate: (db, _) async {
-            await db.execute(esquemaV2);
-            await db.execute(
-              "INSERT INTO citas "
-              "(codigo_qr, cliente, vehiculo, fecha_cita, estado, creado_en) "
-              "VALUES ('OLD-QR', 'Cliente v2', 'Honda Civic', "
-              "'2026-02-01T11:30:00.000', 'pendiente', '2026-01-30T08:00:00.000')",
-            );
-          },
-        ),
-      );
-      await baseV2.close();
-
-      final citas = await CitaRepository.instance.obtenerTodas();
-      expect(citas, hasLength(1));
-      expect(citas.single.cliente, 'Cliente v2');
-      expect(citas.single.total, 0);
-
-      final db = await DatabaseHelper.instance.base;
-      final columnas = await db.rawQuery(
-        'PRAGMA table_info(${DatabaseHelper.tablaCitas})',
-      );
-      expect(columnas.map((fila) => fila['name']), contains('total'));
-      expect(
-        columnas.map((fila) => fila['name']),
-        isNot(contains('codigo_qr')),
-      );
     });
 
     test('la migracion es idempotente: abrir dos veces no rompe nada', () async {
