@@ -130,6 +130,14 @@ class CitaAdminCard extends StatelessWidget {
                         ],
                       ),
                       const Divider(height: 32, color: Color(0xFFE7EAF0)),
+                      const _SectionTitle('CITA'),
+                      _DetailGrid(
+                        fields: [
+                          ('Fecha', _fechaFormateada()),
+                          ('Hora', cita.hora.format(context)),
+                        ],
+                      ),
+                      const Divider(height: 32, color: Color(0xFFE7EAF0)),
                       const _SectionTitle('VEHÍCULO'),
                       _DetailGrid(
                         fields: [
