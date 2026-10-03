@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/demo_admin_data.dart';
 import '../../models/demo_cita_admin.dart';
+import '../../models/solicitud_cita_cliente.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/admin/solicitudes_citas_admin_section.dart';
 import '../auth/login_screen.dart';
@@ -45,7 +46,13 @@ class _CitasScreenState extends State<CitasScreen> {
             const SizedBox(height: 16),
             _buildFiltrosAvanzados(),
             const SizedBox(height: 16),
-            for (final categoria in kColorPorEstado.keys)
+            for (final categoria in kColorPorEstado.keys.where(
+              (categoria) =>
+                  categoria != 'ATRASADAS' ||
+                  demoSolicitudesAdmin.any(
+                    (cita) => cita.estado == EstadoSolicitudCita.atrasada,
+                  ),
+            ))
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: _buildEstadoAccordion(
@@ -463,6 +470,9 @@ class _CitasScreenState extends State<CitasScreen> {
     required VoidCallback onTap,
   }) {
     final citasDemo = switch (nombre) {
+      'ATRASADAS' => demoSolicitudesAdmin
+          .where((cita) => cita.estado == EstadoSolicitudCita.atrasada)
+          .toList(),
       'En proceso' => [demoCitaAdmin],
       'Completado' => [demoCitaCompletadaAdmin],
       _ => const [],
