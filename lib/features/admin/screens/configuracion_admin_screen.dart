@@ -95,17 +95,6 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
                 onEliminar: _cfg.eliminarTecnico,
               ),
               const SizedBox(height: 16),
-              _buildListaSimpleCard(
-                titulo: 'Estados',
-                hint: 'Ej: En diagnóstico',
-                controller: _estadoController,
-                items: _cfg.estados
-                    .map((e) => (nombre: e.nombre, id: e.id))
-                    .toList(),
-                onAgregar: _agregarEstado,
-                onEliminar: _cfg.eliminarEstado,
-              ),
-              const SizedBox(height: 16),
               // PAUSADO: Marcas sigue con datos demo. Falta que el equipo defina
               // si la fuente es la API web de Andy o esta base; hasta ese dia no se
               // toca ni el repo ni el controller, para no escribir la tabla desde
