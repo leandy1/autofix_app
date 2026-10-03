@@ -101,17 +101,25 @@ class CitasController extends ChangeNotifier {
 
   /// Citas del dia agrupadas por la etiqueta que consume la UI.
   ///
+  /// Al consultar el dia actual, incluye en ATRASADAS las citas pendientes de
+  /// cualquier fecha anterior, para que el atraso se gestione desde hoy.
+  ///
   /// El `ahora` se fija UNA vez por llamada: si cada fila calculara su propia
   /// hora, dos citas del mismo segundo podrian caer en grupos distintos y el
   /// conteo del acordeon no cerraria con la lista.
   Map<String, List<Cita>> agruparPorEstado(DateTime fecha, {DateTime? ahora}) {
     final momento = ahora ?? DateTime.now();
     final dia = _claveDia(fecha);
+    final hoy = _claveDia(momento);
     final mapa = <String, List<Cita>>{
       for (final etiqueta in etiquetas) etiqueta: <Cita>[],
     };
 
     for (final cita in _citas) {
+      if (dia == hoy && cita.esAtrasada(momento)) {
+        mapa[Cita.etiquetaAtrasadas]!.add(cita);
+        continue;
+      }
       if (_claveDia(cita.fechaCita) != dia) continue;
       mapa[cita.etiquetaUI(momento)]!.add(cita);
     }

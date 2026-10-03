@@ -61,14 +61,14 @@ void main() {
       expect(cita.etiquetaUI(ahora), 'Pendiente');
     });
 
-    test('esAtrasada depende del instante recibido, no del reloj', () {
+    test('esAtrasada compara fechas e ignora la hora de la cita', () {
       final pendiente = cita.copyWith(fechaCita: DateTime(2026, 10, 1, 9, 30));
-      // Dos dispositivos con el mismo "ahora" tienen que coincidir siempre.
-      expect(pendiente.esAtrasada(DateTime(2026, 10, 1, 10)), isTrue);
+      expect(pendiente.esAtrasada(DateTime(2026, 10, 1, 10)), isFalse);
       expect(pendiente.esAtrasada(DateTime(2026, 10, 1, 9)), isFalse);
+      expect(pendiente.esAtrasada(DateTime(2026, 10, 2, 0)), isTrue);
     });
 
-    test('una cita completada no cae en ATRASADAS aunque la hora haya pasado', () {
+    test('una cita completada no cae en ATRASADAS aunque la fecha haya pasado', () {
       final completada = cita
           .copyWith(fechaCita: DateTime(2020, 1, 1))
           .copyWith(estado: EstadoCita.completado);

@@ -111,14 +111,18 @@ class Cita implements EntidadPersistida {
   final DateTime? actualizadoEn;
   final int total;
 
-  /// "La hora ya paso y todavia no se completo". No es "la fecha es de ayer".
+  /// "La fecha ya paso y todavia no se completo". La hora de la cita no cambia
+  /// la clasificacion: una cita de hoy sigue vigente hasta el final del dia.
   ///
   /// `ahora` va por parametro a proposito: leer el reloj adentro hace que dos
   /// dispositivos clasifiquen la misma cita distinto, y en cuanto haya
   /// sincronizacion eso ya no es una discrepancia visual sino conflicto de datos.
   /// Quien arma la lista lo pasa una sola vez para toda la pasada.
-  bool esAtrasada(DateTime ahora) =>
-      estado != EstadoCita.completado && fechaCita.isBefore(ahora);
+  bool esAtrasada(DateTime ahora) {
+    final fechaDia = DateTime(fechaCita.year, fechaCita.month, fechaCita.day);
+    final ahoraDia = DateTime(ahora.year, ahora.month, ahora.day);
+    return estado != EstadoCita.completado && fechaDia.isBefore(ahoraDia);
+  }
 
   /// Llave exacta del mapa de colores de la UI. Va en mayusculas porque asi
   /// esta definida alla.
