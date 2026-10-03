@@ -34,12 +34,21 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Editar taller'), findsOneWidget);
+    expect(find.text('ID del taller'), findsOneWidget);
+    final campoId = tester.widget<EditableText>(
+      find.descendant(
+        of: find.byType(TextFormField).at(0),
+        matching: find.byType(EditableText),
+      ),
+    );
+    expect(campoId.readOnly, isTrue);
+    expect(campoId.controller.text, original.id.toString());
     await tester.enterText(
-      find.byType(TextFormField).at(1),
+      find.byType(TextFormField).at(2),
       'Dirección actualizada',
     );
-    await tester.enterText(find.byType(TextFormField).at(3), '18,5');
-    await tester.enterText(find.byType(TextFormField).at(4), '-69,5');
+    await tester.enterText(find.byType(TextFormField).at(4), '18,5');
+    await tester.enterText(find.byType(TextFormField).at(5), '-69,5');
     await tester.tap(find.text('Guardar cambios'));
     await tester.pumpAndSettle();
 

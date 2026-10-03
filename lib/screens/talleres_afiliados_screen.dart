@@ -382,6 +382,7 @@ class _TalleresAfiliadosScreenState extends State<TalleresAfiliadosScreen> {
   );
 
   Future<void> _abrirFormulario([Taller? taller]) async {
+    final idTaller = TextEditingController(text: taller?.id.toString() ?? '');
     final nombre = TextEditingController(text: taller?.nombre ?? '');
     final direccion = TextEditingController(text: taller?.direccion ?? '');
     final telefono = TextEditingController(text: taller?.telefono ?? '');
@@ -454,6 +455,15 @@ class _TalleresAfiliadosScreenState extends State<TalleresAfiliadosScreen> {
                       ],
                     ),
                     const SizedBox(height: 20),
+                    if (taller != null) ...[
+                      _campo(
+                        'ID del taller',
+                        '',
+                        idTaller,
+                        readOnly: true,
+                      ),
+                      const SizedBox(height: 14),
+                    ],
                     _campo(
                       'Nombre del taller',
                       'Ej: Global Refriauto',
@@ -577,6 +587,7 @@ class _TalleresAfiliadosScreenState extends State<TalleresAfiliadosScreen> {
         ),
       );
     } finally {
+      idTaller.dispose();
       nombre.dispose();
       direccion.dispose();
       telefono.dispose();
@@ -607,6 +618,7 @@ class _TalleresAfiliadosScreenState extends State<TalleresAfiliadosScreen> {
     TextEditingController controller, {
     String? Function(String?)? validator,
     TextInputType? keyboardType,
+    bool readOnly = false,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -624,6 +636,7 @@ class _TalleresAfiliadosScreenState extends State<TalleresAfiliadosScreen> {
           controller: controller,
           validator: validator,
           keyboardType: keyboardType,
+          readOnly: readOnly,
           decoration: InputDecoration(
             hintText: hint,
             hintStyle: const TextStyle(color: AppColors.placeholderGray),
