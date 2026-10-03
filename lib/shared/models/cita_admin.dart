@@ -24,6 +24,9 @@ class CitaAdmin {
     required this.descripcion,
     this.tecnico,
     this.total = 0.0,
+    this.tallerId,
+    this.creadoEn,
+    this.actualizadoEn,
   });
 
   final int id;
@@ -40,4 +43,20 @@ class CitaAdmin {
   final String descripcion;
   final String? tecnico;
   final double total;
+
+  /// Taller afiliado donde se agendó la cita.
+  ///
+  /// Este campo NO es para editarlo en pantalla: existe para que el puente
+  /// `Cita` <-> `CitaAdmin` sea una ida y vuelta sin perdida. Sin el, el
+  /// mapeo hacia `Cita` se construía sin `tallerId`, `Cita.toMap()` escribía la
+  /// columna a null y el guardado desde el admin DESASOCIABA la cita del
+  /// taller: dejaba de aparecer en `CitaRepository.obtenerPorTaller`.
+  final int? tallerId;
+
+  /// Fecha de alta original. Viaja por el mismo motivo que [tallerId]: el
+  /// guardado desde admin no debe reescribir cuando se creo la cita.
+  final DateTime? creadoEn;
+
+  /// Ultima modificacion. Se refresca en cada escritura.
+  final DateTime? actualizadoEn;
 }
