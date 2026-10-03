@@ -1,8 +1,12 @@
-# Guía: dar de alta talleres afiliados
+# Guía: gestionar talleres afiliados
 
-> **Esto es temporal.** Hoy la red de afiliados se da de alta editando código. Cuando exista el
-> módulo de administración de talleres, esto se reemplaza por un formulario y esta guía
-> deja de ser el procedimiento. Ver [Por qué es temporal](#por-qué-es-temporal).
+Los talleres se administran desde el modo desarrollador: en el login, ingresa el usuario `dev` y
+la contraseña `1234`. Desde el directorio **Talleres afiliados** se pueden agregar y editar el
+nombre, la dirección, el teléfono y las coordenadas; los cambios se guardan en la base local y se
+reflejan en el mapa y en el selector de citas.
+
+La semilla descrita aquí solo define los talleres iniciales de una instalación nueva. No hace falta
+editar código para actualizar los datos de un taller existente.
 
 El mapa **no busca talleres libres**. Solo muestra los afiliados que están guardados en la tabla
 `talleres` de la base local. Esa tabla se siembra en la instalación y se administra después.
@@ -115,20 +119,18 @@ Qué hacer según el caso:
 | Situación | Solución |
 |---|---|
 | Estás probando en un emulador o dispositivo limpio | Desinstala la app o borra los datos de almacenamiento, y reinstala. |
-| Quieres corregir un taller en un dispositivo de pruebas | Ábrelo en Configuración,_edítalo y guarda_, o bórralo. La base es la fuente en tiempo de ejecución. |
+| Quieres corregir un taller en un dispositivo de pruebas | Inicia sesión con `dev` / `1234` y edítalo en Talleres afiliados. La base es la fuente en tiempo de ejecución. |
 | Ya hay producción con la app publicada | Hace falta una **migración** nueva (`_versionBase` + un paso en `_migrar`) con un `UPDATE` dirigido por nombre. Es un paso de migración más, no un cambio de semilla. |
 
 Esto pasa porque los datos ya persistidos son del usuario, no nuestros. La semilla es el
 *estado inicial* de una instalación, no un `seed` que se reaplique.
 
-## 6. Por qué es temporal
+## 6. Administración y semilla
 
-Editar un archivo Dart para sumar un taller no es operable: obliga a recompilar y publicar una
-versión nueva de la app, y un afiliado nuevo tarda días en estar visible. Cuando exista el módulo
-de administración, el alta será un `INSERT` sobre la misma tabla `talleres` a través de
-`TallerRepository`, y esta guía se archivará.
-
-Mientras tanto: **agregar un afiliado es un cambio de código.** Avísale a quien toque el PR.
+El formulario de administración escribe en la misma tabla `talleres` mediante
+`TallerRepository`. La semilla permanece como estado inicial y solo se ejecuta cuando la base está
+vacía; por tanto, modificar `SemillaInicial.talleres` no sobrescribe los datos de una instalación
+existente. Para cambios normales, usa el directorio de talleres del modo desarrollador.
 
 ---
 
