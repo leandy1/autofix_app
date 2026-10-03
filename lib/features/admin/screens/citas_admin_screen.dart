@@ -1552,16 +1552,26 @@ class _CitasScreenState extends State<CitasScreen> {
                 padding: const EdgeInsets.only(bottom: 12),
                 child: ListenableBuilder(
                   listenable: _citasController,
-                  builder: (context, _) => _buildEstadoAccordion(
-                    nombre: categoria,
-                    color: kColorPorEstado[categoria]!,
-                    expanded: _categoriaExpandida == categoria,
-                    onTap: () => setState(() {
-                      _categoriaExpandida = _categoriaExpandida == categoria
-                          ? null
-                          : categoria;
-                    }),
-                  ),
+                  builder: (context, _) {
+                    final citasPorEstado = _citasController.agruparPorEstado(
+                      _fechaSeleccionada,
+                    );
+                    if (categoria == 'ATRASADAS' &&
+                        (citasPorEstado[categoria]?.isEmpty ?? true)) {
+                      return const SizedBox.shrink();
+                    }
+
+                    return _buildEstadoAccordion(
+                      nombre: categoria,
+                      color: kColorPorEstado[categoria]!,
+                      expanded: _categoriaExpandida == categoria,
+                      onTap: () => setState(() {
+                        _categoriaExpandida = _categoriaExpandida == categoria
+                            ? null
+                            : categoria;
+                      }),
+                    );
+                  },
                 ),
               ),
           ],
