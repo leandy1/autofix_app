@@ -1,6 +1,6 @@
 import 'package:autofix/core/database/database_helper.dart';
 import 'package:autofix/features/auth/screens/login_screen.dart';
-import 'package:autofix/screens/talleres_afiliados_screen.dart';
+import 'package:autofix/features/devMode/screens/talleres_afiliados_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';

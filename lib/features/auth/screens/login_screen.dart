@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:autofix/features/admin/screens/dashboard_admin_screen.dart';
 import 'package:autofix/features/auth/controllers/login_controller.dart';
 import 'package:autofix/features/cliente/screens/dashboard_cliente_screen.dart';
-import 'package:autofix/screens/talleres_afiliados_screen.dart';
+import 'package:autofix/features/devMode/screens/talleres_afiliados_screen.dart';
 import 'package:autofix/shared/theme/app_colors.dart';
 
 class LoginScreen extends StatefulWidget {
