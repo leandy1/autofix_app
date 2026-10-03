@@ -186,8 +186,21 @@ class Cita implements EntidadPersistida {
       // limpia la columna si se desasigna el taller. Omitirla en un UPDATE
       // dejaria el id viejo pegado a la cita.
       _kTallerId: tallerId,
-      _kCreadoEn: (creadoEn ?? DateTime.now()).toIso8601String(),
-      _kActualizadoEn: (actualizadoEn ?? DateTime.now()).toIso8601String(),
+      // `creado_en` se ESCRIBE UNA SOLA VEZ, al crear. Si el UPDATE lo mandara
+      // siempre, cada guardado reescribiria la fecha de creacion y se perderia
+      // la trazabilidad de cuando se agendo la cita.
+      //
+      // Por eso la columna solo entra en el mapa si la cita no tiene id (alta)
+      // o si el modelo conoce el valor original. En cualquier otro caso se
+      // omite del mapa, y `db.update` deja intacta la columna que ya esta en la
+      // base. Antes esto decia `(creadoEn ?? DateTime.now())`, que en un UPDATE
+      // sin `creadoEn` plantaba la hora del guardado como si fuera la de alta.
+      if (id == null || creadoEn != null)
+        _kCreadoEn: (creadoEn ?? DateTime.now()).toIso8601String(),
+      // `actualizado_en` es lo contrario por definicion: se refresca en cada
+      // escritura, porque de eso sirve. Se sella con el reloj en vez de copiar
+      // el valor que venga, asi un UPDATE cuenta como modificacion real.
+      _kActualizadoEn: DateTime.now().toIso8601String(),
       _kTotal: total,
     };
   }

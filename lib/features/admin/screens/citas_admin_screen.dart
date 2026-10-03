@@ -25,12 +25,23 @@ class CitaAdminCard extends StatelessWidget {
     required this.cita,
     this.onEdited,
     this.onDeleted,
+    this.onEstadoCambiado,
     super.key,
   });
 
   final CitaAdmin cita;
   final ValueChanged<CitaAdmin>? onEdited;
   final ValueChanged<int>? onDeleted;
+
+  /// Cambio de estado del desplegable.
+  ///
+  /// Va separado de [onEdited] a proposito. Un cambio de estado es un UPDATE
+  /// parcial: solo cambia `estado` y `actualizado_en`. Si viajara por
+  /// [onEdited], el admin reescribiria la fila completa, y con ella las
+  /// columnas que la pantalla no edita (`taller_id`, `creado_en`), que es
+  /// exactamente como una cita se desasociaba de su taller al mover el
+  /// desplegable.
+  final void Function(EstadoCitaAdmin nuevoEstado)? onEstadoCambiado;
 
   static String _estadoTexto(EstadoCitaAdmin estado) {
     switch (estado) {
@@ -616,6 +627,20 @@ class CitaAdminCard extends StatelessWidget {
                           _ => cita.estado,
                         };
 
+                        // 'Atrasadas' no es un estado: es una vista calculada
+                        // (fecha ya pasada) sobre citas pendientes. Por eso el
+                        // item viene deshabilitado y aqui nunca se persiste.
+                        if (nuevoEstadoEnum == EstadoCitaAdmin.atrasada) return;
+
+                        if (onEstadoCambiado != null) {
+                          onEstadoCambiado!(nuevoEstadoEnum);
+                          return;
+                        }
+
+                        // Sin handler de update parcial (la tarjeta se usa
+                        // suelta en tests o previews) se cae al guardado
+                        // completo, arrastrando ahora los campos de
+                        // auditoria para no perderlos en el camino.
                         onEdited?.call(
                           CitaAdmin(
                             id: cita.id,
@@ -632,6 +657,9 @@ class CitaAdminCard extends StatelessWidget {
                             descripcion: cita.descripcion,
                             tecnico: cita.tecnico,
                             total: cita.total,
+                            tallerId: cita.tallerId,
+                            creadoEn: cita.creadoEn,
+                            actualizadoEn: cita.actualizadoEn,
                           ),
                         );
                       },
@@ -1407,6 +1435,11 @@ class _CitasScreenState extends State<CitasScreen> {
       // `Cita` de v5 guarda el total como `int`; `CitaAdmin` lo maneja como
       // `double` para el formateo de moneda. La conversion va en el puente.
       total: cita.total.round(),
+      // Sin esto el mapeo se perdia de ida y vuelta: la cita volvia a
+      // `base` sin taller y sin fecha de alta.
+      tallerId: cita.tallerId,
+      creadoEn: cita.creadoEn,
+      actualizadoEn: cita.actualizadoEn,
     );
   }
 
@@ -1447,12 +1480,33 @@ class _CitasScreenState extends State<CitasScreen> {
       descripcion: cita.descripcion,
       tecnico: cita.tecnico,
       total: cita.total.toDouble(),
+      tallerId: cita.tallerId,
+      creadoEn: cita.creadoEn,
+      actualizadoEn: cita.actualizadoEn,
     );
   }
 
   Future<void> _guardarEdicion(CitaAdmin cita) async {
     final guardada = await _citasController.guardar(_aCitaPersistida(cita));
     if (!guardada && mounted) _mostrarErrorPersistencia();
+  }
+
+  /// Mueve la cita de estado sin reescribir el resto de la fila.
+  ///
+  /// 'Atrasadas' no se persiste: es una etiqueta derivada de la fecha, no un
+  /// estado guardado. Si el admin la eligiera, la cita quedaria con un estado
+  /// que ninguna consulta por estado reconoce.
+  Future<void> _cambiarEstadoCita(int id, EstadoCitaAdmin nuevo) async {
+    if (nuevo == EstadoCitaAdmin.atrasada) return;
+    final estado = switch (nuevo) {
+      EstadoCitaAdmin.pendiente => cita_data.EstadoCita.pendiente,
+      EstadoCitaAdmin.esperandoPieza => cita_data.EstadoCita.esperandoPieza,
+      EstadoCitaAdmin.enProceso => cita_data.EstadoCita.enProceso,
+      EstadoCitaAdmin.completada => cita_data.EstadoCita.completado,
+      EstadoCitaAdmin.atrasada => cita_data.EstadoCita.pendiente,
+    };
+    final cambiado = await _citasController.cambiarEstado(id, estado);
+    if (!cambiado && mounted) _mostrarErrorPersistencia();
   }
 
   Future<void> _eliminarCita(int id) async {
@@ -1995,6 +2049,11 @@ class _CitasScreenState extends State<CitasScreen> {
                           cita: _citaParaTarjeta(cita),
                           onEdited: (citaActualizada) {
                             _guardarEdicion(citaActualizada);
+                          },
+                          onEstadoCambiado: (nuevoEstado) {
+                            final id = cita.id;
+                            if (id == null) return;
+                            _cambiarEstadoCita(id, nuevoEstado);
                           },
                           onDeleted: (id) {
                             _eliminarCita(id);
