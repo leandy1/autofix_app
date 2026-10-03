@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
+import 'semilla_citas_demo.dart';
 import 'semilla_inicial.dart';
 
 /// Punto unico de acceso a SQLite (Singleton).
@@ -34,9 +35,20 @@ class DatabaseHelper {
   /// v3 = los catalogos de Configuracion (tecnicos, tipos de servicio, estados).
   /// v4 = la red de talleres AFILIADOS y el vinculo de la cita con el taller.
   /// v5 = se elimina codigo_qr de citas y se agrega total (histórico inmutable).
+  /// v6 = indice en `citas.fecha_cita`, que es por donde filtran el Dashboard y
+  ///      la lista de Citas.
+  ///
   /// OJO: subir la version NO borra la base, dispara `onUpgrade`, que es lo
   /// que permite a un dispositivo que ya instalo la v1 seguir funcionando.
-  static const int _versionBase = 5;
+  static const int _versionBase = 6;
+
+  /// Nombre del indice de [tablaCitas] por fecha.
+  ///
+  /// Publico y no privado a proposito: las pruebas de migracion lo consultan con
+  /// `PRAGMA index_list` para atar el `CREATE INDEX` con la version del esquema.
+  /// Un `PRAGMA` escrito a mano en el test con el nombre puesto de cabeza no
+  /// comprueba nada, porque pasa igual si el nombre cambia.
+  static const String idxCitasFecha = 'idx_citas_fecha';
 
   static const String tablaCitas = 'citas';
   static const String colId = 'id';
@@ -216,6 +228,14 @@ class DatabaseHelper {
       'CREATE INDEX IF NOT EXISTS idx_citas_taller_id '
       'ON $tablaCitas ($colTallerId)',
     );
+    // v6. Toda consulta del Dashboard y de la pantalla de Citas filtra por dia
+    // con `fecha_cita LIKE 'AAAA-MM-DD%'`, que sin indice es un escaneo
+    // secuencial de la tabla completa. Con el volumen de un taller real eso se
+    // nota al cambiar de fecha en el calendario.
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS $idxCitasFecha '
+      'ON $tablaCitas ($colFechaCita)',
+    );
 
     await _crearCatalogos(db);
     await _sembrarCatalogos(db);
@@ -368,14 +388,99 @@ class DatabaseHelper {
     await sembrar(tablaEstados, SemillaInicial.estados);
   }
 
+  // ------------------------------------------------------------------
+  // Semilla de CITAS: la unica que es data de prueba de verdad
+  // ------------------------------------------------------------------
+
+  /// Inyecta un lote de citas de demostracion y devuelve cuantas se guardaron.
+  ///
+  /// A diferencia de `_sembrarCatalogos` y `_sembrarTalleres`, esta NO se llama
+  /// desde `_crearEsquema` ni desde `_migrar`, y eso es deliberado:
+  ///
+  /// - En una instalacion real, el administrador abriria el Dashboard con ~100
+  ///   clientes que no existen y una linea de ingresos que no es de nadie, sin
+  ///   forma de distinguirla de su negocio real.
+  /// - En los tests, `cita_repository_test.dart` asume que una base recien
+  ///   creada no tiene citas (`obtenerTodas()` vacio, `length == 2` despues de
+  ///   crear dos). Sembrarlas aqui rompe esas tres aserciones.
+  ///
+  /// Se activa a mano desde `main.dart`, y solo en modo debug. Ver la nota de
+  /// `SemillaCitasDemo`.
+  ///
+  /// El chequeo de vacio es la misma proteccion de las otras semillas: es una
+  /// operacion de desarrollo y la segunda llamada no debe duplicar el lote.
+  /// Si el taller ya tiene citas propias, no se inyecta nada y se devuelve 0,
+  /// porque un `INSERT` encima de data real es indistinguible de un bug.
+  static Future<int> sembrarCitasDemo({DateTime? referencia}) async {
+    final db = await instance.base;
+
+    final existentes = await db.query(
+      tablaCitas,
+      columns: <String>[colId],
+      limit: 1,
+    );
+    if (existentes.isNotEmpty) return 0;
+
+    // Los ids de `talleres` se LEEN de la base y no se suponen. Con tres
+    // talleres tiene toda la pinta de que el id es 1, 2, 3, y lo es, pero
+    // escribirlo a mano ata la semilla a un estado de la base que no depende de
+    // ella: el dia que se siembre un cuarto taller o se borre uno, las citas
+    // de demostracion apuntan a un taller equivocado sin que nada avise.
+    final filasTalleres = await db.query(
+      tablaTalleres,
+      columns: <String>[colId],
+      orderBy: colId,
+    );
+    final tallerIds = filasTalleres
+        .map((f) => (f[colId] as num).toInt())
+        .toList(growable: false);
+
+    final citas = SemillaCitasDemo.generar(
+      referencia: referencia ?? DateTime.now(),
+      tallerIds: tallerIds,
+    );
+
+    // En UNA transaccion: ~100 INSERT sueltos abren y cierran el statement uno por
+    // uno y se nota el arranque. Ademas, si algo falla a la mitad, la tabla
+    // queda con 60 citas y no con un lote coherente.
+    await db.transaction((txn) async {
+      for (final cita in citas) {
+        await txn.insert(tablaCitas, cita.toMap());
+      }
+    });
+
+    return citas.length;
+  }
+
+  /// Borra las citas de demostracion y deja el taller como estaba.
+  ///
+  /// El reverso de [sembrarCitasDemo], para cuando ya sevio suficiente grafico
+  /// de mentira y hay que probar el Dashboard con la data real. Borra TODO lo
+  /// que hay en `citas`, no solo el lote demo: no hay forma de distinguir una
+  /// fila sembrada de una creada por el admin, y un WHERE que adivinase seria
+  /// peor que un borrado honesto.
+  ///
+  /// Por eso lleva una advertencia en el nombre y no se llama desde ningun
+  /// lugar de la app.
+  @visibleForTesting
+  static Future<void> limpiarCitasParaPruebas() async {
+    final db = await instance.base;
+    await db.delete(tablaCitas);
+  }
+
   /// Migracion por pasos: 1 -> 2 agrega columnas a `citas`, 2 -> 3 agrega los
   /// catalogos de Configuracion, 3 -> 4 agrega los talleres afiliados y el
-  /// vinculo `citas.taller_id`.
+  /// vinculo `citas.taller_id`, 4 -> 5 reconstruye `citas` sin `codigo_qr` y con
+  /// `total`, 5 -> 6 agrega el indice de `fecha_cita`.
   ///
   /// Antes esto era `if (versionAnterior >= 2) return;`, que con una v3 nueva
   /// impidia hacer exactamente lo mismo que hacia: al agregar pasos hay que
   /// dejar de cortar el flujo y pasar a preguntar por cada version. Un `return`
   /// temprano aqui es el bug clasico de las migraciones encadenadas.
+  ///
+  /// El orden de los pasos importa y no es solo por legibilidad: cada uno asume
+  /// el mundo que dejo el anterior. El paso 6 va ultimo porque el paso 5 borra
+  /// la tabla.
   ///
   /// Todo dentro de UNA transaccion: si algo falla, SQLite revierte el paquete
   /// entero y la base queda como estaba. Migrar a medias es peor que no migrar.
@@ -477,6 +582,21 @@ class DatabaseHelper {
         await txn.execute('DROP TABLE citas');
         await txn.execute('ALTER TABLE citas_new RENAME TO citas');
         await txn.execute('CREATE INDEX IF NOT EXISTS idx_citas_taller_id ON citas (taller_id)');
+      }
+
+      if (versionAnterior < 6) {
+        // DESPUES del paso 5, y esto no es un detalle de orden sin importancia:
+        // el paso 5 reconstruye la tabla (DROP TABLE citas + RENAME) para
+        // quitar `codigo_qr`. Los indices pertenecen a la tabla, asi que un
+        // `CREATE INDEX` puesto antes del paso 5 se va con la tabla vieja y el
+        // dispositivo queda migrado a la v6 SIN indice. Un `IF NOT EXISTS` no
+        // salva: el nombre del indice desaparecio junto con el, asi que el
+        // `IF NOT EXISTS` lo crearia sin problema y nadie veria que el paso
+        // corrio en el momento equivocado. Solo el orden lo evita.
+        await txn.execute(
+          'CREATE INDEX IF NOT EXISTS $idxCitasFecha '
+          'ON $tablaCitas ($colFechaCita)',
+        );
       }
     });
   }
