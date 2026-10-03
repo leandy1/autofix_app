@@ -78,10 +78,39 @@ class DevModeController extends ChangeNotifier {
 
     try {
       if (tallerLimpio.id == null) {
-        await _talleresRepository.crear(tallerLimpio);
+        final existente = await _talleresRepository.obtenerPorNombre(nombre);
+        if (existente != null) {
+          if (existente.activo) {
+            return _fallar('Ya existe un taller con ese nombre.');
+          }
+          await _talleresRepository.actualizar(
+            existente.copyWith(
+              nombre: nombre,
+              direccion: tallerLimpio.direccion,
+              telefono: tallerLimpio.telefono,
+              latitud: tallerLimpio.latitud,
+              longitud: tallerLimpio.longitud,
+              activo: true,
+            ),
+          );
+        } else {
+          await _talleresRepository.crear(tallerLimpio);
+        }
       } else {
         await _talleresRepository.actualizar(tallerLimpio);
       }
+      _talleres = await _talleresRepository.obtenerTodas();
+      _error = null;
+      notifyListeners();
+      return true;
+    } on Exception catch (error) {
+      return _fallar(_mensajeDe(error));
+    }
+  }
+
+  Future<bool> darDeBajaTaller(int id) async {
+    try {
+      await _talleresRepository.darDeBaja(id);
       _talleres = await _talleresRepository.obtenerTodas();
       _error = null;
       notifyListeners();
@@ -101,6 +130,6 @@ class DevModeController extends ChangeNotifier {
     if (error is DatabaseException && error.isUniqueConstraintError()) {
       return 'Ya existe un taller con ese nombre.';
     }
-    return 'No se pudo guardar el taller. Intenta de nuevo.';
+    return 'No se pudo guardar el taller: $error';
   }
 }

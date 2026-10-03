@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-
 import 'package:autofix/features/devMode/controllers/dev_mode_controller.dart';
 import 'package:autofix/features/talleres/models/taller.dart';
 import 'package:autofix/shared/theme/app_colors.dart';
@@ -15,6 +14,7 @@ class TalleresAfiliadosScreen extends StatefulWidget {
 class _TalleresAfiliadosScreenState extends State<TalleresAfiliadosScreen> {
   final DevModeController _controller = DevModeController();
   final TextEditingController _buscarController = TextEditingController();
+  bool _operacionEnCurso = false;
 
   @override
   void initState() {
@@ -66,8 +66,9 @@ class _TalleresAfiliadosScreenState extends State<TalleresAfiliadosScreen> {
         builder: (context, _) {
           final query = _buscarController.text.trim().toLowerCase();
           final talleres = _controller.talleres.where((taller) {
-            return taller.nombre.toLowerCase().contains(query) ||
-                taller.direccion.toLowerCase().contains(query);
+            return taller.activo &&
+                (taller.nombre.toLowerCase().contains(query) ||
+                    taller.direccion.toLowerCase().contains(query));
           }).toList();
           final activos = _controller.talleres
               .where((taller) => taller.activo)
@@ -339,8 +340,7 @@ class _TalleresAfiliadosScreenState extends State<TalleresAfiliadosScreen> {
                   spacing: 14,
                   runSpacing: 4,
                   children: [
-                    if (taller.telefono.isNotEmpty)
-                      _dato(taller.telefono),
+                    if (taller.telefono.isNotEmpty) _dato(taller.telefono),
                     _dato('${taller.latitud}, ${taller.longitud}'),
                     if (taller.id != null) _dato('ID #${taller.id}'),
                   ],
@@ -348,13 +348,78 @@ class _TalleresAfiliadosScreenState extends State<TalleresAfiliadosScreen> {
               ],
             ),
           ),
-          TextButton(
-            onPressed: () => _abrirFormulario(taller),
-            child: const Text('Editar'),
+          Column(
+            children: [
+              TextButton(
+                onPressed: () => _abrirFormulario(taller),
+                child: const Text('Editar'),
+              ),
+              if (taller.activo)
+                IconButton(
+                  tooltip: 'Dar de baja taller',
+                  onPressed: () => _confirmarDarDeBaja(taller),
+                  icon: const Icon(Icons.delete_outline),
+                  color: Colors.redAccent,
+                ),
+            ],
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _confirmarDarDeBaja(Taller taller) async {
+    if (_operacionEnCurso) return;
+    _operacionEnCurso = true;
+    try {
+      final confirmado = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Dar de baja taller'),
+          content: Text(
+            '¿Deseas dar de baja a ${taller.nombre}? Ya no aparecerá en el mapa '
+            'ni en el selector de citas. El historial existente se conservará.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Dar de baja'),
+            ),
+          ],
+        ),
+      );
+      if (confirmado != true || !mounted) return;
+
+      final id = taller.id;
+      if (id == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo identificar el taller.')),
+        );
+        return;
+      }
+
+      final ok = await _controller.darDeBajaTaller(id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ok
+                ? 'El taller se dio de baja correctamente.'
+                : _controller.error ?? 'No se pudo dar de baja el taller.',
+          ),
+        ),
+      );
+    } finally {
+      _operacionEnCurso = false;
+    }
   }
 
   Widget _estado(bool activo) {
@@ -382,6 +447,8 @@ class _TalleresAfiliadosScreenState extends State<TalleresAfiliadosScreen> {
   );
 
   Future<void> _abrirFormulario([Taller? taller]) async {
+    if (_operacionEnCurso) return;
+    _operacionEnCurso = true;
     final idTaller = TextEditingController(text: taller?.id.toString() ?? '');
     final nombre = TextEditingController(text: taller?.nombre ?? '');
     final direccion = TextEditingController(text: taller?.direccion ?? '');
@@ -400,192 +467,203 @@ class _TalleresAfiliadosScreenState extends State<TalleresAfiliadosScreen> {
     Taller? resultado;
 
     try {
-      resultado = await showDialog<Taller>(
+      final ruta = DialogRoute<Taller>(
         context: context,
-        builder: (dialogContext) => Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 620),
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Form(
-                key: key,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                taller == null
-                                    ? 'NUEVO AFILIADO'
-                                    : 'TALLER #${taller.id}',
-                                style: const TextStyle(
-                                  color: AppColors.orangePrimary,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 1,
+        barrierDismissible: true,
+        barrierColor: Colors.black54,
+        builder: (dialogContext) => SafeArea(
+          child: Dialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 620),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Form(
+                  key: key,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  taller == null
+                                      ? 'NUEVO AFILIADO'
+                                      : 'TALLER #${taller.id}',
+                                  style: const TextStyle(
+                                    color: AppColors.orangePrimary,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 1,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                taller == null
-                                    ? 'Agregar taller'
-                                    : 'Editar taller',
-                                style: const TextStyle(
-                                  color: AppColors.headerNavy,
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w800,
+                                const SizedBox(height: 4),
+                                Text(
+                                  taller == null
+                                      ? 'Agregar taller'
+                                      : 'Editar taller',
+                                  style: const TextStyle(
+                                    color: AppColors.headerNavy,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w800,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                        IconButton(
-                          tooltip: 'Cerrar',
-                          onPressed: () => Navigator.of(dialogContext).pop(),
-                          icon: const Icon(Icons.close),
-                        ),
+                          IconButton(
+                            tooltip: 'Cerrar',
+                            onPressed: () {
+                              FocusScope.of(dialogContext).unfocus();
+                              Navigator.of(dialogContext).pop();
+                            },
+                            icon: const Icon(Icons.close),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      if (taller != null) ...[
+                        _campo('ID del taller', '', idTaller, readOnly: true),
+                        const SizedBox(height: 14),
                       ],
-                    ),
-                    const SizedBox(height: 20),
-                    if (taller != null) ...[
                       _campo(
-                        'ID del taller',
-                        '',
-                        idTaller,
-                        readOnly: true,
+                        'Nombre del taller',
+                        'Ej: Global Refriauto',
+                        nombre,
+                        validator: (value) =>
+                            value == null || value.trim().isEmpty
+                            ? 'Escribe el nombre del taller.'
+                            : null,
                       ),
                       const SizedBox(height: 14),
-                    ],
-                    _campo(
-                      'Nombre del taller',
-                      'Ej: Global Refriauto',
-                      nombre,
-                      validator: (value) => value == null || value.trim().isEmpty
-                          ? 'Escribe el nombre del taller.'
-                          : null,
-                    ),
-                    const SizedBox(height: 14),
-                    _campo('Dirección', 'Calle, sector y ciudad', direccion),
-                    const SizedBox(height: 14),
-                    _campo(
-                      'Teléfono',
-                      '809-555-0101',
-                      telefono,
-                      keyboardType: TextInputType.phone,
-                    ),
-                    const SizedBox(height: 14),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _campo(
-                            'Latitud',
-                            '18,4861',
-                            latitud,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                              signed: true,
-                            ),
-                            validator: (value) =>
-                                DevModeController.validarCoordenada(
-                              value,
-                              minimo: -90,
-                              maximo: 90,
-                              nombre: 'latitud',
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _campo(
-                            'Longitud',
-                            '-69,9312',
-                            longitud,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                              signed: true,
-                            ),
-                            validator: (value) =>
-                                DevModeController.validarCoordenada(
-                              value,
-                              minimo: -180,
-                              maximo: 180,
-                              nombre: 'longitud',
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                    const Divider(height: 1, color: Color(0xFFF0F1F3)),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      alignment: WrapAlignment.end,
-                      spacing: 8,
-                      children: [
-                        TextButton(
-                          onPressed: () => Navigator.of(dialogContext).pop(),
-                          child: const Text(
-                            'Cancelar',
-                            style: TextStyle(color: AppColors.textGray),
-                          ),
-                        ),
-                        ElevatedButton(
-                          onPressed: () {
-                            if (!key.currentState!.validate()) return;
-                            final lat = DevModeController.leerCoordenada(
-                              latitud.text,
-                            )!;
-                            final lng = DevModeController.leerCoordenada(
-                              longitud.text,
-                            )!;
-                            Navigator.of(dialogContext).pop(
-                              (taller ??
-                                      Taller(
-                                        nombre: nombre.text,
-                                        latitud: lat,
-                                        longitud: lng,
-                                      ))
-                                  .copyWith(
-                                    nombre: nombre.text,
-                                    direccion: direccion.text,
-                                    telefono: telefono.text,
-                                    latitud: lat,
-                                    longitud: lng,
+                      _campo('Dirección', 'Calle, sector y ciudad', direccion),
+                      const SizedBox(height: 14),
+                      _campo(
+                        'Teléfono',
+                        '809-555-0101',
+                        telefono,
+                        keyboardType: TextInputType.phone,
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _campo(
+                              'Latitud',
+                              '18,4861',
+                              latitud,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                    signed: true,
                                   ),
-                            );
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.orangePrimary,
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 12,
+                              validator: (value) =>
+                                  DevModeController.validarCoordenada(
+                                    value,
+                                    minimo: -90,
+                                    maximo: 90,
+                                    nombre: 'latitud',
+                                  ),
                             ),
                           ),
-                          child: Text(
-                            taller == null
-                                ? 'Guardar taller'
-                                : 'Guardar cambios',
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _campo(
+                              'Longitud',
+                              '-69,9312',
+                              longitud,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                    signed: true,
+                                  ),
+                              validator: (value) =>
+                                  DevModeController.validarCoordenada(
+                                    value,
+                                    minimo: -180,
+                                    maximo: 180,
+                                    nombre: 'longitud',
+                                  ),
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      const Divider(height: 1, color: Color(0xFFF0F1F3)),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        alignment: WrapAlignment.end,
+                        spacing: 8,
+                        children: [
+                          TextButton(
+                            onPressed: () {
+                              FocusScope.of(dialogContext).unfocus();
+                              Navigator.of(dialogContext).pop();
+                            },
+                            child: const Text(
+                              'Cancelar',
+                              style: TextStyle(color: AppColors.textGray),
+                            ),
+                          ),
+                          ElevatedButton(
+                            onPressed: () {
+                              if (!key.currentState!.validate()) return;
+                              final lat = DevModeController.leerCoordenada(
+                                latitud.text,
+                              )!;
+                              final lng = DevModeController.leerCoordenada(
+                                longitud.text,
+                              )!;
+                              FocusScope.of(dialogContext).unfocus();
+                              Navigator.of(dialogContext).pop(
+                                (taller ??
+                                        Taller(
+                                          nombre: nombre.text,
+                                          latitud: lat,
+                                          longitud: lng,
+                                        ))
+                                    .copyWith(
+                                      nombre: nombre.text,
+                                      direccion: direccion.text,
+                                      telefono: telefono.text,
+                                      latitud: lat,
+                                      longitud: lng,
+                                    ),
+                              );
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.orangePrimary,
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                                vertical: 12,
+                              ),
+                            ),
+                            child: Text(
+                              taller == null
+                                  ? 'Guardar taller'
+                                  : 'Guardar cambios',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
         ),
       );
+      resultado = await Navigator.of(context).push<Taller>(ruta);
+      await ruta.completed;
     } finally {
       idTaller.dispose();
       nombre.dispose();
@@ -593,23 +671,29 @@ class _TalleresAfiliadosScreenState extends State<TalleresAfiliadosScreen> {
       telefono.dispose();
       latitud.dispose();
       longitud.dispose();
+      _operacionEnCurso = false;
     }
 
     if (resultado == null) return;
-    final ok = await _controller.guardarTaller(resultado);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          ok
-              ? taller == null
-                    ? 'Taller agregado correctamente.'
-                    : 'Cambios guardados correctamente.'
-              : _controller.error ?? 'No se pudo guardar el taller.',
+    _operacionEnCurso = true;
+    try {
+      final ok = await _controller.guardarTaller(resultado);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ok
+                ? taller == null
+                      ? 'Taller agregado correctamente.'
+                      : 'Cambios guardados correctamente.'
+                : _controller.error ?? 'No se pudo guardar el taller.',
+          ),
+          backgroundColor: ok ? null : Colors.red.shade700,
         ),
-        backgroundColor: ok ? null : Colors.red.shade700,
-      ),
-    );
+      );
+    } finally {
+      _operacionEnCurso = false;
+    }
   }
 
   Widget _campo(
@@ -655,13 +739,10 @@ class _TalleresAfiliadosScreenState extends State<TalleresAfiliadosScreen> {
                 width: 1.5,
               ),
             ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(9),
-            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(9)),
           ),
         ),
       ],
     );
   }
-
 }
