@@ -1763,6 +1763,7 @@ class _CitasScreenState extends State<CitasScreen> {
     await showDialog<void>(
       context: context,
       useRootNavigator: true,
+      barrierDismissible: false,
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
@@ -1814,7 +1815,10 @@ class _CitasScreenState extends State<CitasScreen> {
                             ),
                           ),
                           InkWell(
-                            onTap: () => Navigator.of(context).pop(),
+                            onTap: () {
+                              FocusScope.of(context).unfocus();
+                              Navigator.of(context).pop();
+                            },
                             child: const Icon(Icons.close, color: Colors.white),
                           ),
                         ],
@@ -1834,6 +1838,8 @@ class _CitasScreenState extends State<CitasScreen> {
                                 _tituloSeccionModal('DATOS DEL CLIENTE'),
                                 TextFormField(
                                   controller: clienteController,
+                                  onTapOutside: (_) =>
+                                      FocusScope.of(context).unfocus(),
                                   textCapitalization: TextCapitalization.words,
                                   decoration: _decoracionCampo(
                                     'Nombre completo',
@@ -1855,6 +1861,8 @@ class _CitasScreenState extends State<CitasScreen> {
                                 const SizedBox(height: 10),
                                 TextFormField(
                                   controller: telefonoController,
+                                  onTapOutside: (_) =>
+                                      FocusScope.of(context).unfocus(),
                                   keyboardType: TextInputType.phone,
                                   decoration: _decoracionCampo('Teléfono')
                                       .copyWith(hintText: '809-000-0000'),
@@ -1915,6 +1923,8 @@ class _CitasScreenState extends State<CitasScreen> {
                                     Expanded(
                                       child: TextFormField(
                                         controller: modeloController,
+                                        onTapOutside: (_) =>
+                                            FocusScope.of(context).unfocus(),
                                         textCapitalization:
                                             TextCapitalization.words,
                                         decoration: _decoracionCampo('Modelo')
@@ -1935,6 +1945,8 @@ class _CitasScreenState extends State<CitasScreen> {
                                     Expanded(
                                       child: TextFormField(
                                         controller: anioController,
+                                        onTapOutside: (_) =>
+                                            FocusScope.of(context).unfocus(),
                                         keyboardType: TextInputType.number,
                                         decoration: _decoracionCampo('Año')
                                             .copyWith(hintText: '2020'),
@@ -1959,6 +1971,8 @@ class _CitasScreenState extends State<CitasScreen> {
                                     Expanded(
                                       child: TextFormField(
                                         controller: placaController,
+                                        onTapOutside: (_) =>
+                                            FocusScope.of(context).unfocus(),
                                         decoration: _decoracionCampo('Placa')
                                             .copyWith(hintText: 'A123456'),
                                         textCapitalization:
@@ -2214,6 +2228,8 @@ class _CitasScreenState extends State<CitasScreen> {
                                 const SizedBox(height: 10),
                                 TextFormField(
                                   controller: descripcionController,
+                                  onTapOutside: (_) =>
+                                      FocusScope.of(context).unfocus(),
                                   maxLines: 3,
                                   decoration: _decoracionCampo('Descripción')
                                       .copyWith(
@@ -2300,6 +2316,7 @@ class _CitasScreenState extends State<CitasScreen> {
                                       _mostrarErrorPersistencia();
                                       return;
                                     }
+                                    FocusScope.of(context).unfocus();
                                     Navigator.of(context).pop();
                                   },
                             style: ElevatedButton.styleFrom(
