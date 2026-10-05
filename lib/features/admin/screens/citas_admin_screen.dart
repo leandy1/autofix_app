@@ -242,40 +242,75 @@ class CitaAdminCard extends StatelessWidget {
                         '${cita.marca} ${cita.modelo} ${cita.anio}'.trim(),
                       ),
                       linea('Placa', cita.placa),
+                      if (cita.tecnico?.trim().isNotEmpty == true)
+                        linea('Técnico', cita.tecnico!.trim()),
                       const SizedBox(height: 18),
                       const Divider(color: AppColors.inputBorder),
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 8),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'SERVICIO',
-                                style: TextStyle(
-                                  color: AppColors.textGray,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 0.5,
-                                ),
-                              ),
-                            ),
-                            Text(
-                              'IMPORTE',
-                              style: TextStyle(
-                                color: AppColors.textGray,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ],
+                      const Text(
+                        'SERVICIOS',
+                        style: TextStyle(
+                          color: AppColors.textGray,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.5,
                         ),
                       ),
                       if (cita.servicios.isEmpty)
-                        linea('Servicios', 'Sin servicios registrados')
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Text(
+                            'Sin servicios registrados',
+                            style: TextStyle(color: AppColors.textGray),
+                          ),
+                        )
                       else
                         for (final servicio in cita.servicios)
-                          linea(servicio, 'RD\$ —'),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Padding(
+                                  padding: EdgeInsets.only(top: 6, right: 8),
+                                  child: Icon(
+                                    Icons.circle,
+                                    size: 6,
+                                    color: AppColors.orangePrimary,
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Text(
+                                    servicio,
+                                    style: const TextStyle(
+                                      color: AppColors.headerNavy,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      if (cita.descripcion.trim().isNotEmpty) ...[
+                        const SizedBox(height: 14),
+                        const Text(
+                          'DESCRIPCIÓN DE LA CITA',
+                          style: TextStyle(
+                            color: AppColors.textGray,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          cita.descripcion.trim(),
+                          style: const TextStyle(
+                            color: AppColors.headerNavy,
+                            fontSize: 12,
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
                       const Divider(color: AppColors.inputBorder),
                       linea(
                         'TOTAL',
