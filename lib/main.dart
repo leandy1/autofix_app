@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:autofix/app/conectividad_app.dart';
 import 'package:autofix/core/database/database_helper.dart';
 import 'package:autofix/features/auth/screens/login_screen.dart';
+import 'package:autofix/features/sync/sync_service.dart';
 import 'package:autofix/firebase_options.dart';
 
 Future<void> main() async {
@@ -23,6 +24,7 @@ Future<void> main() async {
     }
     try {
       await FirebaseAuth.instance.signInAnonymously();
+      await SyncService.instance.start();
     } catch (e) {
       debugPrint('FirebaseAuth anonymous sign-in skipped: $e');
     }
