@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
+import 'package:autofix/core/utils/uuid.dart';
+
 import 'semilla_citas_demo.dart';
 import 'semilla_inicial.dart';
 
@@ -11,6 +13,35 @@ import 'semilla_inicial.dart';
 /// para que el CRUD no se trabe. Si cada pantalla abriera su propia base, dos
 /// escrituras simultaneas se pelean por el lock del archivo y SQLite tira
 /// "database is locked". Ademas `openDatabase` se paga una vez, no por pantalla.
+///
+/// -----------------------------------------------------------------
+/// LO QUE CAMBIO EN LA v7 (leer esto antes de tocar el esquema)
+/// -----------------------------------------------------------------
+///
+/// Tres cambios estructurales, todos con la misma razon de fondo: la base local
+/// paso a ser la fuente de verdad de la UI pero ya NO es la unica fuente de
+/// verdad. Hay una nube al lado, y las dos tienen que poder coexistir.
+///
+/// 1. Las PRIMARY KEY pasaron de `INTEGER PRIMARY KEY AUTOINCREMENT` a
+///    `TEXT PRIMARY KEY`, y el valor es un UUID v4 generado por la app.
+///
+///    Un autoincremento es un contador LOCAL. Dos dispositivos numeran sus filas
+///    desde 1 por separado, asi que "la cita 7" significa una cosa en cada
+///    celular. En la nube eso es una colision guaranteed: un `set` con docId
+///    sobreescribe al otro y una orden se pierde. Un UUID se genera en el cliente
+///    sin pedir nada al servidor y es el mismo en todas partes.
+///
+///    El precio es que el id ya no es un numero, asi que `citas` gana una columna
+///    `codigo_visible` con el 'CITA-0004' que el humano lee.
+///
+/// 2. Tres columnas de trazabilidad en `citas`: `eliminado_en`, `eliminado_por` y
+///    `restaurado_en`. El `DELETE` fisico quedo eliminado: con dos dispositivos, un
+///    borrado local no se propaga y la cita reaparece cuando el otro la rebia de
+///    la nube. Ver `lib/core/utils/borrado_logico.dart`.
+///
+/// 3. Se DROPEARON las tablas. No es una migracion de datos: es una purga
+///    deliberada, y la seccion [_migrar] explica por que en un proyecto de
+///    coursework es la decision correcta y en produccion no lo seria.
 class DatabaseHelper {
   DatabaseHelper._();
 
@@ -37,10 +68,17 @@ class DatabaseHelper {
   /// v5 = se elimina codigo_qr de citas y se agrega total (histórico inmutable).
   /// v6 = indice en `citas.fecha_cita`, que es por donde filtran el Dashboard y
   ///      la lista de Citas.
+  /// v7 = IDENTIDAD FEDERADA: la PK pasa a TEXT/UUID en las cuatro tablas, se
+  ///      agrega `citas.codigo_visible` (numero que ve el humano) y las tres
+  ///      columnas de borrado logico, se eliminan los estados de configuracion, y
+  ///      se agregan los catalogos `marcas` y `grupos_servicio` que Leandy esta
+  ///      construyendo en su UI de Configuracion (punto 6 del encargo).
   ///
-  /// OJO: subir la version NO borra la base, dispara `onUpgrade`, que es lo
-  /// que permite a un dispositivo que ya instalo la v1 seguir funcionando.
-  static const int _versionBase = 6;
+  /// OJO: subir la version NO borra la base por si sola, dispara `onUpgrade`, que
+  /// es lo que permite a un dispositivo que ya instalo la v1 seguir funcionando.
+  /// En la v7 el `onUpgrade` hace `DROP TABLE`, asi que en ESTE caso si borra los
+  /// datos, y es intencional (ver [_migrar]).
+  static const int _versionBase = 7;
 
   /// Nombre del indice de [tablaCitas] por fecha.
   ///
@@ -53,6 +91,10 @@ class DatabaseHelper {
   static const String tablaCitas = 'citas';
   static const String colId = 'id';
   static const String colCodigoQr = 'codigo_qr';
+
+  /// Columna nueva en la v7: el 'CITA-0004' que se muestra, separado del UUID.
+  static const String colCodigoVisible = 'codigo_visible';
+
   static const String colCliente = 'cliente';
   static const String colTelefono = 'telefono';
   static const String colVehiculo = 'vehiculo';
@@ -70,16 +112,46 @@ class DatabaseHelper {
   static const String colTotal = 'total';
 
   // ------------------------------------------------------------------
-  // Catalogos de Configuracion (v3)
+  // BORRADO LOGICO (v7)
   //
-  // Tecnicos, Tipos de Servicio y Estados son el mismo molde: una lista de
-  // nombres que el administrador mantiene. Por eso comparten las mismas
-  // columnas y el mismo constructor de tabla.
+  // Las tres columnas viajan en el mapa de toda escritura de `citas` y los
+  // repositorios las filtran. Ver `lib/core/utils/borrado_logico.dart`.
+  //
+  // `eliminado_por` es TEXT y no INTEGER porque guarda el id del USUARIO que
+  // borro, no una fila de una tabla: el usuario de Firebase Auth vive en la nube
+  // y no tiene tabla local.
+  // ------------------------------------------------------------------
+
+  static const String colEliminadoEn = 'eliminado_en';
+  static const String colEliminadoPor = 'eliminado_por';
+  static const String colRestauradoEn = 'restaurado_en';
+
+  // ------------------------------------------------------------------
+  // Catalogos de Configuracion (v3, con `estados` eliminado en la v7)
+  //
+  // Los cuatro catalogos que Leandy necesita son el MISMO molde: una lista de
+  // nombres que el administrador mantiene. `estados` se elimino por decision de
+  // Leandy: los estados de `citas` los define el enum `EstadoCita` y el catalogo
+  // era data muerta que ademas contradecía al enum ('En diagnostico' no existe en
+  // el enum, 'Esperando pieza' va en minuscula y el mapa de colores matchea por
+  // texto EXACTO).
+  //
+  // `marcas` y `grupos_servicio` son NUEVOS en la v7. Antes eran listas `const`
+  // de demostracion en `lib/shared/models/demo_admin_data.dart`: cinco marcas y
+  // un grupo, escritos en el codigo, que nadie podia editar y que se perdian en
+  // cada rebuild. El punto 6 del encargo define que la fuente es esta base, asi
+  // que pasaron a ser filas de verdad con la misma PK UUID que el resto.
   // ------------------------------------------------------------------
 
   static const String tablaTecnicos = 'tecnicos';
   static const String tablaTiposServicio = 'tipos_servicio';
-  static const String tablaEstados = 'estados';
+
+  /// Marcas de vehiculo. Alta en la v7. Ver `lib/features/configuracion/models/marca.dart`.
+  static const String tablaMarcas = 'marcas';
+
+  /// Grupos de servicios ("Carroceria", "Mecanica general"). Alta en la v7.
+  /// Ver `lib/features/configuracion/models/grupo_servicio.dart`.
+  static const String tablaGruposServicio = 'grupos_servicio';
 
   static const String colNombre = 'nombre';
   static const String colActivo = 'activo';
@@ -96,7 +168,10 @@ class DatabaseHelper {
   // `citas.taller_id` es lo que ata una cita al taller donde se agenda. Sin
   // esa columna no hay forma de responder "dame las citas del Taller Gomez":
   // el nombre del taller no sirve, porque dos filas con el mismo nombre
-  //Serian la misma cita a los ojos del sistema.
+  // Serian la misma cita a los ojos del sistema.
+  //
+  // `taller_id` es TEXT en la v7 (UUID) y NO lleva `REFERENCES`. Ver
+  // `_crearTalleres` para por que la FK tampoco va en el indice.
   // ------------------------------------------------------------------
 
   static const String tablaTalleres = 'talleres';
@@ -109,7 +184,7 @@ class DatabaseHelper {
   // `colTelefono` NO se redeclara aca: ya existe arriba para `citas.telefono`, y
   // el mismo nombre de columna significa lo mismo en las dos tablas (el telefono
   // de un contacto, en texto, con guiones). Reutilizar la constante es lo que
-  // evita que un dia alguien escriba 'telefono' de una forma y 'fono' de otra.
+  // evita que un dia alguien escriba 'telefono' de una forma y 'fono' otra.
 
   /// Columnas de `talleres`, en el orden en que se declaran.
   ///
@@ -130,7 +205,7 @@ class DatabaseHelper {
     colActualizadoEn: 'TEXT NOT NULL',
   };
 
-  /// Columnas comunes a los tres catalogos, en el orden en que se declaran.
+  /// Columnas comunes a los catalogos, en el orden en que se declaran.
   ///
   /// Tenerlas en una constante evita duplicar los nombres entre la creacion y la
   /// migracion, que es justamente como se producen los bugs de esquema: uno
@@ -145,7 +220,7 @@ class DatabaseHelper {
 
   /// Columnas que se agregan en v2, con su tipo y default.
   /// Estar en una constante evita duplicar los nombres entre `_crearEsquema`
-  /// y `_migrarAV2`, que es como seroductionen bugs de migracion.
+  /// y `_migrarAV2`, que es como se producen los bugs de migracion.
   static const Map<String, String> _columnasV2 = {
     colTelefono: 'TEXT NOT NULL DEFAULT \'\'',
     colMarca: 'TEXT NOT NULL DEFAULT \'\'',
@@ -159,20 +234,41 @@ class DatabaseHelper {
 
   /// Columna que se agrega a `citas` en la v4.
   ///
-  /// INTEGER y no TEXT, aunque el tipo "TEXT" suene mas generico: el id de
-  /// `talleres` es un INTEGER, y si la columna fuera TEXT, SQLite guardaria el
-  /// 1 como la cadena '1'. Despues un `WHERE taller_id = 1` (numero) no
-  /// encuentra la fila, porque '1' != 1 en la comparacion, y el filtro de
-  /// "mis citas" devuelve vacio sin dar ningun error. Ese es el tipo de bug que
-  /// no aparece hasta que alguien pregunta por un historial.
-  ///
   /// NULL y no NOT NULL: las citas que ya existen (v1 a v3) no tienen taller, y
   /// las que crea el modulo del escaner QR todavia no lo_eligen. La columna
   /// acepta null hasta que el formulario de David la empiece a mandar.
   ///
   /// OJO: no lleva `REFERENCES talleres(id)`. Ver la nota de `_crearTalleres`
   /// para por que la FK va en el indice y no en la declaracion de la columna.
-  static const String _columnaTallerIdV4 = '$colTallerId INTEGER';
+  ///
+  /// En la v7 pasa de INTEGER a TEXT: el id del taller es un UUID, no un
+  /// autoincremento local. La nota larga de por que esta columna no puede
+  /// seguir siendo un numero esta arriba, en el doc del modelo `Cita`.
+  static const String _columnaTallerIdV4 = '$colTallerId TEXT';
+
+  /// Definicion de la PK federada.
+  ///
+  /// En una constante y no repetida en los tres `CREATE TABLE` porque el error
+  /// grave aca es que una tabla quede con la PK vieja: SQLite NO avisa, la tabla
+  /// se crea con `INTEGER PRIMARY KEY`, el primer INSERT sin id genera un 1, y
+  /// la fila tiene un id "1" que no es un UUID. La app funciona en ese
+  /// dispositivo y falla al sincronizar.
+  ///
+  /// `TEXT NOT NULL` y no solo `TEXT`: una PK sin valor no puede existir, y SQLite
+  /// en su modo legacy (el de `PRAGMA legacy_alter_table`) permitiria un `NULL`
+  /// en una `PRIMARY KEY` sin declarar `NOT NULL`, que es un hole negro de datos.
+  static const String _pkUuid = '$colId TEXT NOT NULL PRIMARY KEY';
+
+  /// Las tres columnas de borrado logico, en el orden en que se declaran.
+  ///
+  /// Las tres van en `_crearEsquema` y en el `_migrar` desde la v7. No hay que
+  /// hacerlas nullable con `ALTER TABLE` porque la tabla se reconstruye entera:
+  /// es una de las dos razones por las que la v7 dropea en vez de alterar.
+  static const List<String> _columnasTrazabilidad = <String>[
+    '$colEliminadoEn TEXT',
+    '$colEliminadoPor TEXT',
+    '$colRestauradoEn TEXT',
+  ];
 
   Database? _base;
 
@@ -200,10 +296,26 @@ class DatabaseHelper {
   ///
   /// El SQL se arma en un solo string porque `execute` manda UNA sentencia
   /// completa: partir el CREATE TABLE en varias llamadas es SQL invalido.
-  Future<void> _crearEsquema(Database db) async {
+  ///
+  /// El parametro es `DatabaseExecutor` y no `Database` a proposito. `onCreate`
+  /// recibe un `Database`, que implements `DatabaseExecutor`, asi que el mismo
+  /// cuerpo sirve para los dos caminos. Con `Database` el parametro, [_migrarAV7]
+  /// no podria llamar a esta funcion: en `onUpgrade` lo que se recibe es el
+  /// `DatabaseExecutor` de la transaccion, que es mas estrecho, y Dart no
+  /// permite degradarlo a `Database`. La firma aceptaria en `onCreate` y
+  /// rechazaria en `onUpgrade`, que es justo el bug que hace que la migracion se
+  /// pruebe en un camino que nunca se ejecuta.
+  Future<void> _crearEsquema(DatabaseExecutor db) async {
     final definiciones = <String>[
-      '$colId INTEGER PRIMARY KEY AUTOINCREMENT',
+      _pkUuid,
       // codigo_qr ELIMINADO (v5)
+      // `codigo_visible` es lo que ve el humano ('CITA-0004'). Nace como
+      // 'PENDIENTE' y la nube lo reemplaza por el definitivo.
+      //
+      // `NOT NULL DEFAULT 'PENDIENTE'` y no nullable: una cita sin numero sigue
+      // teniendo ALGO que mostrar, y el default pone ese "algo" en el lugar sin
+      // que cada repositorio tenga que acordarse.
+      "$colCodigoVisible TEXT NOT NULL DEFAULT 'PENDIENTE'",
       '$colCliente TEXT NOT NULL',
       '$colVehiculo TEXT NOT NULL',
       ..._columnasV2.entries.map((e) => '${e.key} ${e.value}'),
@@ -211,11 +323,9 @@ class DatabaseHelper {
       '$colFechaCita TEXT NOT NULL',
       '$colEstado TEXT NOT NULL',
       '$colCreadoEn TEXT NOT NULL',
-      // La v4. Va al final y sin NOT NULL a proposito: las citas que ya existen
-      // (creadas en la v1, v2 o v3) no tienen taller, y una columna NOT NULL
-      // sin default haria que el `ALTER TABLE` de la migracion fallara.
       _columnaTallerIdV4,
       '$colTotal INTEGER NOT NULL DEFAULT 0', // v5
+      ..._columnasTrazabilidad, // v7
     ];
 
     await db.execute('CREATE TABLE $tablaCitas (${definiciones.join(', ')})');
@@ -235,6 +345,16 @@ class DatabaseHelper {
     await db.execute(
       'CREATE INDEX IF NOT EXISTS $idxCitasFecha '
       'ON $tablaCitas ($colFechaCita)',
+    );
+
+    // v7. Indice compuesto para el filtro de papelera. `eliminado_en IS NULL` es
+    // la condicion de TODA consulta de la UI (ver `CitaRepository`), y sin indice
+    // es un escaneo secuencial. El orden es (eliminado_en, fecha_cita) y no al
+    // reves porque el primero es la igualdad y el segundo el rango: SQLite solo
+    // puede usar el segundo si el primero ya esta resuelto.
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_citas_vigentes '
+      'ON $tablaCitas ($colEliminadoEn, $colFechaCita)',
     );
 
     await _crearCatalogos(db);
@@ -257,9 +377,14 @@ class DatabaseHelper {
   /// relacion se garantiza en la aplicacion, no en el motor: el
   /// `TallerRepository` filtra por `activo` y nunca borra fisicamente un taller
   /// que tenga citas. Es la baja logica la que evita perder el historial.
+  ///
+  /// Y desde la v7 hay una razon mas: la cita puede traer un `taller_id` que
+  /// todavia no existe en ESTE dispositivo, porque la cita llego de la nube antes
+  /// que el taller. Con FK restrictiva, ese INSERT revienta. Sin FK, la cita se
+  /// guarda y el taller aparece cuando llega.
   Future<void> _crearTalleres(DatabaseExecutor db) async {
     final definiciones = <String>[
-      '$colId INTEGER PRIMARY KEY AUTOINCREMENT',
+      _pkUuid,
       ..._columnasTalleres.entries.map((e) => '${e.key} ${e.value}'),
     ];
 
@@ -281,6 +406,17 @@ class DatabaseHelper {
   /// El chequeo de vacio por tabla NO es paranoia, es el mismo motivo que en
   /// `_sembrarCatalogos`: los dos caminos pueden correr, y sin el chequeo los
   /// tres talleres se duplican.
+  ///
+  /// Cada taller recibe un UUID POR FILA, generado aca. No puede ser un
+  /// autoincremento (ver la nota del `DatabaseHelper`) y no puede ser una
+  /// constante en [SemillaInicial] por una razon concreta: si el id fuera fijo,
+  /// dos dispositivos que instalan la app tendrian el "taller 1" con el MISMO id,
+  /// lo cual pareceria correcto pero hace que cualquier edicion de un taller se
+  /// pise entre dispositivos. Y si fuera aleatorio pero distinto en cada
+  /// instalacion, la red de afiliados se multiplicaria por el numero de
+  /// instalaciones. La unica forma de tener las dos cosas es un UUID por fila,
+  /// generado en la instalacion: unico en el mundo, y replicado desde la nube al
+  /// resto de dispositivos.
   Future<void> _sembrarTalleres(DatabaseExecutor db) async {
     final existentes = await db.query(
       tablaTalleres,
@@ -289,10 +425,15 @@ class DatabaseHelper {
     );
     if (existentes.isNotEmpty) return;
 
-    final ahora = DateTime.now().toIso8601String();
+    final ahora = DateTime.now().toUtc().toIso8601String();
 
-    for (final t in SemillaInicial.talleres) {
+    // v7: los IDs vienen predefinidos en SemillaInicial.talleres (UUIDs estaticos).
+    // Antes se generaban con Uuid.instancia.generar() aqui, lo que creaba talleres
+    // con ids distintos en cada instalacion y rompia la sincronizacion.
+    for (int i = 0; i < SemillaInicial.talleres.length; i++) {
+      final t = SemillaInicial.talleres[i];
       await db.insert(tablaTalleres, <String, Object?>{
+        colId: t.id,
         colNombre: t.nombre,
         colDireccion: t.direccion,
         colTelefono: t.telefono,
@@ -305,7 +446,7 @@ class DatabaseHelper {
     }
   }
 
-  /// Crea los tres catalogos de Configuracion con el mismo molde.
+  /// Crea los catalogos de Configuracion con el mismo molde.
   ///
   /// `CREATE TABLE IF NOT EXISTS` y no `CREATE TABLE` porque esta misma funcion
   /// la usan los dos caminos: el de una base nueva y el de la migracion. Con el
@@ -315,6 +456,14 @@ class DatabaseHelper {
   /// lo llama por fuera de la transaccion y la migracion por dentro: `Database` y
   /// `Transaction` implementan las dos interfaces y asi el codigo se escribe una
   /// sola vez.
+  ///
+  /// La v7 elimino la llamada a `tablaEstados` de aca. Ver [_migrar].
+  ///
+  /// Las cuatro tablas del punto 6 se crean con [_crearTablaCatalogo], la misma
+  /// funcion que las otras dos. Eso es lo que las mantiene en el mismo molde: si
+  /// `marcas` tuviera su propio `CREATE TABLE` a mano, el dia que se le agregue una
+  /// columna habria que acordarse de cambiarla en dos lugares, y el que se
+  /// olvide produce "no such column" solo en el dispositivo que instalo primero.
   Future<void> _crearCatalogos(DatabaseExecutor db) async {
     await _crearTablaCatalogo(db, tablaTecnicos);
     await _crearTablaCatalogo(
@@ -322,7 +471,12 @@ class DatabaseHelper {
       tablaTiposServicio,
       columnasExtra: <String>['$colPrecio INTEGER NOT NULL DEFAULT 0'],
     );
-    await _crearTablaCatalogo(db, tablaEstados);
+
+    // `marcas` y `grupos_servicio` NO llevan `columnasExtra`: el requisito es
+    // 'nombre' y nada mas. Ver `Marca` y `GrupoServicio` para por que no se
+    // anticipan columnas que la UI todavia no muestra.
+    await _crearTablaCatalogo(db, tablaMarcas);
+    await _crearTablaCatalogo(db, tablaGruposServicio);
   }
 
   Future<void> _crearTablaCatalogo(
@@ -331,12 +485,14 @@ class DatabaseHelper {
     List<String> columnasExtra = const <String>[],
   }) async {
     final definiciones = <String>[
-      '$colId INTEGER PRIMARY KEY AUTOINCREMENT',
+      _pkUuid,
       ..._columnasCatalogo.entries.map((e) => '${e.key} ${e.value}'),
       ...columnasExtra,
     ];
 
-    await db.execute('CREATE TABLE IF NOT EXISTS $tabla (${definiciones.join(', ')})');
+    await db.execute(
+      'CREATE TABLE IF NOT EXISTS $tabla (${definiciones.join(', ')})',
+    );
 
     // `COLLATE NOCASE` compara sin distinguir mayusculas, asi que el indice
     // IMPIDE que existan "Nissan" y "nissan" a la vez. Sin esto, el admin
@@ -348,29 +504,37 @@ class DatabaseHelper {
     );
   }
 
-  /// Inserta el catalogo inicial del diseno en los tres catalogos.
+  /// Inserta el catalogo inicial del diseno en los cuatro catalogos.
   ///
   /// El chequeo de vacio por tabla NO es paranoia: la siembran los dos caminos
   /// (creacion y migracion) y nada impide que ambos corran, por ejemplo si un
   /// dispositivo se reinstala sin desinstalar del todo. Sin el `isEmpty`, esos
-  /// casos duplicarian los 14 registros iniciales.
+  /// casos duplicarian los registros iniciales.
+  ///
+  /// La v7 elimino la siembra de `estados`.
   Future<void> _sembrarCatalogos(DatabaseExecutor db) async {
-    final ahora = DateTime.now().toIso8601String();
+    final ahora = DateTime.now().toUtc().toIso8601String();
 
     // `extra` y no un `String? columnaPrecio`: los catalogos son el mismo molde y
     // cada uno aporta sus columnas, asi que el parametro es un mapa y no una
     // lista de casos. Agregar una columna nueva despues no obliga a tocar esto.
     Future<void> sembrar(
       String tabla,
-      List<String> nombres, {
+      List<String> nombres,
+      List<String> ids, {
       Map<String, Object?> extra = const <String, Object?>{},
     }) async {
-      final existentes = await db.query(tabla, columns: <String>[colId], limit: 1);
+      final existentes = await db.query(
+        tabla,
+        columns: <String>[colId],
+        limit: 1,
+      );
       if (existentes.isNotEmpty) return;
 
-      for (final nombre in nombres) {
+      for (int i = 0; i < nombres.length; i++) {
         await db.insert(tabla, <String, Object?>{
-          colNombre: nombre,
+          colId: ids[i],
+          colNombre: nombres[i],
           colActivo: 1,
           ...extra,
           colCreadoEn: ahora,
@@ -379,13 +543,31 @@ class DatabaseHelper {
       }
     }
 
-    await sembrar(tablaTecnicos, SemillaInicial.tecnicos);
+    await sembrar(
+      tablaTecnicos,
+      SemillaInicial.tecnicos,
+      SemillaInicial.tecnicosIds,
+    );
     await sembrar(
       tablaTiposServicio,
       SemillaInicial.tiposServicio,
+      SemillaInicial.tiposServicioIds,
       extra: <String, Object?>{colPrecio: SemillaInicial.precioInicial},
     );
-    await sembrar(tablaEstados, SemillaInicial.estados);
+
+    // v7. Las marcas y los grupos que antes eran `const` de demostracion ahora son
+    // filas. Se siembran por la misma razon que los otros catalogos: un
+    // dispositivo nuevo abre Configuracion y tiene que ver algo, y una lista
+    // vacia es indistinguible de "el catalogo esta roto".
+    //
+    // Y se siembran con el MISMO texto que tenian las listas de demo, para que la
+    // pantalla no cambie de aspecto al pasar de `demoMarcasVehiculo` a la tabla.
+    await sembrar(tablaMarcas, SemillaInicial.marcas, SemillaInicial.marcasIds);
+    await sembrar(
+      tablaGruposServicio,
+      SemillaInicial.gruposServicio,
+      SemillaInicial.gruposServicioIds,
+    );
   }
 
   // ------------------------------------------------------------------
@@ -426,13 +608,18 @@ class DatabaseHelper {
     // escribirlo a mano ata la semilla a un estado de la base que no depende de
     // ella: el dia que se siembre un cuarto taller o se borre uno, las citas
     // de demostracion apuntan a un taller equivocado sin que nada avise.
+    //
+    // El `ORDER BY id` que se usaba antes ya no tiene sentido: los ids son
+    // UUID, y ordenarlos por texto es ordenarlos al azar. Se ordena por nombre
+    // para que el reparto de citas entre talleres sea SIEMPRE el mismo y el test
+    // de la semilla pueda afirmar cual es cual.
     final filasTalleres = await db.query(
       tablaTalleres,
       columns: <String>[colId],
-      orderBy: colId,
+      orderBy: '$colNombre COLLATE NOCASE ASC',
     );
     final tallerIds = filasTalleres
-        .map((f) => (f[colId] as num).toInt())
+        .map((f) => (f[colId] as String))
         .toList(growable: false);
 
     final citas = SemillaCitasDemo.generar(
@@ -445,6 +632,8 @@ class DatabaseHelper {
     // queda con 60 citas y no con un lote coherente.
     await db.transaction((txn) async {
       for (final cita in citas) {
+        // El id va en el mapa porque la semilla genera ids deterministas (los
+        // necesita el test) y con una PK de TEXT SQLite no los genera solo.
         await txn.insert(tablaCitas, cita.toMap());
       }
     });
@@ -454,14 +643,16 @@ class DatabaseHelper {
 
   /// Borra las citas de demostracion y deja el taller como estaba.
   ///
-  /// El reverso de [sembrarCitasDemo], para cuando ya sevio suficiente grafico
+  /// El reverso de [sembrarCitasDemo], para cuando ya se vio suficiente grafico
   /// de mentira y hay que probar el Dashboard con la data real. Borra TODO lo
   /// que hay en `citas`, no solo el lote demo: no hay forma de distinguir una
   /// fila sembrada de una creada por el admin, y un WHERE que adivinase seria
   /// peor que un borrado honesto.
   ///
   /// Por eso lleva una advertencia en el nombre y no se llama desde ningun
-  /// lugar de la app.
+  /// lugar de la app. Y es un `DELETE` fisico a proposito: es una herramienta de
+  /// DESARROLLO para limpiar la base local antes de que la sincronizacion suba
+  /// cualquier cosa. La app nunca borra fisico; ver `borrado_logico.dart`.
   @visibleForTesting
   static Future<void> limpiarCitasParaPruebas() async {
     final db = await instance.base;
@@ -471,20 +662,56 @@ class DatabaseHelper {
   /// Migracion por pasos: 1 -> 2 agrega columnas a `citas`, 2 -> 3 agrega los
   /// catalogos de Configuracion, 3 -> 4 agrega los talleres afiliados y el
   /// vinculo `citas.taller_id`, 4 -> 5 reconstruye `citas` sin `codigo_qr` y con
-  /// `total`, 5 -> 6 agrega el indice de `fecha_cita`.
+  /// `total`, 5 -> 6 agrega el indice de `fecha_cita`, 6 -> 7 reconstruye el
+  /// esquema con identidad federada.
   ///
-  /// Antes esto era `if (versionAnterior >= 2) return;`, que con una v3 nueva
-  /// impidia hacer exactamente lo mismo que hacia: al agregar pasos hay que
-  /// dejar de cortar el flujo y pasar a preguntar por cada version. Un `return`
-  /// temprano aqui es el bug clasico de las migraciones encadenadas.
+  /// -----------------------------------------------------------------
+  /// POR QUE LA v7 DROPEA EN VEZ DE MIGRAR LOS DATOS
+  /// -----------------------------------------------------------------
   ///
-  /// El orden de los pasos importa y no es solo por legibilidad: cada uno asume
-  /// el mundo que dejo el anterior. El paso 6 va ultimo porque el paso 5 borra
-  /// la tabla.
+  /// Esto NO es lo que se hace en una app con usuarios reales, y es importante
+  /// que quede escrito por que la decision es correcta AQUI y seria un error en
+  /// produccion.
+  ///
+  /// Una migracion que conserva datos de la v6 a la v7 es imposible de hacer
+  /// bien, por tres razones concretas:
+  ///
+  /// 1. LA PK CAMBIA DE TIPO. La v6 tiene `INTEGER PRIMARY KEY AUTOINCREMENT` con
+  ///    valores 1, 2, 3... La v7 quiere TEXT con UUID. SQLite puede copiar un
+  ///    entero a TEXT (queda '1'), pero '1' NO es un UUID: si esa cita sube a
+  ///    Firestore con docId '1', colisiona con la cita '1' de cualquier otro
+  ///    dispositivo. Habria que GENERAR un UUID por fila y reescribir el
+  ///    `taller_id` de cada cita para apuntar al UUID nuevo de su taller, y eso es
+  ///    una tabla de mapeo que ademas se desincroniza con la nube en cuanto otro
+  ///    dispositivo sincroniza sus propias citas viejas.
+  ///
+  /// 2. LOS ESTADOS DE CONFIGURACION SE ELIMINAN. El catalogo `estados` tiene
+  ///    datos que el modulo de Citas nunca leyo (el enum `EstadoCita` manda) y que
+  ///    ademas contradicen al enum. No hay nada que conservar.
+  ///
+  /// 3. LOS DISPOSITIVOS DE PRUEBA TIENEN BASES SUCIAS. Un dispositivo que lleva
+  ///    semanas instalaindo la app tiene citas de hace tres semanas, con ids que
+  ///    colisionarian entre si al primer `onSnapshot`, y una `codigo_visible` que
+  ///    no existe todavia en ninguna parte. Esas filas no aportan nada al
+  ///    desarrollo y si estorban: el Dashboard muestra numeros que no son del
+  ///    taller.
+  ///
+  /// El costo de dropear es que un dispositivo con datos REALES pierde el
+  /// historial. Por eso la app tiene [limpiarCitasParaPruebas] y por eso, si
+  /// algun dia esto se pone en manos de un taller de verdad, lo que corresponde es
+  /// una v8 CON migracion de datos (reconstruir la tabla copiando fila por fila y
+  /// generando un UUID por fila) mas un export previo. Ese camino esta
+  /// preparado: [_crearEsquema] ya es el esquema v7 completo, asi que una v8
+  /// seria "crear la tabla nueva con los datos convertidos, copiar, tirar la
+  /// vieja", exactamente como hace el paso 5.
   ///
   /// Todo dentro de UNA transaccion: si algo falla, SQLite revierte el paquete
   /// entero y la base queda como estaba. Migrar a medias es peor que no migrar.
-  Future<void> _migrar(Database db, int versionAnterior, int versionNueva) async {
+  Future<void> _migrar(
+    Database db,
+    int versionAnterior,
+    int versionNueva,
+  ) async {
     if (versionAnterior >= _versionBase) return;
 
     await db.transaction((txn) async {
@@ -499,7 +726,7 @@ class DatabaseHelper {
       if (versionAnterior < 3) {
         await _crearCatalogos(txn);
         // Un dispositivo que ya tenia citas entra por aca y recibe el catalogo
-        // inicial: si no, el admin veria sus citas pero las tres tarjetas de
+        // inicial: si no, el admin veria sus citas pero las dos tarjetas de
         // Configuracion vacias en un taller que ya venia funcionando.
         await _sembrarCatalogos(txn);
       }
@@ -581,7 +808,9 @@ class DatabaseHelper {
 
         await txn.execute('DROP TABLE citas');
         await txn.execute('ALTER TABLE citas_new RENAME TO citas');
-        await txn.execute('CREATE INDEX IF NOT EXISTS idx_citas_taller_id ON citas (taller_id)');
+        await txn.execute(
+          'CREATE INDEX IF NOT EXISTS idx_citas_taller_id ON citas (taller_id)',
+        );
       }
 
       if (versionAnterior < 6) {
@@ -598,7 +827,71 @@ class DatabaseHelper {
           'ON $tablaCitas ($colFechaCita)',
         );
       }
+
+      if (versionAnterior < 7) {
+        await _migrarAV7(txn);
+      }
     });
+  }
+
+  /// Paso 6 -> 7: identidad federada (UUID), codigo visible, borrado logico y
+  /// purga de los estados de configuracion.
+  ///
+  /// Se hace `DROP TABLE` y no `ALTER TABLE`, por la razon larga del doc de
+  /// [_migrar]: cambiar el tipo de la PK conservando los datos deja ids enteros
+  /// disfrazados de texto, que colisionan al subir a Firestore.
+  ///
+  /// Los `DROP` van con `IF EXISTS` aunque se sepa que las tablas estan: el
+  /// recorrido de versiones de la v3 creaba `estados`, y un dispositivo que
+  /// nunca instalo la v3 no la tiene. Un `DROP TABLE estados` sin `IF EXISTS`
+  /// revienta la transaccion entera y deja el dispositivo en la v6 para siempre.
+  ///
+  /// Y el orden importa: primero se borran las tablas viejas, despues se
+  /// recrean TODAS con `_crearEsquema`, y al final se siembran. Recrear y sembrar
+  /// en el mismo paso es lo que garantiza que un dispositivo migrado quede igual
+  /// que uno recien instalado, que es lo que evita el bug de "a mi telefono le
+  /// faltan los talleres y al otro no".
+  Future<void> _migrarAV7(DatabaseExecutor txn) async {
+    // 1. Purga de la tabla que Leandy elimino de la app. Va PRIMERO para que
+    //    una falla en cualquiera de los pasos siguientes no deje `estados` viva:
+    //    una base a medio migrada con la tabla vieja es mas dificil de
+    //    diagnosticar que una base intacta.
+    await txn.execute('DROP TABLE IF EXISTS estados');
+
+    // 2. Las tablas que cambian de identidad. El orden entre ellas es
+    //    irrelevante (no hay FK declarada) pero se hace citas -> talleres ->
+    //    catalogos para que se lea en el mismo orden que `_crearEsquema`.
+    await txn.execute('DROP TABLE IF EXISTS $tablaCitas');
+    await txn.execute('DROP TABLE IF EXISTS $tablaTalleres');
+    await txn.execute('DROP TABLE IF EXISTS $tablaTecnicos');
+    await txn.execute('DROP TABLE IF EXISTS $tablaTiposServicio');
+
+    // `marcas` y `grupos_servicio` son NUEVAS en la v7, asi que en theory no hay
+    // nada que dropear. El `IF EXISTS` va igual, y por el mismo motivo que en
+    // `estados`: este mismo archivo pudo correr una version de la v7 a medio
+    // desarrollar que ya las habia creado, y un `DROP TABLE marcas` sin `IF
+    // EXISTS` revienta la transaccion entera y deja ese dispositivo con la base a
+    // medio migrar, que es mas dificil de diagnosticar que una base intacta.
+    await txn.execute('DROP TABLE IF EXISTS $tablaMarcas');
+    await txn.execute('DROP TABLE IF EXISTS $tablaGruposServicio');
+
+    // Los indices cuelgan de las tablas, asi que `DROP TABLE` ya los borro. El
+    // `IF EXISTS` de los indices de todas formas es lo que permite correr este
+    // paso sobre una base donde la tabla NO existia pero el indice si (una
+    // creacion a medias anterior).
+    await txn.execute('DROP INDEX IF EXISTS $idxCitasFecha');
+    await txn.execute('DROP INDEX IF EXISTS idx_citas_taller_id');
+    await txn.execute('DROP INDEX IF EXISTS idx_citas_vigentes');
+
+    // 3. Recrear con el esquema v7 completo. `_crearEsquema` es la MISMA funcion
+    //    que usa `onCreate`, y esa es la garantia de que las dos rutas producen
+    //    el mismo esquema. Si `_crearEsquema` tuviera una version propia para
+    //    migrar, serian dos esquemas que se desincronizan.
+    await _crearEsquema(txn);
+
+    // 4. Las semillas ya corrieron dentro de `_crearEsquema`. `_sembrarTalleres`
+    //    y `_sembrarCatalogos` hacen su propio chequeo de vacio, asi que el
+    //    doble chequeo es inofensivo y hace que este paso se lea solo.
   }
 
   Future<void> cerrar() async {

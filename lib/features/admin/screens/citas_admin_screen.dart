@@ -31,7 +31,10 @@ class CitaAdminCard extends StatelessWidget {
 
   final CitaAdmin cita;
   final ValueChanged<CitaAdmin>? onEdited;
-  final ValueChanged<int>? onDeleted;
+
+  /// Borrado logico: recibe el UUID de la cita (`String` desde la v7), no un
+  /// numero.
+  final ValueChanged<String>? onDeleted;
 
   /// Cambio de estado del desplegable.
   ///
@@ -468,7 +471,12 @@ class CitaAdminCard extends StatelessWidget {
                     final deleteButton = OutlinedButton(
                       onPressed: () {
                         Navigator.pop(dialogContext);
-                        if (onDeleted != null) onDeleted!(cita.id);
+                        // Una cita sin id todavia no existe en la base, asi que no
+                        // hay nada que borrar. Sin este chequeo, `onDeleted!` con
+                        // null llega hasta el repositorio y revienta el WHERE con
+                        // un id nulo en vez de no hacer nada.
+                        final id = cita.id;
+                        if (onDeleted != null && id != null) onDeleted!(id);
                       },
                       style: OutlinedButton.styleFrom(
                         foregroundColor: const Color(0xFFEF4444),
@@ -1474,7 +1482,12 @@ class _CitasScreenState extends State<CitasScreen> {
           };
 
     return CitaAdmin(
-      id: cita.id!,
+      // `id: cita.id` y no `cita.id!`: `CitaAdmin.id` es `String?` porque la
+      // pantalla tambien pinta citas recien creadas que todavia no se guardaron
+      // (el formulario arma el modelo antes del `INSERT`). Con el `!` una cita
+      // sin guardar revienta la pantalla al construir la tarjeta, en vez de
+      // aparecer sin id.
+      id: cita.id,
       cliente: cita.cliente,
       telefono: cita.telefono,
       marca: cita.marca,
@@ -1504,7 +1517,9 @@ class _CitasScreenState extends State<CitasScreen> {
   /// 'Atrasadas' no se persiste: es una etiqueta derivada de la fecha, no un
   /// estado guardado. Si el admin la eligiera, la cita quedaria con un estado
   /// que ninguna consulta por estado reconoce.
-  Future<void> _cambiarEstadoCita(int id, EstadoCitaAdmin nuevo) async {
+  ///
+  /// El id es `String` (UUID) desde la v7.
+  Future<void> _cambiarEstadoCita(String id, EstadoCitaAdmin nuevo) async {
     if (nuevo == EstadoCitaAdmin.atrasada) return;
     final estado = switch (nuevo) {
       EstadoCitaAdmin.pendiente => cita_data.EstadoCita.pendiente,
@@ -1517,7 +1532,9 @@ class _CitasScreenState extends State<CitasScreen> {
     if (!cambiado && mounted) _mostrarErrorPersistencia();
   }
 
-  Future<void> _eliminarCita(int id) async {
+  /// BORRADO LOGICO desde la v7: `_citasController.eliminar` no borra la fila,
+  /// la marca. Ver `lib/core/utils/borrado_logico.dart`.
+  Future<void> _eliminarCita(String id) async {
     final eliminada = await _citasController.eliminar(id);
     if (!eliminada && mounted) _mostrarErrorPersistencia();
   }

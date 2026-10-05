@@ -1,12 +1,13 @@
+import 'package:autofix/core/utils/uuid.dart';
 import 'package:autofix/features/citas/models/cita.dart';
+import 'package:autofix/features/citas/models/codigo_de_cita.dart';
 
 /// Generador de citas de DEMOSTRACION para poder ver el Dashboard con numeros.
 ///
 /// ESTO SI ES DATA DE PRUEBA, a diferencia de `SemillaInicial`. Alli viven los
 /// catalogos que el taller recibe al instalar la app (talleres, tecnicos,
-/// servicios, estados), y esos son reales. Esto no: son clientes, placas e
-/// ingresos inventados, y por eso NO se siembra en `_crearEsquema` ni en
-/// `_migrar`.
+/// servicios), y esos son reales. Esto no: son clientes, placas e ingresos
+/// inventados, y por eso NO se siembra en `_crearEsquema` ni en `_migrar`.
 ///
 /// La razon de separarlo no es purismo. Si se metiera en la semilla inicial,
 /// cada instalacion real de la app abriria el Dashboard del administrador con
@@ -18,6 +19,32 @@ import 'package:autofix/features/citas/models/cita.dart';
 /// Se activa a mano con `DatabaseHelper.sembrarCitasDemo()`, que solo se llama
 /// desde `main.dart` en modo debug. En release no corre, y los tests no la
 /// llaman, asi que la suite sigue probando contra una base vacia.
+///
+/// -----------------------------------------------------------------
+/// CAMBIOS v7: LOS IDS SON DETERMINISTAS Y MARCADOS COMO DEMO
+/// -----------------------------------------------------------------
+///
+/// Antes cada cita se insertaba sin id y SQLite le ponia el siguiente
+/// autoincremento: 1, 2, 3... Con la PK en TEXT eso ya no pasa, y hay que
+/// decidir algo.
+///
+/// Se eligio [Uuid.dePrueba] con un indice, en vez de un UUID aleatorio, por dos
+/// razones que las pruebas necesitan:
+///
+/// 1. DETERMINISMO. La semilla ya usaba un `_Rng` con semilla fija para que el
+///    lote fuera siempre el mismo. Si los ids fueran aleatorios, dos corridas
+///    darian el mismo lote de citas con ids distintos, y un test que dice "la
+///    cita demo-0042 tiene total 2200" dejaria de poder afirmar nada.
+///
+/// 2. MARCA DE DEMO. El prefijo `demo-` es lo que permite que la sincronizacion
+///    NO suba esta data a Firestore. Sin el, habria que agregar una columna
+///    `es_demo` a la tabla y mantenerla coherente con el borrado de la semilla;
+///    con el, `Uuid.esDemo(cita.id)` responde la pregunta. Menos estado que puede
+///    quedar desincronizado.
+///
+/// La consecuencia de que el lote sea identico en cada instalacion es que dos
+/// dispositivos tienen los mismos ids de cita demo. No es un problema porque
+/// ninguno sube esos ids a la nube.
 ///
 /// Las fechas son RELATIVAS a un dia de referencia (por defecto, hoy): si
 /// fueran fijas, en dos semanas la app abriria con el Dashboard en '--' y no
@@ -39,6 +66,33 @@ class SemillaCitasDemo {
   /// veinte, la pantalla no se puede auditar.
   static const int citasDeHoy = 8;
 
+  /// Indice del proximo UUID de demo a usar.
+  static int _indiceDemo = 0;
+
+  /// Obtiene el siguiente UUID de demo de forma determinista usando los UUIDs
+  /// pre-generados de [Uuid.demoIds] (150 UUIDs v4 validos, RFC 4122).
+  ///
+  /// Estos son los MISMOS UUIDs que usa `Uuid.esDemo()` para detectar data de demo
+  /// en la sincronizacion. Garantiza: (1) son UUIDs v4 validos, (2) son unicos,
+  /// (3) coinciden con el Set de deteccion en `Uuid.esDemo()`.
+  static String _proximoUuidDemo() {
+    final ids = Uuid.demoIds.toList();
+    if (_indiceDemo >= ids.length) {
+      throw StateError(
+        'Se agotaron los UUIDs de demo pre-generados (${ids.length}). '
+        'Aumenta la lista en Uuid.demoIds.',
+      );
+    }
+    return ids[_indiceDemo++];
+  }
+
+  /// Verifica si un ID pertenece a la data de demo.
+  ///
+  /// v7: delega a [Uuid.esDemo()] que usa el mismo Set de 150 UUIDs v4 validos
+  /// pre-generados. Esto permite que la sincronizacion salte la data de demo
+  /// sin una columna extra `es_demo`.
+  static bool esDemo(String id) => Uuid.esDemo(id);
+
   /// Genera el lote completo de citas de demostracion.
   ///
   /// [tallerIds] son los ids reales de `talleres` que el `DatabaseHelper` resolvio
@@ -49,10 +103,18 @@ class SemillaCitasDemo {
   /// [referencia] es el ancla temporal. Se pasa explicita (y no `DateTime.now()`
   /// adentro) para que un test pueda fijar la fecha y verificar que "hoy" cae
   /// donde dice caer.
+  ///
+  /// Cada cita sale con `id` de prueba (UUID v4 valido de demo) y
+  /// `codigoVisible` numerado como si la nube ya lo hubiera confirmado. Se numeran
+  /// aqui porque el Dashboard del debug se audita a ojo y ver 100 citas en
+  /// 'PENDIENTE' no dice nada del grafico. En la app real el numero lo asigna
+  /// Firestore.
   static List<Cita> generar({
     required DateTime referencia,
-    required List<int> tallerIds,
+    required List<String> tallerIds,
   }) {
+    _indiceDemo = 0; // Reset para determinismo total en cada llamada.
+
     final rng = _Rng(20261002);
     final hoy = DateTime(referencia.year, referencia.month, referencia.day);
     final citas = <Cita>[];
@@ -76,6 +138,7 @@ class SemillaCitasDemo {
             ),
             estado: _estadoPasado(rng, diasDeDistancia: d),
             tallerIds: tallerIds,
+            indice: citas.length,
           ),
         );
       }
@@ -88,7 +151,13 @@ class SemillaCitasDemo {
       citas.add(
         _armar(
           rng: rng,
-          fecha: DateTime(hoy.year, hoy.month, hoy.day, 8 + i, _minutoDeTaller(rng)),
+          fecha: DateTime(
+            hoy.year,
+            hoy.month,
+            hoy.day,
+            8 + i,
+            _minutoDeTaller(rng),
+          ),
           // Reparto fijo y no al azar: 3 completadas, 2 en proceso, 2 pendientes
           // y 1 esperando pieza. Asi "INGRESOS DEL DIA" y "COMPLETADAS HOY" tienen
           // algo que mostrar siempre, y sigue habiendo de las otras para que la
@@ -104,6 +173,7 @@ class SemillaCitasDemo {
             EstadoCita.enProceso,
           ][i],
           tallerIds: tallerIds,
+          indice: citas.length,
         ),
       );
     }
@@ -136,11 +206,15 @@ class SemillaCitasDemo {
               EstadoCita.enProceso,
             ][rng.siguiente(4)],
             tallerIds: tallerIds,
+            indice: citas.length,
           ),
         );
       }
     }
 
+    // El orden por `fechaCita` NO cambia los ids: el id se asigno antes de
+    // ordenar, con el indice de generacion. Asi el test que busca el `demo-0007`
+    // lo encuentra siempre con la misma cita, ordene o no la lista.
     citas.sort((a, b) => a.fechaCita.compareTo(b.fechaCita));
     return citas;
   }
@@ -178,7 +252,8 @@ class SemillaCitasDemo {
     required _Rng rng,
     required DateTime fecha,
     required EstadoCita estado,
-    required List<int> tallerIds,
+    required List<String> tallerIds,
+    required int indice,
   }) {
     final cliente = _clientes[rng.siguiente(_clientes.length)];
     final vehiculo = _vehiculos[rng.siguiente(_vehiculos.length)];
@@ -188,9 +263,21 @@ class SemillaCitasDemo {
     // desde que se agenda. Lo que decide si esa plata entro o no es el estado,
     // no el monto. Por eso el filtro de ingresos tiene sentido, y por eso una
     // cita 'Pendiente' con total cargado es normal y no un dato sucio.
-    final total = rng.siguiente(20) == 0 ? 0 : _montos[rng.siguiente(_montos.length)];
+    final total = rng.siguiente(20) == 0
+        ? 0
+        : _montos[rng.siguiente(_montos.length)];
 
     return Cita(
+      // `_proximoUuidDemo` y no `Uuid.instancia.generar()`: el lote tiene que ser
+      // identico en cada corrida y, sobre todo, tiene que ser reconocible como
+      // data de mentira para que la sincronizacion lo salte.
+      //
+      // v7: ahora devuelve UUID v4 valido (RFC 4122), no `demo-XXXX`. La
+      // deteccion de demo es por pertenencia al Set `_idsDemoSet` (ver `esDemo`).
+      id: _proximoUuidDemo(),
+      // El numero se ve numerado en el Dashboard del debug. En la app real llega
+      // 'PENDIENTE' y lo reemplaza el `onSnapshot`.
+      codigoVisible: formatearCodigoCita(indice + 1),
       cliente: cliente.$1,
       telefono: cliente.$2,
       vehiculo: vehiculo.$1,
@@ -201,18 +288,21 @@ class SemillaCitasDemo {
       servicios: servicios,
       tecnico: _tecnicos[rng.siguiente(_tecnicos.length)],
       descripcion: '',
-      fechaCita: fecha,
+      fechaCita: fecha.toUtc(),
       estado: estado,
-      tallerId: tallerIds.isEmpty ? null : tallerIds[rng.siguiente(tallerIds.length)],
-      creadoEn: fecha.subtract(const Duration(days: 2)),
-      actualizadoEn: fecha,
+      tallerId: tallerIds.isEmpty
+          ? null
+          : tallerIds[rng.siguiente(tallerIds.length)],
+      creadoEn: fecha.subtract(const Duration(days: 2)).toUtc(),
+      actualizadoEn: fecha.toUtc(),
       total: total,
     );
   }
 
   /// Minutos que parecen una hora real de taller (0, 15, 30, 45) y no
   /// ':07:23' de un numero aleatorio.
-  static int _minutoDeTaller(_Rng rng) => const <int>[0, 15, 30, 45][rng.siguiente(4)];
+  static int _minutoDeTaller(_Rng rng) =>
+      const <int>[0, 15, 30, 45][rng.siguiente(4)];
 
   static const List<(String, String)> _clientes = <(String, String)>[
     ('Luis Castillo', '809-555-0201'),
@@ -228,13 +318,13 @@ class SemillaCitasDemo {
     ('Miguel Santos', '829-555-0211'),
     ('Carmen Díaz', '849-555-0212'),
     ('Jorge Batista', '809-555-0213'),
-    ('Rosa Martínez', '809-555-0214'),
+    ('Rosa Martínez', '849-555-0214'),
     ('Andrés Guerrero', '829-555-0215'),
-    ('Paola Herrera', '809-555-0216'),
+    ('Paola Herrera', '849-555-0216'),
     ('Eduardo Vargas', '849-555-0217'),
     ('Kimberly Ruiz', '809-555-0218'),
     ('Franklin Sánchez', '829-555-0219'),
-    ('Yamilé Peña', '809-555-0220'),
+    ('Yamilé Peña', '829-555-0220'),
   ];
 
   /// (vehiculo, marca, modelo, anio)

@@ -108,7 +108,8 @@ class DevModeController extends ChangeNotifier {
     }
   }
 
-  Future<bool> darDeBajaTaller(int id) async {
+  /// El id es el UUID del taller (`String`) desde la v7, no el autoincremento.
+  Future<bool> darDeBajaTaller(String id) async {
     try {
       await _talleresRepository.darDeBaja(id);
       _talleres = await _talleresRepository.obtenerTodas();

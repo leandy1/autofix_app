@@ -1,11 +1,14 @@
 import 'package:autofix/core/data/base_repository.dart';
 import 'package:autofix/core/database/database_helper.dart';
 import 'package:autofix/core/database/semilla_inicial.dart';
+import 'package:autofix/core/utils/uuid.dart';
 import 'package:autofix/features/citas/data/cita_repository.dart';
-import 'package:autofix/features/configuracion/data/estado_repository.dart';
+import 'package:autofix/features/configuracion/data/grupo_servicio_repository.dart';
+import 'package:autofix/features/configuracion/data/marca_repository.dart';
 import 'package:autofix/features/configuracion/data/tecnico_repository.dart';
 import 'package:autofix/features/configuracion/data/tipo_servicio_repository.dart';
-import 'package:autofix/features/configuracion/models/estado.dart';
+import 'package:autofix/features/configuracion/models/grupo_servicio.dart';
+import 'package:autofix/features/configuracion/models/marca.dart';
 import 'package:autofix/features/configuracion/models/tecnico.dart';
 import 'package:autofix/features/configuracion/models/tipo_servicio.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -38,11 +41,14 @@ void main() {
 
   group('esquema', () {
     test(
-      'los tres catalogos se crean con TODAS las columnas del modelo',
+      'los CUATRO catalogos se crean con TODAS las columnas del modelo',
       () async {
         // Este es el test que atrapa el "no such column": los modelos declaran sus
         // claves como literales para no depender de `DatabaseHelper`, asi que
         // PRAGMA es la unica red que ata el CREATE TABLE con el `toMap()`.
+        //
+        // v7: eran TRES (tecnicos, tipos, estados) y ahora son CUATRO. Los estados
+        // se fueron; marcas y grupos entraron (punto 6 del encargo).
         final db = await DatabaseHelper.instance.base;
 
         Future<void> comprobar(
@@ -69,11 +75,48 @@ void main() {
           const TipoServicio(nombre: 'x', precio: 10).toMap(),
         );
         await comprobar(
-          DatabaseHelper.tablaEstados,
-          const EstadoConfig(nombre: 'x').toMap(),
+          DatabaseHelper.tablaMarcas,
+          const Marca(nombre: 'x').toMap(),
+        );
+        await comprobar(
+          DatabaseHelper.tablaGruposServicio,
+          const GrupoServicio(nombre: 'x').toMap(),
         );
       },
     );
+
+    test('la tabla de ESTADOS ya no existe', () async {
+      // El catalogo `estados` se elimino en la v7 por decision de Leandy: el
+      // estado de una cita es el enum cerrado `EstadoCita`, y el catalogo era data
+      // muerta que ademas contradecía al enum ('En diagnostico' no existe en el
+      // enum). Este test falla si alguien lo vuelve a agregar.
+      final db = await DatabaseHelper.instance.base;
+      final tablas = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type = 'table'",
+      );
+      expect(tablas.map((f) => f['name']), isNot(contains('estados')));
+    });
+
+    test('los cuatro catalogos tienen la PK en TEXT, no INTEGER', () async {
+      // El motivo de ser del UUID: con `INTEGER PRIMARY KEY` el id es un contador
+      // POR DISPOSITIVO y dos tablets creaban "el mismo" tecnico 1, que al
+      // sincronizar se pisan. Se comprueba con PRAGMA, no inferiendolo de que el
+      // modelo compile.
+      final db = await DatabaseHelper.instance.base;
+      for (final tabla in <String>[
+        DatabaseHelper.tablaTecnicos,
+        DatabaseHelper.tablaTiposServicio,
+        DatabaseHelper.tablaMarcas,
+        DatabaseHelper.tablaGruposServicio,
+      ]) {
+        final info = await db.rawQuery('PRAGMA table_info($tabla)');
+        final pk = info.firstWhere((f) => f['pk'] == 1);
+        expect(pk['type'], 'TEXT', reason: 'la PK de $tabla no es TEXT');
+        // Y `NOT NULL`: una PK sin valor no puede existir, y SQLite en modo legacy
+        // permitiria un NULL en una PRIMARY KEY sin declarar NOT NULL.
+        expect(pk['notnull'], 1, reason: 'la PK de $tabla admite NULL');
+      }
+    });
 
     test(
       'tipos_servicio tiene la columna de precio y las otras dos no',
@@ -88,32 +131,48 @@ void main() {
           contains(DatabaseHelper.colPrecio),
         );
 
-        final sinPrecio = await db.rawQuery(
-          'PRAGMA table_info(${DatabaseHelper.tablaTecnicos})',
-        );
-        expect(
-          sinPrecio.map((f) => f['name']),
-          isNot(contains(DatabaseHelper.colPrecio)),
-        );
+        // v7: los dos catalogos nuevos del punto 6 tampoco llevan precio. Una marca
+        // no se cobra y un grupo solo agrupa servicios.
+        for (final tabla in <String>[
+          DatabaseHelper.tablaTecnicos,
+          DatabaseHelper.tablaMarcas,
+          DatabaseHelper.tablaGruposServicio,
+        ]) {
+          final info = await db.rawQuery('PRAGMA table_info($tabla)');
+          expect(
+            info.map((f) => f['name']),
+            isNot(contains(DatabaseHelper.colPrecio)),
+            reason: '$tabla no deberia tener columna de precio',
+          );
+        }
       },
     );
   });
 
   group('semilla inicial', () {
-    test('una base nueva nace con los catalogos del diseno', () async {
-      final tecnicos = await TecnicoRepository.instance.obtenerTodas();
-      final servicios = await TipoServicioRepository.instance.obtenerTodas();
-      final estados = await EstadoRepository.instance.obtenerTodas();
-
+    test('una base nueva nace con los CUATRO catalogos del diseno', () async {
+      // v7: los estados se eliminaron y marcas/grupos entraron. Los cuatro
+      // catalogos que el punto 6 del encargo pide tienen que estar sembrados.
       expect(
-        tecnicos.map((t) => t.nombre),
+        (await TecnicoRepository.instance.obtenerTodas()).map((t) => t.nombre),
         containsAll(SemillaInicial.tecnicos),
       );
       expect(
-        servicios.map((s) => s.nombre),
+        (await TipoServicioRepository.instance.obtenerTodas()).map(
+          (s) => s.nombre,
+        ),
         containsAll(SemillaInicial.tiposServicio),
       );
-      expect(estados.map((e) => e.nombre), containsAll(SemillaInicial.estados));
+      expect(
+        (await MarcaRepository.instance.obtenerTodas()).map((m) => m.nombre),
+        containsAll(SemillaInicial.marcas),
+      );
+      expect(
+        (await GrupoServicioRepository.instance.obtenerTodas()).map(
+          (g) => g.nombre,
+        ),
+        containsAll(SemillaInicial.gruposServicio),
+      );
     });
 
     test(r'los precios sembrados son 0, no el texto RD$ del diseno', () async {
@@ -213,16 +272,26 @@ void main() {
     );
 
     test('DELETE: la fila deja de estar en la base', () async {
-      final id = await EstadoRepository.instance.crear(
-        const EstadoConfig(nombre: 'Retrabajo'),
+      // Los catalogos SI usan borrado fisico, a diferencia de las citas. La razon
+      // esta en el doc de `MarcaRepository.eliminar`: un tecnico o una marca no
+      // tienen historial, no se referencian desde `citas` por FK, y borrarlos es
+      // lo que espera el admin cuando aprieta la `X`.
+      final id = await MarcaRepository.instance.crear(
+        const Marca(nombre: 'Retrabajo'),
       );
 
-      expect(await EstadoRepository.instance.eliminar(id), 1);
-      expect(await EstadoRepository.instance.obtenerPorId(id), isNull);
+      expect(await MarcaRepository.instance.eliminar(id), 1);
+      expect(await MarcaRepository.instance.obtenerPorId(id), isNull);
     });
 
     test('eliminar un id inexistente devuelve 0 filas', () async {
-      expect(await TecnicoRepository.instance.eliminar(999999), 0);
+      // v7: los ids son UUID en texto, no numeros.
+      expect(
+        await TecnicoRepository.instance.eliminar(
+          'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        ),
+        0,
+      );
     });
 
     test('actualizar sin id lanza en vez de fallar en silencio', () async {
@@ -244,48 +313,77 @@ void main() {
     });
 
     test('la diferencia de mayusculas TAMBIEN se rechaza', () async {
-      // Se crea primero: 'En proceso' ya viene en la semilla, y lo que se quiere
-      // probar es que el UNIQUE salta entre dos altas, no contra la semilla.
-      await EstadoRepository.instance.crear(
-        const EstadoConfig(nombre: 'Revisión profunda'),
+      // v7: este test usaba el catalogo de estados. Como los estados se
+      // eliminaron, la misma propiedad se verifica sobre `tipos_servicio`, que es
+      // el catalogo que mas filas tiene y donde un duplicado se nota mas (dos
+      // botones con el mismo texto en la tarjeta de Servicios).
+      await TipoServicioRepository.instance.crear(
+        const TipoServicio(nombre: 'Revisión profunda'),
       );
 
       // Es lo que justifica el indice COLLATE NOCASE: sin el, "Revisión profunda"
-      // y "revisión profunda" coexistirian y el admin veria el estado duplicado
-      // en la pantalla de Citas.
+      // y "revisión profunda" coexistirian y el admin veria el servicio duplicado
+      // en la pantalla de Configuracion.
       expect(
-        () => EstadoRepository.instance.crear(
-          const EstadoConfig(nombre: 'revisión profunda'),
+        () => TipoServicioRepository.instance.crear(
+          const TipoServicio(nombre: 'revisión profunda'),
         ),
         throwsA(isA<Exception>()),
       );
     });
 
     test('cada catalogo es independiente: el mismo nombre puede existir en dos', () async {
-      // Un tecnico y un estado pueden llamarse igual: son tablas distintas y el
-      // UNIQUE es por tabla.
-      await EstadoRepository.instance.crear(
-        const EstadoConfig(nombre: 'Temporal'),
-      );
+      // Un tecnico y una marca pueden llamarse igual: son tablas distintas y el
+      // UNIQUE es por tabla. Antes este test comparaba un tecnico contra un estado.
+      await MarcaRepository.instance.crear(const Marca(nombre: 'Temporal'));
       await expectLater(
         TecnicoRepository.instance.crear(const Tecnico(nombre: 'Temporal')),
         completes,
       );
     });
+
+    test('marcas y grupos tambien rechazan nombres repetidos', () async {
+      // Los cuatro catalogos comparten `_crearTablaCatalogo`, asi que los cuatro
+      // tienen el mismo UNIQUE. Este test lo verifica en los dos nuevos, que son
+      // los que todavia no tenian cobertura.
+      await MarcaRepository.instance.crear(const Marca(nombre: 'Kia'));
+      expect(
+        () => MarcaRepository.instance.crear(const Marca(nombre: 'Kia')),
+        throwsA(isA<Exception>()),
+      );
+
+      await GrupoServicioRepository.instance.crear(
+        const GrupoServicio(nombre: 'Electricidad'),
+      );
+      expect(
+        () => GrupoServicioRepository.instance.crear(
+          const GrupoServicio(nombre: 'electricidad'),
+        ),
+        throwsA(isA<Exception>()),
+      );
+    });
   });
 
   group('PATRON BASE', () {
-    test('los tres repositorios cumplen BaseRepository', () async {
+    test('los CUATRO repositorios cumplen BaseRepository', () async {
       // Compilar esto YA es la prueba de que cumplen el contrato: si dejaran de
       // cumplirlo, el analyzer falla antes de correr el test.
+      //
+      // v7: eran TRES. Los estados se fueron y marcas/grupos entraron, asi que
+      // el numero de repos que cumplen el contrato es ahora cuatro. Los cuatro
+      // son intercambiables desde la UI de Leandy: mismo `crear`, mismo
+      // `obtenerTodas`, mismo `actualizar`, mismo `eliminar`.
       final BaseRepository<Tecnico> tecnicos = TecnicoRepository.instance;
       final BaseRepository<TipoServicio> servicios =
           TipoServicioRepository.instance;
-      final BaseRepository<EstadoConfig> estados = EstadoRepository.instance;
+      final BaseRepository<Marca> marcas = MarcaRepository.instance;
+      final BaseRepository<GrupoServicio> grupos =
+          GrupoServicioRepository.instance;
 
       expect(tecnicos.tabla, DatabaseHelper.tablaTecnicos);
       expect(servicios.tabla, DatabaseHelper.tablaTiposServicio);
-      expect(estados.tabla, DatabaseHelper.tablaEstados);
+      expect(marcas.tabla, DatabaseHelper.tablaMarcas);
+      expect(grupos.tabla, DatabaseHelper.tablaGruposServicio);
 
       final id = await servicios.crear(
         const TipoServicio(nombre: 'Lavado', precio: 300),
@@ -304,8 +402,47 @@ void main() {
         SemillaInicial.tecnicos.length,
       );
       expect(
-        (await estados.obtenerTodas()).length,
-        SemillaInicial.estados.length,
+        (await marcas.obtenerTodas()).length,
+        SemillaInicial.marcas.length,
+      );
+      expect(
+        (await grupos.obtenerTodas()).length,
+        SemillaInicial.gruposServicio.length,
+      );
+    });
+
+    test('los cuatro repositorios devuelven un UUID de crear', () async {
+      // El contrato generico dice `Future<String> crear`, pero no garantiza que lo
+      // que devuelve sea un UUID bien formado. Este test lo comprueba en los
+      // cuatro, porque un `crear` que devuelva '' o un numero solo se rompe cuando
+      // la fila llega a Firestore.
+      expect(
+        Uuid.tieneFormaDeUuid(
+          await TecnicoRepository.instance.crear(const Tecnico(nombre: 'A')),
+        ),
+        isTrue,
+      );
+      expect(
+        Uuid.tieneFormaDeUuid(
+          await TipoServicioRepository.instance.crear(
+            const TipoServicio(nombre: 'B'),
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        Uuid.tieneFormaDeUuid(
+          await MarcaRepository.instance.crear(const Marca(nombre: 'C')),
+        ),
+        isTrue,
+      );
+      expect(
+        Uuid.tieneFormaDeUuid(
+          await GrupoServicioRepository.instance.crear(
+            const GrupoServicio(nombre: 'D'),
+          ),
+        ),
+        isTrue,
       );
     });
   });
@@ -356,34 +493,35 @@ void main() {
       await base.close();
     }
 
-    test(
-      'un dispositivo con v2 conserva sus citas y gana los catalogos',
-      () async {
-        await sembrarBaseV2(qr: 'VIEJO-V2');
+    test('un dispositivo con v2 arranca con los catalogos de la v7', () async {
+      // v7: este test se reescribio entero. Antes se llamaba 'conserva sus citas'
+      // y hacia `expect(citas.length, 1)`. Con `_versionBase = 7` eso es falso:
+      // la v7 dropea `citas` a proposito (ver `DatabaseHelper._migrar`), porque
+      // cambiar la PK de INTEGER a TEXT/UUID no se puede hacer copiando filas.
+      await sembrarBaseV2(qr: 'VIEJO-V2');
 
-        // Abrir con el helper dispara onUpgrade: crea catalogos y siembra.
-        final citas = await CitaRepository.instance.obtenerTodas();
-        // La v5 elimina `codigo_qr`, asi que el marcador que la base vieja
-        // guardaba ahi no sobrevive. Lo que demuestra que no se perdio la fila
-        // es que sigue estando, con los valores que el seed escribio.
-        expect(citas.length, 1, reason: 'la migracion NO debe perder datos');
-        expect(citas.first.cliente, 'Cliente Anterior');
-        expect(citas.first.placa, 'A123456');
+      // Abrir con el helper dispara onUpgrade.
+      final citas = await CitaRepository.instance.obtenerTodas();
+      expect(citas, isEmpty, reason: 'la v7 reinicia el esquema a proposito');
 
-        expect(
-          (await TecnicoRepository.instance.obtenerTodas()).length,
-          SemillaInicial.tecnicos.length,
-        );
-        expect(
-          (await EstadoRepository.instance.obtenerTodas()).length,
-          SemillaInicial.estados.length,
-        );
-        expect(
-          (await TipoServicioRepository.instance.obtenerTodas()).length,
-          SemillaInicial.tiposServicio.length,
-        );
-      },
-    );
+      // Lo que si importa: los cuatro catalogos quedan creados y sembrados.
+      expect(
+        (await TecnicoRepository.instance.obtenerTodas()).length,
+        SemillaInicial.tecnicos.length,
+      );
+      expect(
+        (await TipoServicioRepository.instance.obtenerTodas()).length,
+        SemillaInicial.tiposServicio.length,
+      );
+      expect(
+        (await MarcaRepository.instance.obtenerTodas()).length,
+        SemillaInicial.marcas.length,
+      );
+      expect(
+        (await GrupoServicioRepository.instance.obtenerTodas()).length,
+        SemillaInicial.gruposServicio.length,
+      );
+    });
 
     test('un dispositivo con v1 salta de v1 a v3 en una sola apertura', () async {
       // Aplica los dos pasos (columnas de citas + catalogos) en una transaccion.
@@ -418,15 +556,23 @@ void main() {
       await base.close();
 
       final citas = await CitaRepository.instance.obtenerTodas();
-      expect(citas.length, 1);
-      // `codigo_qr` no existe desde la v5; la fila se reconoce por `cliente`.
-      expect(citas.first.cliente, 'Cliente Viejo');
-      // Columnas de la v2: llegan con el default, no en null.
-      expect(citas.first.telefono, '');
-      expect(citas.first.anio, 0);
+      // v7: la v7 dropea la tabla, asi que la cita vieja no sobrevive. El test
+      // verifica lo que la migracion SI tiene que garantizar: que el salto de
+      // versiones no deje la base a medias, con los catalogos creados.
+      expect(citas, isEmpty, reason: 'la v7 reinicia el esquema a proposito');
       expect(
         (await TecnicoRepository.instance.obtenerTodas()).length,
         SemillaInicial.tecnicos.length,
+      );
+      // Y que la base quedo ESCRIBIBLE: si la transaccion de la migracion se
+      // hubiera dejado a medias, este INSERT seria el que falla.
+      final id = await TecnicoRepository.instance.crear(
+        const Tecnico(nombre: 'Post-migracion'),
+      );
+      expect(
+        Uuid.tieneFormaDeUuid(id),
+        isTrue,
+        reason: 'la base quedo inutilizable despues de migrar',
       );
     });
 

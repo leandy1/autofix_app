@@ -1,4 +1,5 @@
 import 'package:autofix/core/data/base_repository.dart';
+import 'package:autofix/core/utils/reloj.dart';
 
 /// Trabajo que el taller ofrece: "Frenos", "Cambio de aceite", etc.
 ///
@@ -10,6 +11,11 @@ import 'package:autofix/core/data/base_repository.dart';
 /// deja de cuadrar con lo que dice el total de la cita. Con enteros la aritmetica
 /// es exacta. Los centavos, si alguna vez hacen falta, se ajustan con
 /// [precioEnCentavos].
+///
+/// CAMBIO v7: `id` paso de `int?` (autoincremento) a `String?` (UUID v4) por la
+/// misma razon que en [Tecnico], y los tiempos pasaron a UTC con [aIsoUtc]. El
+/// precio se lee con `as num` porque SQLite puede devolver un REAL si la fila se
+/// escribio desde otro cliente con 1200.0.
 class TipoServicio implements EntidadPersistida {
   const TipoServicio({
     this.id,
@@ -28,7 +34,7 @@ class TipoServicio implements EntidadPersistida {
   static const String _kActualizadoEn = 'actualizado_en';
 
   @override
-  final int? id;
+  final String? id;
 
   final String nombre;
 
@@ -93,7 +99,7 @@ class TipoServicio implements EntidadPersistida {
   }
 
   TipoServicio copyWith({
-    int? id,
+    String? id,
     String? nombre,
     int? precio,
     bool? activo,
@@ -116,19 +122,21 @@ class TipoServicio implements EntidadPersistida {
       _kNombre: nombre,
       _kPrecio: precio,
       _kActivo: activo ? 1 : 0,
-      _kCreadoEn: (creadoEn ?? DateTime.now()).toIso8601String(),
-      _kActualizadoEn: (actualizadoEn ?? DateTime.now()).toIso8601String(),
+      // Solo si el modelo conoce el valor. Ver la nota larga de `Cita.toMap`.
+      if (creadoEn != null) _kCreadoEn: aIsoUtc(creadoEn!),
+      // `actualizadoEn ?? reloj` y no el reloj a secas. Ver `Tecnico.toMap`.
+      _kActualizadoEn: aIsoUtc(actualizadoEn ?? Reloj.instancia.ahora()),
     };
   }
 
   factory TipoServicio.fromMap(Map<String, Object?> map) {
     return TipoServicio(
-      id: map[_kId] as int?,
+      id: map[_kId]?.toString(),
       nombre: (map[_kNombre] as String?) ?? '',
-      precio: (map[_kPrecio] as int?) ?? 0,
+      precio: (map[_kPrecio] as num?)?.toInt() ?? 0,
       activo: ((map[_kActivo] as int?) ?? 1) != 0,
-      creadoEn: DateTime.tryParse(map[_kCreadoEn] as String? ?? ''),
-      actualizadoEn: DateTime.tryParse(map[_kActualizadoEn] as String? ?? ''),
+      creadoEn: desdeIso(map[_kCreadoEn]),
+      actualizadoEn: desdeIso(map[_kActualizadoEn]),
     );
   }
 }

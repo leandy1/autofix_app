@@ -26,7 +26,10 @@ void main() {
 
   group('TipoServicio.totalDe', () {
     test('suma los precios de los servicios marcados', () {
-      final total = TipoServicio.totalDe(catalogo, {'Frenos', 'Alineación y balanceo'});
+      final total = TipoServicio.totalDe(catalogo, {
+        'Frenos',
+        'Alineación y balanceo',
+      });
 
       // 3200 + 1500
       expect(total, 4700);
@@ -35,10 +38,11 @@ void main() {
     test('suma tres y da el mismo que de a dos', () {
       // La comprobacion que atrapa el error de sumar el ultimo dos veces.
       expect(
-        TipoServicio.totalDe(
-          catalogo,
-          {'Frenos', 'Alineación y balanceo', 'Cambio de aceite y filtro'},
-        ),
+        TipoServicio.totalDe(catalogo, {
+          'Frenos',
+          'Alineación y balanceo',
+          'Cambio de aceite y filtro',
+        }),
         3200 + 1500 + 1850,
       );
     });
@@ -50,10 +54,7 @@ void main() {
     test('catalogo vacio da 0 y no revienta', () {
       // Puede pasar si el admin borro todos los servicios: el formulario tiene
       // que poder seguir guardando citas sin servicios.
-      expect(
-        TipoServicio.totalDe(const <TipoServicio>[], {'Frenos'}),
-        0,
-      );
+      expect(TipoServicio.totalDe(const <TipoServicio>[], {'Frenos'}), 0);
     });
 
     test('un nombre que no esta en el catalogo cuenta 0 y NO lanza', () {
@@ -71,10 +72,7 @@ void main() {
       // El formulario manda el NOMBRE que veio del catalogo, con su tilde. Si
       // el cruce se hiciera normalizado de mas o de menos, estos servicios no
       // se sumado nunca y el total daria 0 sin error visible.
-      expect(
-        TipoServicio.totalDe(catalogo, {'Suspensión y dirección'}),
-        2750,
-      );
+      expect(TipoServicio.totalDe(catalogo, {'Suspensión y dirección'}), 2750);
     });
 
     test('un servicio con precio 0 no suma, y no es un error', () {
@@ -102,7 +100,10 @@ void main() {
     test('el resultado es un entero, sin decimales', () {
       // `precio` es `int` a proposito: con REAL, 1250.50 vuelve como
       // 1250.4999999 y la suma de una lista deja de cuadrar con el total.
-      final total = TipoServicio.totalDe(catalogo, {'Frenos', 'Alineación y balanceo'});
+      final total = TipoServicio.totalDe(catalogo, {
+        'Frenos',
+        'Alineación y balanceo',
+      });
 
       expect(total, isA<int>());
       expect(total, 4700);
@@ -117,7 +118,9 @@ void main() {
       // El duplicado va en una lista y no en el literal del set a proposito:
       // escribirlo en el set seria un error de compilacion, y lo que se quiere
       // probar es justamente que el `Set` lo traga sin duplicar el cobro.
-      final marcados = <String>{...['Frenos', 'Frenos']};
+      final marcados = <String>{
+        ...['Frenos', 'Frenos'],
+      };
 
       expect(marcados.length, 1);
       expect(TipoServicio.totalDe(catalogo, marcados), 3200);

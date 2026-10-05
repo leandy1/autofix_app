@@ -124,7 +124,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
-expect(
+      expect(
         banner(),
         findsOneWidget,
         reason: 'la alarma tiene que ir dentro del Navigator',
@@ -148,7 +148,7 @@ expect(
       await tester.pumpWidget(const ConectividadApp(child: AutoFixApp()));
       await tester.pump();
 
-expect(
+      expect(
         banner(),
         findsNothing,
         reason: 'con el estado inicial pendiente no se acusa corte',
@@ -160,9 +160,7 @@ expect(
       expect(banner(), findsNothing);
     });
 
-    testWidgets('reacciona dentro del Navigator, no sobre el', (
-      tester,
-    ) async {
+    testWidgets('reacciona dentro del Navigator, no sobre el', (tester) async {
       red.estado = const [ConnectivityResult.none];
       await tester.pumpWidget(const ConectividadApp(child: AutoFixApp()));
       await tester.pumpAndSettle();

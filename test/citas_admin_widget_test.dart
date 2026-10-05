@@ -11,8 +11,11 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(360, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
+    // v7: el id es un UUID en texto, no un numero. Antes era `id: 42`.
+    const idCita = '55555555-5555-4555-8555-555555555555';
+
     final cita = CitaAdmin(
-      id: 42,
+      id: idCita,
       cliente: 'Ana López',
       telefono: '8091234567',
       marca: 'Toyota',
@@ -69,9 +72,18 @@ void main() {
     expect(find.text('Color'), findsNothing);
   });
 
-  testWidgets('invoca editar y eliminar desde la vista de detalle', (tester) async {
+  testWidgets('invoca editar y eliminar desde la vista de detalle', (
+    tester,
+  ) async {
+    // v7: `eliminado` era un `int` que se comparaba contra el `id` que la tarjeta
+    // dispara. Ahora el id viaja como texto, asi que el `String?` inicializado en
+    // `null` es lo que distingue "no se disparo el callback" de "se disparo con
+    // este id": con un valor inicial inventado, un callback que nunca corre
+    // pasaria el test.
+    const idCita = '77777777-7777-4777-8777-777777777777';
+
     final cita = CitaAdmin(
-      id: 7,
+      id: idCita,
       cliente: 'Beatriz',
       telefono: '8092223344',
       marca: 'Honda',
@@ -88,7 +100,7 @@ void main() {
     );
 
     var editado = false;
-    var eliminado = -1;
+    String? eliminado;
 
     await tester.pumpWidget(
       MaterialApp(
@@ -115,6 +127,6 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Eliminar'));
     await tester.pumpAndSettle();
-    expect(eliminado, 7);
+    expect(eliminado, idCita);
   });
 }

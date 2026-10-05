@@ -3,14 +3,29 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('Cita', () {
+    // v7: el id es un UUID en texto, no un autoincremento. Se usa un valor fijo y
+    // NO `Uuid.instancia.generar()` a proposito: este test compara el `id` que
+    // entra con el que sale, y un id aleatorio pasa igual de todos modos, asi que
+    // fijo se lee mas claro.
+    // Las fechas van en UTC y con el `Z` explicito, no con `DateTime(2026, 10, 1,
+    // 9, 30)`.
+    //
+    // El motivo es que ese constructor sin `isUtc` devuelve HORA LOCAL, y el
+    // modelo escribe UTC (`aIsoUtc`). Con la maquina en UTC-4, las 9:30 locales se
+    // guardan como '13:30Z' y al releer el objeto da 13:30: el test fallaba en
+    // cualquier zona horaria que no fuera UTC, y pasaba solo porque el que lo
+    // escribio tenia el reloj en UTC.
+    //
+    // `DateTime.utc` ademas hace el test HONESTO sobre el contrato: si el modelo
+    // dejara de convertir a UTC, este test lo detecta en vez de acomodarse.
     final cita = Cita(
-      id: 1,
+      id: '11111111-1111-4111-8111-111111111111',
       cliente: 'Ana Torres',
       vehiculo: 'Toyota Hilux',
       descripcion: 'Cambio de aceite',
-      fechaCita: DateTime(2026, 10, 1, 9, 30),
+      fechaCita: DateTime.utc(2026, 10, 1, 13, 30),
       estado: EstadoCita.pendiente,
-      creadoEn: DateTime(2026, 9, 1),
+      creadoEn: DateTime.utc(2026, 9, 1),
     );
 
     test('viaja de objeto a fila y vuelve sin perder datos', () {
@@ -23,6 +38,16 @@ void main() {
       expect(recuperada.fechaCita, cita.fechaCita);
       expect(recuperada.estado, cita.estado);
     });
+
+    test(
+      'la fecha se escribe SIEMPRE en UTC con la Z, nunca en hora local',
+      () {
+        // El contrato que hace comparables dos citas de dos husos distintos. Si
+        // `toMap` dejara de usar `aIsoUtc`, este test falla al instante.
+        final fila = cita.toMap();
+        expect(fila['fecha_cita'], '2026-10-01T13:30:00.000Z');
+      },
+    );
 
     test('no incluye la clave id cuando la cita todavia no fue insertada', () {
       final sinId = Cita(
@@ -68,30 +93,38 @@ void main() {
       expect(pendiente.esAtrasada(DateTime(2026, 10, 2, 0)), isTrue);
     });
 
-    test('una cita completada no cae en ATRASADAS aunque la fecha haya pasado', () {
-      final completada = cita
-          .copyWith(fechaCita: DateTime(2020, 1, 1))
-          .copyWith(estado: EstadoCita.completado);
-      expect(completada.esAtrasada(DateTime(2026, 9, 15)), isFalse);
-    });
+    test(
+      'una cita completada no cae en ATRASADAS aunque la fecha haya pasado',
+      () {
+        final completada = cita
+            .copyWith(fechaCita: DateTime(2020, 1, 1))
+            .copyWith(estado: EstadoCita.completado);
+        expect(completada.esAtrasada(DateTime(2026, 9, 15)), isFalse);
+      },
+    );
 
     test('las claves de fila coinciden con la tabla citas', () {
       // El modelo guarda las claves como literales para no depender de la capa de
       // datos. Este test es el que avisa si el CREATE TABLE se desincroniza: el
       // chequeo real por PRAGMA vive en `cita_repository_test.dart`.
       final claves = cita.toMap().keys.toSet();
-      expect(claves, containsAll(<String>{
-        'cliente',
-        'vehiculo',
-        'fecha_cita',
-        'estado',
-        'servicios',
-        'total',
-      }));
+      expect(
+        claves,
+        containsAll(<String>{
+          'cliente',
+          'vehiculo',
+          'fecha_cita',
+          'estado',
+          'servicios',
+          'total',
+        }),
+      );
     });
 
     test('los servicios sobreviven al viaje a JSON y vuelven', () {
-      final conServicios = cita.copyWith(servicios: const ['Frenos', 'Alineación']);
+      final conServicios = cita.copyWith(
+        servicios: const ['Frenos', 'Alineación'],
+      );
       final vuelta = Cita.fromMap(conServicios.toMap());
       expect(vuelta.servicios, ['Frenos', 'Alineación']);
     });

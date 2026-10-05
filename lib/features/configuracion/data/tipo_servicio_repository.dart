@@ -2,12 +2,18 @@ import 'package:sqflite/sqflite.dart';
 
 import 'package:autofix/core/data/base_repository.dart';
 import 'package:autofix/core/database/database_helper.dart';
+import 'package:autofix/core/utils/reloj.dart';
+import 'package:autofix/core/utils/uuid.dart';
 import 'package:autofix/features/configuracion/models/tipo_servicio.dart';
 
 /// Acceso a datos de Tipos de Servicio.
 ///
 /// Mismo contrato que los otros catalogos, mas el precio. Vease
-/// `tecnico_repository.dart` para el por que de `ConflictAlgorithm.abort`.
+/// `tecnico_repository.dart` para el por que de `ConflictAlgorithm.abort` y para
+/// por que no hay `eliminado_en` aca.
+///
+/// CAMBIO v7: la PK paso a UUID, asi que [crear] devuelve el `String` generado y
+/// [obtenerPorId] / [eliminar] reciben `String`.
 class TipoServicioRepository implements BaseRepository<TipoServicio> {
   TipoServicioRepository._();
 
@@ -21,13 +27,21 @@ class TipoServicioRepository implements BaseRepository<TipoServicio> {
   // ------------------------------ CREATE ------------------------------
 
   @override
-  Future<int> crear(TipoServicio servicio) async {
+  Future<String> crear(TipoServicio servicio) async {
+    // `creadoEn` se sella ACA. Ver `TecnicoRepository.crear` y la nota larga de
+    // `Cita.toMap`: el modelo no puede distinguir un alta de una edicion, y el
+    // repositorio si.
+    final conId = servicio.copyWith(
+      id: servicio.id ?? Uuid.instancia.generar(),
+      creadoEn: servicio.creadoEn ?? Reloj.instancia.ahora(),
+    );
     final db = await _helper.base;
-    return db.insert(
+    await db.insert(
       tabla,
-      servicio.toMap(),
+      conId.toMap(),
       conflictAlgorithm: ConflictAlgorithm.abort,
     );
+    return conId.id!;
   }
 
   // ------------------------------- READ -------------------------------
@@ -43,12 +57,12 @@ class TipoServicioRepository implements BaseRepository<TipoServicio> {
   }
 
   @override
-  Future<TipoServicio?> obtenerPorId(int id) async {
+  Future<TipoServicio?> obtenerPorId(String id) async {
     final db = await _helper.base;
     final filas = await db.query(
       tabla,
       where: '${DatabaseHelper.colId} = ?',
-      whereArgs: [id],
+      whereArgs: <Object?>[id],
       limit: 1,
     );
     return filas.isEmpty ? null : TipoServicio.fromMap(filas.first);
@@ -59,7 +73,7 @@ class TipoServicioRepository implements BaseRepository<TipoServicio> {
     final filas = await db.query(
       tabla,
       where: '${DatabaseHelper.colNombre} = ? COLLATE NOCASE',
-      whereArgs: [nombre.trim()],
+      whereArgs: <Object?>[nombre.trim()],
       limit: 1,
     );
     return filas.isEmpty ? null : TipoServicio.fromMap(filas.first);
@@ -76,22 +90,24 @@ class TipoServicioRepository implements BaseRepository<TipoServicio> {
     final db = await _helper.base;
     return db.update(
       tabla,
-      servicio.copyWith(actualizadoEn: DateTime.now()).toMap(),
+      servicio.copyWith(actualizadoEn: Reloj.instancia.ahora()).toMap(),
       where: '${DatabaseHelper.colId} = ?',
-      whereArgs: [id],
+      whereArgs: <Object?>[id],
       conflictAlgorithm: ConflictAlgorithm.abort,
     );
   }
 
   // ------------------------------ DELETE ------------------------------
 
+  /// Borrado fisico, por la misma razon que en `TecnicoRepository`: la cita
+  /// guarda el texto del servicio, no su id, y `activo` ya cubre la baja logica.
   @override
-  Future<int> eliminar(int id) async {
+  Future<int> eliminar(String id) async {
     final db = await _helper.base;
     return db.delete(
       tabla,
       where: '${DatabaseHelper.colId} = ?',
-      whereArgs: [id],
+      whereArgs: <Object?>[id],
     );
   }
 }

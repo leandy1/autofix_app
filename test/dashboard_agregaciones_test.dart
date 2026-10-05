@@ -95,9 +95,7 @@ void main() {
     });
 
     test('los estados que no aparecen NO se inventan en el mapa', () async {
-      await sembrar(<Cita>[
-        cita(fecha: hoy, estado: EstadoCita.pendiente),
-      ]);
+      await sembrar(<Cita>[cita(fecha: hoy, estado: EstadoCita.pendiente)]);
 
       final r = await repo.resumir(ahora: ahora);
 
@@ -166,10 +164,13 @@ void main() {
       await sembrar(lote);
 
       final r = await repo.resumir(ahora: ahora);
-      final esperadoEnDart =
-          lote.where((c) => c.esAtrasada(ahora)).length;
+      final esperadoEnDart = lote.where((c) => c.esAtrasada(ahora)).length;
 
-      expect(esperadoEnDart, 3, reason: 'el lote debe tener 3 atrasadas de verdad');
+      expect(
+        esperadoEnDart,
+        3,
+        reason: 'el lote debe tener 3 atrasadas de verdad',
+      );
       expect(r.atrasadas, esperadoEnDart);
     });
 
@@ -270,7 +271,9 @@ void main() {
         p.join(await getDatabasesPath(), 'autofix_dashboard_agreg_test.db');
 
     Future<List<String>> indicesDeCitas(Database db) async {
-      final filas = await db.rawQuery('PRAGMA index_list(${DatabaseHelper.tablaCitas})');
+      final filas = await db.rawQuery(
+        'PRAGMA index_list(${DatabaseHelper.tablaCitas})',
+      );
       return filas.map((f) => f['name'] as String).toList();
     }
 
@@ -293,7 +296,9 @@ void main() {
         'PRAGMA index_info(${DatabaseHelper.idxCitasFecha})',
       );
 
-      expect(columnas.map((c) => c['name']), <String>[DatabaseHelper.colFechaCita]);
+      expect(columnas.map((c) => c['name']), <String>[
+        DatabaseHelper.colFechaCita,
+      ]);
     });
 
     test('el plan de la consulta del dia usa el indice', () async {
@@ -307,10 +312,7 @@ void main() {
       // `fecha_cita` es TEXT con BINARY. El indice estaba puesto y no servia
       // para nada, y ningun test lo habria detectado salvo este.
       final db = await DatabaseHelper.instance.base;
-      await sembrar(<Cita>[
-        cita(fecha: hoy),
-        cita(fecha: manana),
-      ]);
+      await sembrar(<Cita>[cita(fecha: hoy), cita(fecha: manana)]);
 
       final plan = await db.rawQuery(
         'EXPLAIN QUERY PLAN SELECT * FROM ${DatabaseHelper.tablaCitas} '
@@ -340,10 +342,10 @@ void main() {
 
       final delDia = await repo.obtenerDelDia(hoy);
 
-      expect(
-        delDia.map((c) => c.cliente).toList(),
-        <String>['Medianoche', 'Fin Del Dia'],
-      );
+      expect(delDia.map((c) => c.cliente).toList(), <String>[
+        'Medianoche',
+        'Fin Del Dia',
+      ]);
 
       // Y el resumen por dia cuenta las mismas dos, ni una mas ni una menos.
       final resumen = await repo.resumir(fecha: hoy, ahora: ahora);
@@ -419,7 +421,10 @@ void main() {
       await DatabaseHelper.instance.cerrar();
 
       final otra = await DatabaseHelper.instance.base;
-      expect(await indicesDeCitas(otra), contains(DatabaseHelper.idxCitasFecha));
+      expect(
+        await indicesDeCitas(otra),
+        contains(DatabaseHelper.idxCitasFecha),
+      );
     });
   });
 }

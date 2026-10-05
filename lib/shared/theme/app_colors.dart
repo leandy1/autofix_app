@@ -18,7 +18,7 @@ class AppColors {
   static const Color greenAccent = Color(0xFF22C55E);
   static const Color atrasadas = Color(0xFFE0554F);
   static const Color pendientes = Color(0xFFF0A020);
-  static const Color esperandoPieza =  Color(0xFF3E7BF0);
+  static const Color esperandoPieza = Color(0xFF3E7BF0);
   static const Color enProceso = Color(0xFF8B5CF6);
   static const Color completado = Color(0xFF22C55E);
 }

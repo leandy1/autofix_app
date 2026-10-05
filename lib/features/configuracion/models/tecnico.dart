@@ -1,4 +1,5 @@
 import 'package:autofix/core/data/base_repository.dart';
+import 'package:autofix/core/utils/reloj.dart';
 
 /// Tecnico del taller: la persona a la que se le asigna una cita.
 ///
@@ -11,6 +12,11 @@ import 'package:autofix/core/data/base_repository.dart';
 /// logica de tecnicos. Borrarlos de verdad dejaria citas viejas apuntando a
 /// un id que ya no existe, y ese nombre es justo lo que se muestra en el
 /// historial.
+///
+/// CAMBIO v7: `id` paso de `int?` (autoincremento) a `String?` (UUID v4). El
+/// catalogo de tecnicos se sincroniza entre dispositivos, y un contador local
+/// haria que el "tecnico 2" de un celular fuera otro en el resto. Ver
+/// `lib/core/utils/uuid.dart`. Los tiempos pasaron a UTC con [aIsoUtc].
 class Tecnico implements EntidadPersistida {
   const Tecnico({
     this.id,
@@ -27,7 +33,7 @@ class Tecnico implements EntidadPersistida {
   static const String _kActualizadoEn = 'actualizado_en';
 
   @override
-  final int? id;
+  final String? id;
 
   final String nombre;
 
@@ -40,7 +46,7 @@ class Tecnico implements EntidadPersistida {
   final DateTime? actualizadoEn;
 
   Tecnico copyWith({
-    int? id,
+    String? id,
     String? nombre,
     bool? activo,
     DateTime? creadoEn,
@@ -62,18 +68,26 @@ class Tecnico implements EntidadPersistida {
       _kNombre: nombre,
       // SQLite no tiene booleanos: se guarda 1/0.
       _kActivo: activo ? 1 : 0,
-      _kCreadoEn: (creadoEn ?? DateTime.now()).toIso8601String(),
-      _kActualizadoEn: (actualizadoEn ?? DateTime.now()).toIso8601String(),
+      // `creado_en` solo si el modelo CONOCE el valor. Ver la nota larga de
+      // `Cita.toMap`: la capa de datos le pone el id antes de serializar, asi que
+      // "¿tiene id?" no sirve para distinguir un alta de una edicion. Sellar la
+      // fecha de alta es trabajo del repositorio, que sabe que operacion es.
+      if (creadoEn != null) _kCreadoEn: aIsoUtc(creadoEn!),
+      // `actualizadoEn ?? reloj` y NO el reloj a secas: si el tecnico ya traia una
+      // marca de la nube, escribirle la hora de ESTE dispositivo haria que cada
+      // dispositivo que lo descargue lo registre como una edicion local, y los
+      // dos pelearian por la misma fila para siempre.
+      _kActualizadoEn: aIsoUtc(actualizadoEn ?? Reloj.instancia.ahora()),
     };
   }
 
   factory Tecnico.fromMap(Map<String, Object?> map) {
     return Tecnico(
-      id: map[_kId] as int?,
+      id: map[_kId]?.toString(),
       nombre: (map[_kNombre] as String?) ?? '',
       activo: ((map[_kActivo] as int?) ?? 1) != 0,
-      creadoEn: DateTime.tryParse(map[_kCreadoEn] as String? ?? ''),
-      actualizadoEn: DateTime.tryParse(map[_kActualizadoEn] as String? ?? ''),
+      creadoEn: desdeIso(map[_kCreadoEn]),
+      actualizadoEn: desdeIso(map[_kActualizadoEn]),
     );
   }
 }

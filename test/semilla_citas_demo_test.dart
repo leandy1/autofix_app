@@ -62,7 +62,9 @@ void main() {
 
   group('sembrarCitasDemo', () {
     test('inyecta una cantidad considerable de citas', () async {
-      final insertadas = await DatabaseHelper.sembrarCitasDemo(referencia: referencia);
+      final insertadas = await DatabaseHelper.sembrarCitasDemo(
+        referencia: referencia,
+      );
 
       expect(insertadas, greaterThan(50));
       expect((await repo.obtenerTodas()).length, insertadas);
@@ -73,8 +75,17 @@ void main() {
       final citas = await repo.obtenerTodas();
 
       final pasadas = citas.where((c) => c.fechaCita.isBefore(hoy)).length;
-      final deHoy = citas.where((c) => c.fechaCita.day == 2 && c.fechaCita.month == 10 && c.fechaCita.year == 2026).length;
-      final futuras = citas.where((c) => c.fechaCita.isAfter(DateTime(2026, 10, 2, 23, 59))).length;
+      final deHoy = citas
+          .where(
+            (c) =>
+                c.fechaCita.day == 2 &&
+                c.fechaCita.month == 10 &&
+                c.fechaCita.year == 2026,
+          )
+          .length;
+      final futuras = citas
+          .where((c) => c.fechaCita.isAfter(DateTime(2026, 10, 2, 23, 59)))
+          .length;
 
       expect(pasadas, greaterThan(20), reason: 'historial para el grafico');
       expect(deHoy, greaterThan(0), reason: 'hoy es lo primero que se mira');
@@ -140,8 +151,9 @@ void main() {
 
     test('las citas del futuro NO estan completadas', () async {
       await DatabaseHelper.sembrarCitasDemo(referencia: referencia);
-      final futuras = (await repo.obtenerTodas())
-          .where((c) => c.fechaCita.isAfter(DateTime(2026, 10, 2, 23, 59)));
+      final futuras = (await repo.obtenerTodas()).where(
+        (c) => c.fechaCita.isAfter(DateTime(2026, 10, 2, 23, 59)),
+      );
 
       expect(futuras, isNotEmpty);
       expect(
@@ -152,8 +164,12 @@ void main() {
     });
 
     test('es idempotente: llamarla dos veces no duplica nada', () async {
-      final primera = await DatabaseHelper.sembrarCitasDemo(referencia: referencia);
-      final segunda = await DatabaseHelper.sembrarCitasDemo(referencia: referencia);
+      final primera = await DatabaseHelper.sembrarCitasDemo(
+        referencia: referencia,
+      );
+      final segunda = await DatabaseHelper.sembrarCitasDemo(
+        referencia: referencia,
+      );
 
       expect(primera, greaterThan(0));
       expect(segunda, 0, reason: 'la segunda pasada no debe insertar nada');
@@ -173,7 +189,9 @@ void main() {
         ),
       );
 
-      final insertadas = await DatabaseHelper.sembrarCitasDemo(referencia: referencia);
+      final insertadas = await DatabaseHelper.sembrarCitasDemo(
+        referencia: referencia,
+      );
       final citas = await repo.obtenerTodas();
 
       expect(insertadas, 0);
@@ -181,61 +199,97 @@ void main() {
       expect(citas.single.cliente, 'Cliente Real');
     });
 
-    test('las citas quedan asociadas a talleres que existen de verdad', () async {
-      await DatabaseHelper.sembrarCitasDemo(referencia: referencia);
+    test(
+      'las citas quedan asociadas a talleres que existen de verdad',
+      () async {
+        await DatabaseHelper.sembrarCitasDemo(referencia: referencia);
 
-      final db = await DatabaseHelper.instance.base;
-      final filasTalleres = await db.query(
-        DatabaseHelper.tablaTalleres,
-        columns: <String>[DatabaseHelper.colId],
-      );
-      final idsValidos = filasTalleres
-          .map((f) => f[DatabaseHelper.colId])
-          .toSet();
+        final db = await DatabaseHelper.instance.base;
+        final filasTalleres = await db.query(
+          DatabaseHelper.tablaTalleres,
+          columns: <String>[DatabaseHelper.colId],
+        );
+        final idsValidos = filasTalleres
+            .map((f) => f[DatabaseHelper.colId])
+            .toSet();
 
-      expect(idsValidos, isNotEmpty, reason: 'la semilla de talleres debe existir');
+        expect(
+          idsValidos,
+          isNotEmpty,
+          reason: 'la semilla de talleres debe existir',
+        );
 
-      // `taller_id` tiene que apuntar a una fila real de `talleres`. Si el
-      // generador inventara ids, el mapa y los filtros por taller harian de
-      // citas a un taller que no existe, y no habria ningun error que lo delate.
-      final citas = await repo.obtenerTodas();
-      final conTaller = citas.where((c) => c.tallerId != null).toList();
-      expect(conTaller, isNotEmpty, reason: 'debería asociar algunas citas');
+        // `taller_id` tiene que apuntar a una fila real de `talleres`. Si el
+        // generador inventara ids, el mapa y los filtros por taller harian de
+        // citas a un taller que no existe, y no habria ningun error que lo delate.
+        final citas = await repo.obtenerTodas();
+        final conTaller = citas.where((c) => c.tallerId != null).toList();
+        expect(conTaller, isNotEmpty, reason: 'debería asociar algunas citas');
 
-      for (final c in conTaller) {
-        expect(idsValidos, contains(c.tallerId));
-      }
-    });
+        for (final c in conTaller) {
+          expect(idsValidos, contains(c.tallerId));
+        }
+      },
+    );
   });
+
+  // Los ids de taller que se le pasan a la semilla.
+  //
+  // v7: son UUID en TEXTO, no `int`. Antes eran `const <int>[1, 2, 3]`, que era el
+  // estado de la base cuando los talleres usaban el autoincremento de SQLite. Con
+  // la PK en TEXT, un `int` no compila, y mas importante: un id inventado aca no
+  // corresponde a ninguna fila real de `talleres`, asi que el test de arriba
+  // ('taller_id tiene que apuntar a una fila real') es el que de verdad verifica
+  // la integridad. Estos valores solo necesitan ser validos para el generador.
+  const tallerA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const tallerB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const tallerC = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 
   group('generar: determinismo y anclaje temporal', () {
     test('la misma referencia produce el mismo lote', () async {
-      final a = SemillaCitasDemo.generar(referencia: referencia, tallerIds: const <int>[1, 2, 3]);
-      final b = SemillaCitasDemo.generar(referencia: referencia, tallerIds: const <int>[1, 2, 3]);
+      final a = SemillaCitasDemo.generar(
+        referencia: referencia,
+        tallerIds: const <String>[tallerA, tallerB, tallerC],
+      );
+      final b = SemillaCitasDemo.generar(
+        referencia: referencia,
+        tallerIds: const <String>[tallerA, tallerB, tallerC],
+      );
 
       expect(a.length, b.length);
       // Comparar el lote entero, no el largo: un `Random()` sin semilla cambiaria
       // los datos y haria imposible reproducir un fallo de la UI.
       expect(
-        a.map((c) => '${c.cliente}|${c.fechaCita.toIso8601String()}|${c.total}').toList(),
-        b.map((c) => '${c.cliente}|${c.fechaCita.toIso8601String()}|${c.total}').toList(),
+        a
+            .map(
+              (c) => '${c.cliente}|${c.fechaCita.toIso8601String()}|${c.total}',
+            )
+            .toList(),
+        b
+            .map(
+              (c) => '${c.cliente}|${c.fechaCita.toIso8601String()}|${c.total}',
+            )
+            .toList(),
       );
     });
 
     test('la referencia manda: sin citas HOY si se ancla a otro dia', () async {
       final otroDia = SemillaCitasDemo.generar(
         referencia: DateTime(2026, 3, 15),
-        tallerIds: const <int>[1],
+        tallerIds: const <String>[tallerA],
       );
 
-      expect(otroDia.any((c) => c.fechaCita.day == 15 && c.fechaCita.month == 3), isTrue);
+      expect(
+        otroDia.any((c) => c.fechaCita.day == 15 && c.fechaCita.month == 3),
+        isTrue,
+      );
       expect(otroDia.any((c) => c.fechaCita.month == 10), isFalse);
     });
 
     test('sin talleres, las citas quedan sin taller y no revienta', () async {
       final sinTalleres = SemillaCitasDemo.generar(
         referencia: referencia,
-        tallerIds: const <int>[],
+        tallerIds: const <String>[],
       );
 
       expect(sinTalleres, isNotEmpty);
@@ -245,7 +299,7 @@ void main() {
     test('el lote viene ordenado por fecha', () async {
       final lote = SemillaCitasDemo.generar(
         referencia: referencia,
-        tallerIds: const <int>[1],
+        tallerIds: const <String>[tallerA],
       );
 
       for (var i = 1; i < lote.length; i++) {

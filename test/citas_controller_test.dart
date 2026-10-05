@@ -29,14 +29,13 @@ void main() {
   });
 
   Cita nueva() => Cita(
-        cliente: 'Ana Torres',
-        vehiculo: 'Toyota Hilux',
-        fechaCita: DateTime(2026, 10, 1, 9, 30),
-      );
+    cliente: 'Ana Torres',
+    vehiculo: 'Toyota Hilux',
+    fechaCita: DateTime(2026, 10, 1, 9, 30),
+  );
 
-  CitasController nuevoController() => CitasController(
-        repositorio: CitaRepository.instance,
-      );
+  CitasController nuevoController() =>
+      CitasController(repositorio: CitaRepository.instance);
 
   group('CRUD a traves del controller', () {
     test('cargar arranca listo y expone la lista', () async {
@@ -48,16 +47,19 @@ void main() {
       expect(controller.citas, isEmpty);
     });
 
-    test('guardar crea y la lista queda actualizada sin volver a pedirla', () async {
-      final controller = nuevoController();
-      await controller.cargar();
+    test(
+      'guardar crea y la lista queda actualizada sin volver a pedirla',
+      () async {
+        final controller = nuevoController();
+        await controller.cargar();
 
-      final ok = await controller.guardar(nueva());
+        final ok = await controller.guardar(nueva());
 
-      expect(ok, isTrue);
-      expect(controller.citas.length, 1);
-      expect(controller.citas.first.cliente, 'Ana Torres');
-    });
+        expect(ok, isTrue);
+        expect(controller.citas.length, 1);
+        expect(controller.citas.first.cliente, 'Ana Torres');
+      },
+    );
 
     test('guardar con id edita en vez de duplicar', () async {
       final controller = nuevoController();
@@ -98,8 +100,6 @@ void main() {
       expect(ok, isTrue);
       expect(controller.hayCitas, isFalse);
     });
-
-
   });
 
   group('agrupacion por estado (logica que estaba en el repositorio)', () {

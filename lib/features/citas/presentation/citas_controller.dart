@@ -13,7 +13,7 @@ import 'package:autofix/features/citas/models/cita.dart';
 /// El mapeo etiqueta -> color es del diseño, no del dominio.
 class CitasController extends ChangeNotifier {
   CitasController({CitaRepository? repositorio})
-      : _repo = repositorio ?? CitaRepository.instance;
+    : _repo = repositorio ?? CitaRepository.instance;
 
   final CitaRepository _repo;
 
@@ -73,7 +73,8 @@ class CitasController extends ChangeNotifier {
     return true;
   }
 
-  Future<bool> cambiarEstado(int id, EstadoCita estado) async {
+  /// El id es un `String` (UUID) desde la v7, no un `int`.
+  Future<bool> cambiarEstado(String id, EstadoCita estado) async {
     final ok = await _intentar(() async {
       await _repo.cambiarEstado(id, estado);
       return _repo.obtenerTodas();
@@ -85,7 +86,13 @@ class CitasController extends ChangeNotifier {
     return true;
   }
 
-  Future<bool> eliminar(int id) async {
+  /// BORRADO LOGICO desde la v7. No borra la fila: marca `eliminado_en` y relee
+  /// la lista, que ya viene filtrada sin las borradas.
+  ///
+  /// Por eso no hace falta que este controller sepa nada de `eliminado_en`: la
+  /// fila desaparece de [_citas] porque [CitaRepository.obtenerTodas] la excluye,
+  /// no porque el controller la saque.
+  Future<bool> eliminar(String id) async {
     final ok = await _intentar(() async {
       await _repo.eliminar(id);
       return _repo.obtenerTodas();
@@ -96,8 +103,6 @@ class CitasController extends ChangeNotifier {
     notifyListeners();
     return true;
   }
-
-
 
   /// Citas del dia agrupadas por la etiqueta que consume la UI.
   ///

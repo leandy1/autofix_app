@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:autofix/core/data/base_repository.dart';
+import 'package:autofix/core/utils/reloj.dart';
 
 /// Taller AFILIADO a AutoFix: uno de los pocos que la empresa tiene en su red.
 ///
@@ -39,8 +40,16 @@ class Taller implements EntidadPersistida {
   /// Radio medio terrestre en km (IUGN).
   static const double _radioTierraKm = 6371.0;
 
+  /// Id (UUID v4) o `null` si el taller todavia no se ha guardado.
+  ///
+  /// CAMBIO v7: antes era `int?`, el autoincremento de SQLite. Eso era un
+  /// contador POR DISPOSITIVO, y hacia que el mismo taller tuviera tres
+  /// identidades distintas segun en que celular se mirara. Con sincronizacion, la
+  /// cita que creo el dispositivo A apuntando al "taller 2" aparecia en el
+  /// historial del "taller 2" del dispositivo B, que era otro local. Ver
+  /// `lib/core/utils/uuid.dart`.
   @override
-  final int? id;
+  final String? id;
 
   final String nombre;
 
@@ -131,7 +140,7 @@ class Taller implements EntidadPersistida {
   }
 
   Taller copyWith({
-    int? id,
+    String? id,
     String? nombre,
     String? direccion,
     String? telefono,
@@ -165,14 +174,27 @@ class Taller implements EntidadPersistida {
       _kLongitud: longitud,
       // SQLite no tiene booleanos: se guarda 1/0.
       _kActivo: activo ? 1 : 0,
-      _kCreadoEn: (creadoEn ?? DateTime.now()).toIso8601String(),
-      _kActualizadoEn: (actualizadoEn ?? DateTime.now()).toIso8601String(),
+      // `creado_en` solo si el modelo CONOCE el valor. Ver la nota larga de
+      // `Cita.toMap`: la capa de datos le pone el id antes de serializar, asi que
+      // "¿tiene id?" no sirve para distinguir un alta de una edicion, y mandar
+      // `creado_en: ahora()` en un UPDATE planta la hora del guardado como si
+      // fuera la de alta. El sello lo pone `TallerRepository.crear`.
+      if (creadoEn != null) _kCreadoEn: aIsoUtc(creadoEn!),
+      // `actualizadoEn ?? Reloj.instancia.ahora()` y no el reloj a secas: si el
+      // taller ya traia una marca de la nube, escribirle la hora local haria que
+      // una fila sincronizada pareciera una edicion de este dispositivo, y el
+      // servicio de sincronizacion la volveria a subir. El reloj se usa solo
+      // cuando no hay marca previa, que es el alta desde el formulario.
+      _kActualizadoEn: aIsoUtc(actualizadoEn ?? Reloj.instancia.ahora()),
     };
   }
 
   factory Taller.fromMap(Map<String, Object?> map) {
     return Taller(
-      id: map[_kId] as int?,
+      // `as String?` y no `as int?`: la PK paso a TEXT en la v7. Una fila vieja
+      // con id entero se convierte en '1', que es un id valido pero no un UUID, y
+      // el servicio de sincronizacion lo detecta con `Uuid.tieneFormaDeUuid`.
+      id: map[_kId]?.toString(),
       // `nombre` es required en el modelo pero se lee como `as String?`: una fila
       // con nombre null tiene que poder LEERSE para que el admin la arregle desde
       // la pantalla, no reventar la consulta entera.
@@ -185,8 +207,8 @@ class Taller implements EntidadPersistida {
       latitud: (map[_kLatitud] as num?)?.toDouble() ?? 0,
       longitud: (map[_kLongitud] as num?)?.toDouble() ?? 0,
       activo: ((map[_kActivo] as int?) ?? 1) != 0,
-      creadoEn: DateTime.tryParse(map[_kCreadoEn] as String? ?? ''),
-      actualizadoEn: DateTime.tryParse(map[_kActualizadoEn] as String? ?? ''),
+      creadoEn: desdeIso(map[_kCreadoEn]),
+      actualizadoEn: desdeIso(map[_kActualizadoEn]),
     );
   }
 }

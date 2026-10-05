@@ -64,9 +64,6 @@ class _ConectividadAppState extends State<ConectividadApp> {
 
   @override
   Widget build(BuildContext context) {
-    return ConnectivityScope(
-      servicio: _servicio,
-      child: widget.child,
-    );
+    return ConnectivityScope(servicio: _servicio, child: widget.child);
   }
 }

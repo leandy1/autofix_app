@@ -135,7 +135,10 @@ void main() {
       // verde a las 8 de la manana y rojo a las 10.
       final base = DateTime(hoy.year, hoy.month, hoy.day);
       await sembrar(<Cita>[
-        cita(fecha: base.subtract(const Duration(days: 3)), estado: EstadoCita.pendiente),
+        cita(
+          fecha: base.subtract(const Duration(days: 3)),
+          estado: EstadoCita.pendiente,
+        ),
         cita(
           fecha: base.add(const Duration(days: 2)),
           estado: EstadoCita.enProceso,
@@ -206,8 +209,11 @@ void main() {
       final manana = DateTime(hoy.year, hoy.month, hoy.day + 1, 0, 0);
       await sembrar(<Cita>[
         cita(fecha: aLas(9), estado: EstadoCita.completado, total: 1000),
-        cita(fecha: DateTime(manana.year, manana.month, manana.day, 10, 0),
-            estado: EstadoCita.completado, total: 7000),
+        cita(
+          fecha: DateTime(manana.year, manana.month, manana.day, 10, 0),
+          estado: EstadoCita.completado,
+          total: 7000,
+        ),
       ]);
 
       final c = DashboardAdminController();
@@ -273,9 +279,7 @@ void main() {
       // `seleccionarFecha` solo recarga lo del dia. Si tambien pidiera el global,
       // seria un viaje extra a la base para obtener exactamente lo mismo, y en
       // un taller con la base grande eso se nota.
-      await sembrar(<Cita>[
-        cita(fecha: aLas(9), estado: EstadoCita.enProceso),
-      ]);
+      await sembrar(<Cita>[cita(fecha: aLas(9), estado: EstadoCita.enProceso)]);
 
       final c = DashboardAdminController();
       await c.cargar();

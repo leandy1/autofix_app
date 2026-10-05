@@ -1,4 +1,4 @@
-﻿import 'package:fl_chart/fl_chart.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -66,7 +66,7 @@ void main() {
     total: total,
   );
 
-DateTime diaDeHoy(int hora) {
+  DateTime diaDeHoy(int hora) {
     final n = DateTime.now();
     return DateTime(n.year, n.month, n.day, hora, 0);
   }
@@ -173,7 +173,11 @@ DateTime diaDeHoy(int hora) {
       'Natalia Flores',
       'Lucía Medina',
     ]) {
-      expect(find.text(fantasma), findsNothing, reason: 'quedo un dato del demo: $fantasma');
+      expect(
+        find.text(fantasma),
+        findsNothing,
+        reason: 'quedo un dato del demo: $fantasma',
+      );
     }
   });
 
@@ -208,16 +212,21 @@ DateTime diaDeHoy(int hora) {
     await tester.tap(find.byIcon(Icons.chevron_right));
     await tester.pumpAndSettle();
 
-expect(find.text('No hay citas de hoy.'), findsNothing,
-        reason: 'ya no es hoy: el mensaje no puede seguir diciendo hoy');
     expect(
-      find.text('No hay citas del ${_dia(2).day} ${_meses[_dia(2).month - 1]}.'),
+      find.text('No hay citas de hoy.'),
+      findsNothing,
+      reason: 'ya no es hoy: el mensaje no puede seguir diciendo hoy',
+    );
+    expect(
+      find.text(
+        'No hay citas del ${_dia(2).day} ${_meses[_dia(2).month - 1]}.',
+      ),
       findsOneWidget,
     );
     expect(find.text('0 citas'), findsOneWidget);
   });
 
-testWidgets('con la base vacia la pantalla no truena', (tester) async {
+  testWidgets('con la base vacia la pantalla no truena', (tester) async {
     // El caso del taller recien instalado, que es el primero que ve el admin.
     await abrirDashboard(tester);
 
@@ -255,12 +264,21 @@ testWidgets('con la base vacia la pantalla no truena', (tester) async {
           .map((t) => t.data)
           .whereType<String>();
 
-      expect(textos.any((t) => t.startsWith('COMPLETADAS EL ')), isTrue,
-          reason: 'el rotulo de completadas tiene que decir que dia es');
-      expect(textos.any((t) => t.startsWith('INGRESOS EL ')), isTrue,
-          reason: 'el rotulo de ingresos tiene que decir que dia es');
-      expect(textos.any((t) => t.startsWith('Citas del ')), isTrue,
-          reason: 'el titulo de la tabla tiene que decir que dia es');
+      expect(
+        textos.any((t) => t.startsWith('COMPLETADAS EL ')),
+        isTrue,
+        reason: 'el rotulo de completadas tiene que decir que dia es',
+      );
+      expect(
+        textos.any((t) => t.startsWith('INGRESOS EL ')),
+        isTrue,
+        reason: 'el rotulo de ingresos tiene que decir que dia es',
+      );
+      expect(
+        textos.any((t) => t.startsWith('Citas del ')),
+        isTrue,
+        reason: 'el titulo de la tabla tiene que decir que dia es',
+      );
 
       // Y la palabra HOY no puede quedar colgando en ninguna parte.
       expect(find.text('COMPLETADAS HOY'), findsNothing);
@@ -295,8 +313,11 @@ testWidgets('con la base vacia la pantalla no truena', (tester) async {
         'En proceso': '1',
         'Completado': '2',
       }.entries) {
-        expect(find.text(fila.key), findsOneWidget,
-            reason: 'falta ${fila.key} en la leyenda');
+        expect(
+          find.text(fila.key),
+          findsOneWidget,
+          reason: 'falta ${fila.key} en la leyenda',
+        );
         expect(
           find.descendant(
             of: find.ancestor(
@@ -346,5 +367,3 @@ testWidgets('con la base vacia la pantalla no truena', (tester) async {
     });
   });
 }
-
-

@@ -49,7 +49,9 @@ void main() {
     expect(banner, findsOneWidget);
   });
 
-  testWidgets('el banner sobrevive a la navegacion entre pantallas', (tester) async {
+  testWidgets('el banner sobrevive a la navegacion entre pantallas', (
+    tester,
+  ) async {
     await tester.pumpWidget(montarApp());
     await tester.pump();
 

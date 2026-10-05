@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:autofix/shared/models/cliente_dashboard_data.dart';
 import 'package:autofix/shared/theme/app_colors.dart';
+
 import 'cliente_section_widgets.dart';
 
 class TallerMapaPin extends StatelessWidget {
@@ -30,10 +31,7 @@ class TallerMapaPin extends StatelessWidget {
             children: [
               AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 9,
-                  vertical: 5,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                 decoration: BoxDecoration(
                   color: seleccionado
                       ? AppColors.orangePrimary

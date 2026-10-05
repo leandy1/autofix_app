@@ -1,4 +1,4 @@
-﻿import 'package:fl_chart/fl_chart.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -6,6 +6,7 @@ import 'package:autofix/features/admin/presentation/dashboard_admin_controller.d
 import 'package:autofix/features/auth/screens/login_screen.dart';
 import 'package:autofix/features/citas/models/cita.dart';
 import 'package:autofix/shared/theme/app_colors.dart';
+
 import 'citas_admin_screen.dart';
 import 'configuracion_admin_screen.dart';
 
@@ -118,11 +119,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   /// en tres sitios, lo que corresponde es un helper compartido en `core/mapa` o
   /// `shared/theme`, no un cuarto `switch`.
   Color _colorDeEstado(EstadoCita estado) => switch (estado) {
-        EstadoCita.pendiente => AppColors.pendientes,
-        EstadoCita.esperandoPieza => AppColors.esperandoPieza,
-        EstadoCita.enProceso => AppColors.enProceso,
-        EstadoCita.completado => AppColors.completado,
-      };
+    EstadoCita.pendiente => AppColors.pendientes,
+    EstadoCita.esperandoPieza => AppColors.esperandoPieza,
+    EstadoCita.enProceso => AppColors.enProceso,
+    EstadoCita.completado => AppColors.completado,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -228,11 +229,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
       child: Row(
         children: [
-          const Icon(
-            Icons.error_outline,
-            color: AppColors.atrasadas,
-            size: 20,
-          ),
+          const Icon(Icons.error_outline, color: AppColors.atrasadas, size: 20),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -386,7 +383,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                       const Text(
                         'citas',
-                        style: TextStyle(color: AppColors.textGray, fontSize: 11),
+                        style: TextStyle(
+                          color: AppColors.textGray,
+                          fontSize: 11,
+                        ),
                       ),
                     ],
                   ),
@@ -636,17 +636,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
           const SizedBox(height: 16),
           Row(
             children: [
-              _navCircleButton(
-                Icons.chevron_left,
-                onTap: _ctrl.diaAnterior,
-              ),
+              _navCircleButton(Icons.chevron_left, onTap: _ctrl.diaAnterior),
               const SizedBox(width: 10),
               Expanded(child: _buildCampoFechaHero()),
               const SizedBox(width: 10),
-              _navCircleButton(
-                Icons.chevron_right,
-                onTap: _ctrl.diaSiguiente,
-              ),
+              _navCircleButton(Icons.chevron_right, onTap: _ctrl.diaSiguiente),
             ],
           ),
         ],
@@ -1152,9 +1146,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ),
                           DataCell(Text(c.vehiculo)),
                           DataCell(
-                            Text(
-                              c.placa.isEmpty ? 'Sin placa' : c.placa,
-                            ),
+                            Text(c.placa.isEmpty ? 'Sin placa' : c.placa),
                           ),
                           DataCell(
                             Text(
@@ -1222,4 +1214,3 @@ class _InfoCitaEscaneada extends StatelessWidget {
     );
   }
 }
-

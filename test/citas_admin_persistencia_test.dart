@@ -24,6 +24,13 @@ void main() {
   setUpAll(() {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
+    // Base propia: este archivo corre en paralelo con los otros que usan SQLite.
+    DatabaseHelper.nombreBaseParaPruebas = 'autofix_citas_admin_test.db';
+  });
+
+  tearDownAll(() async {
+    await DatabaseHelper.resetParaPruebas();
+    DatabaseHelper.nombreBaseParaPruebas = null;
   });
 
   setUp(() async {
@@ -40,34 +47,55 @@ void main() {
     repo = CitaRepository.instance;
   });
 
-  Future<List<Map<String, Object?>>> leerFila(int id) async {
+  // v7: `leerFila` recibe el id como TEXTO. La PK paso de `INTEGER` a `TEXT`
+  // con UUID, asi que un `int` no compila. `whereArgs` va en una lista de
+  // `Object?` porque `sqflite` no acepta la lista `int` que se usaba antes.
+  Future<List<Map<String, Object?>>> leerFila(String id) async {
     final db = await DatabaseHelper.instance.base;
     final filas = await db.query(
       'citas',
       where: 'id = ?',
-      whereArgs: [id],
+      whereArgs: <Object?>[id],
       limit: 1,
     );
     expect(filas, hasLength(1), reason: 'la cita deberia seguir existiendo');
     return filas;
   }
 
+  /// Id del taller con el que se agendan las citas de estos tests.
+  ///
+  /// Antes era `3`, el autoincremento que le tocaba al tercer taller sembrado. Con
+  /// la PK en TEXT, el id de un taller es un UUID, asi que el `3` paso a ser un
+  /// id fijo con la forma correcta.
+  ///
+  /// A proposito NO se lee el id de un taller real de la base: este archivo prueba
+  /// que la cita CONSERVA el `taller_id` que se le dio, no que el id exista en
+  /// `talleres`. Esa es otra prueba y esta en `talleres_test.dart`. Y con la
+  /// FK ausente (ver `_crearTalleres` en `DatabaseHelper`) SQLite no protestaria
+  /// ni con un id inventado, asi que el test seguiria verde igual.
+  const tallerId = '33333333-3333-4333-8333-333333333333';
+
   /// Cita tal como la agenda un cliente: con taller y con fecha de alta.
+  ///
+  /// La fecha va en `DateTime.utc` porque el modelo persiste UTC. Con
+  /// `DateTime(2026, 11, 3, 10)` (hora local) el round-trip devuelve otra hora en
+  /// cualquier maquina que no este en UTC, y el test fallaria por zona horaria y
+  /// no por un defecto del codigo.
   Cita citaDelCliente() => Cita(
-        cliente: 'María Pérez',
-        telefono: '809-555-0142',
-        vehiculo: 'Toyota Hilux',
-        marca: 'Toyota',
-        modelo: 'Hilux',
-        anio: 2021,
-        placa: 'A123456',
-        servicios: const ['Cambio de aceite'],
-        tecnico: 'Luis',
-        descripcion: 'Revisión general',
-        fechaCita: DateTime(2026, 11, 3, 10),
-        tallerId: 3,
-        total: 4500,
-      );
+    cliente: 'María Pérez',
+    telefono: '809-555-0142',
+    vehiculo: 'Toyota Hilux',
+    marca: 'Toyota',
+    modelo: 'Hilux',
+    anio: 2021,
+    placa: 'A123456',
+    servicios: const ['Cambio de aceite'],
+    tecnico: 'Luis',
+    descripcion: 'Revisión general',
+    fechaCita: DateTime.utc(2026, 11, 3, 10),
+    tallerId: tallerId,
+    total: 4500,
+  );
 
   /// Reproduce el puente `Cita` -> `CitaAdmin` -> `Cita` de la pantalla real.
   ///
@@ -77,6 +105,10 @@ void main() {
   /// contrato se comprueba tambien abajo, sobre el modelo.
   Cita puenteDelAdmin(Cita base, {required EstadoCitaAdmin estado}) {
     final tarjeta = CitaAdmin(
+      // `base.id!` y no `base.id ?? 7`: la cita ya esta guardada cuando este
+      // puente se usa, y `CitaAdmin.id` es `String?` justamente para el caso
+      // contrario. Con un `??` inventando un id aca el test dejaria de detectar
+      // una cita sin id.
       id: base.id!,
       cliente: base.cliente,
       telefono: base.telefono,
@@ -126,6 +158,9 @@ void main() {
       estado: estadoCita,
       total: tarjeta.total.round(),
       tallerId: tarjeta.tallerId,
+      // `creadoEn` y `actualizadoEn` se copian desde la tarjeta. Este es el punto
+      // del archivo: si el puente los perdiera, el UPDATE re-sellaria `creado_en`
+      // con la hora del guardado y la cita perderia la fecha en que se agendo.
       creadoEn: tarjeta.creadoEn,
       actualizadoEn: tarjeta.actualizadoEn,
     );
@@ -133,9 +168,12 @@ void main() {
 
   group('CitaAdmin transporta los campos de auditoria', () {
     test('no pierde tallerId ni creadoEn al ir y volver a Cita', () {
+      // v7: la cita de este test NO esta guardada (por eso `id` es null), asi que
+      // `original.id ?? 7` ya no aplica: el `7` era un id numerico inventado. Se
+      // usa un UUID fijo.
       final original = citaDelCliente();
       final ida = CitaAdmin(
-        id: original.id ?? 7,
+        id: original.id ?? '44444444-4444-4444-8444-444444444444',
         cliente: original.cliente,
         telefono: original.telefono,
         marca: original.marca,
@@ -149,24 +187,23 @@ void main() {
         descripcion: original.descripcion,
         tecnico: original.tecnico,
         total: original.total.toDouble(),
-        tallerId: 3,
-        creadoEn: DateTime(2026, 1, 1, 8),
-        actualizadoEn: DateTime(2026, 1, 2, 9),
+        tallerId: tallerId,
+        creadoEn: DateTime.utc(2026, 1, 1, 8),
+        actualizadoEn: DateTime.utc(2026, 1, 2, 9),
       );
 
-      expect(ida.tallerId, 3);
-      expect(ida.creadoEn, DateTime(2026, 1, 1, 8));
-      expect(ida.actualizadoEn, DateTime(2026, 1, 2, 9));
+      expect(ida.tallerId, tallerId);
+      expect(ida.creadoEn, DateTime.utc(2026, 1, 1, 8));
+      expect(ida.actualizadoEn, DateTime.utc(2026, 1, 2, 9));
     });
   });
 
   group('guardar desde el admin preserva el taller', () {
     test('editar la ficha no borra taller_id', () async {
       final id = await repo.crear(citaDelCliente());
-      
 
       final guardada = (await repo.obtenerPorId(id))!;
-      expect(guardada.tallerId, 3);
+      expect(guardada.tallerId, tallerId);
 
       // El admin edita el telefono y el tecnico, y guarda.
       final editada = puenteDelAdmin(
@@ -180,7 +217,7 @@ void main() {
       final fila = await leerFila(id);
       expect(
         fila.first['taller_id'],
-        3,
+        tallerId,
         reason: 'editar desde el admin no debe desasociar la cita del taller',
       );
       expect(fila.first['telefono'], '809-555-9999');
@@ -191,11 +228,13 @@ void main() {
 
       final guardada = (await repo.obtenerPorId(id))!;
       await repo.actualizar(
-        puenteDelAdmin(guardada, estado: EstadoCitaAdmin.enProceso)
-            .copyWith(anio: 2022),
+        puenteDelAdmin(
+          guardada,
+          estado: EstadoCitaAdmin.enProceso,
+        ).copyWith(anio: 2022),
       );
 
-      final delTaller = await repo.obtenerPorTaller(3);
+      final delTaller = await repo.obtenerPorTaller(tallerId);
       expect(
         delTaller.map((c) => c.id),
         contains(id),
@@ -218,7 +257,7 @@ void main() {
           placa: 'B654321',
           servicios: const ['Cambio de filtros'],
           descripcion: 'Sin afiliacion',
-          fechaCita: DateTime(2026, 11, 4, 9),
+          fechaCita: DateTime.utc(2026, 11, 4, 9),
           total: 2000,
         ),
       );
@@ -233,7 +272,8 @@ void main() {
       final altaOriginal = (await leerFila(id)).first['creado_en'];
 
       await repo.actualizar(
-        ((await repo.obtenerPorId(id))!).copyWith(descripcion: 'Cambio de texto'),
+        ((await repo.obtenerPorId(id))!)
+            .copyWith(descripcion: 'Cambio de texto'),
       );
 
       final despues = (await leerFila(id)).first['creado_en'];
@@ -261,16 +301,21 @@ void main() {
         placa: 'A123456',
         servicios: const ['Cambio de aceite'],
         descripcion: 'Revisión general',
-        fechaCita: DateTime(2026, 11, 3, 10),
-        tallerId: 3,
+        fechaCita: DateTime.utc(2026, 11, 3, 10),
+        tallerId: tallerId,
         total: 4500,
       );
 
       await repo.actualizar(sinTrazabilidad);
 
       final fila = (await leerFila(id)).first;
+      // La asercion central de ESTE test. `Cita.toMap()` omite `creado_en` cuando
+      // el modelo no la conoce, y `db.update` deja intacta la columna: por eso la
+      // fecha de alta sobrevive a un UPDATE hecho desde un objeto que no la
+      // traia. Si alguien cambia el `toMap` para mandar la columna siempre, aca
+      // falla con la hora del guardado en vez de la del alta.
       expect(fila['creado_en'], original['creado_en']);
-      expect(fila['taller_id'], 3);
+      expect(fila['taller_id'], tallerId);
     });
 
     test('actualizado_en si se refresca en cada escritura', () async {
@@ -278,7 +323,9 @@ void main() {
       final primera = (await leerFila(id)).first['actualizado_en'];
 
       await Future<void>.delayed(const Duration(milliseconds: 20));
-      await repo.actualizar(((await repo.obtenerPorId(id))!).copyWith(total: 9999));
+      await repo.actualizar(
+        ((await repo.obtenerPorId(id))!).copyWith(total: 9999),
+      );
 
       final segunda = (await leerFila(id)).first['actualizado_en'];
       expect(segunda, isNot(primera));

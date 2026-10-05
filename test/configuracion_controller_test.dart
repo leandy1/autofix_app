@@ -37,7 +37,10 @@ void main() {
       expect(c.error, isNull);
       expect(c.tecnicos, isNotEmpty);
       expect(c.tiposServicio, isNotEmpty);
-      expect(c.estados, isNotEmpty);
+      // v7: el punto 6 del encargo agrega estos dos. Antes la cuarta asercion
+      // era `expect(c.estados, isNotEmpty)`, sobre un catalogo que ya no existe.
+      expect(c.marcas, isNotEmpty);
+      expect(c.gruposServicio, isNotEmpty);
     });
 
     test('notifica a la vista para que se repinte', () async {
@@ -128,13 +131,40 @@ void main() {
       },
     );
 
-    test('un estado nuevo aparece en la lista', () async {
+    test('una marca nueva aparece en la lista', () async {
+      // v7: reemplaza al test de estados. La API es identica a la de los otros
+      // catalogos, que es justo lo que Leandy necesita para no escribir codigo
+      // distinto por cada tarjeta.
       final c = nuevo();
       await c.cargar();
-      final antes = c.estados.length;
+      final antes = c.marcas.length;
 
-      expect(await c.guardarEstado('En garantía'), isTrue);
-      expect(c.estados.length, antes + 1);
+      expect(await c.guardarMarca('  Kia  '), isTrue);
+      expect(c.marcas.length, antes + 1);
+      // El mismo `trim` que en tecnicos: el UNIQUE no debe saltar por un espacio.
+      expect(c.marcas.any((m) => m.nombre == 'Kia'), isTrue);
+      expect(c.error, isNull);
+    });
+
+    test('un grupo de servicios nuevo aparece en la lista', () async {
+      final c = nuevo();
+      await c.cargar();
+      final antes = c.gruposServicio.length;
+
+      expect(await c.guardarGrupoServicio('Electricidad'), isTrue);
+      expect(c.gruposServicio.length, antes + 1);
+      expect(c.gruposServicio.any((g) => g.nombre == 'Electricidad'), isTrue);
+    });
+
+    test('una marca repetida NO se guarda y el mensaje es legible', () async {
+      final c = nuevo();
+      await c.cargar();
+      await c.guardarMarca('Repetida');
+      final antes = c.marcas.length;
+
+      expect(await c.guardarMarca('repetida'), isFalse);
+      expect(c.error, 'Ya existe un elemento con ese nombre.');
+      expect(c.marcas.length, antes);
     });
   });
 
@@ -151,24 +181,31 @@ void main() {
       expect(c.error, isNull);
     });
 
-    test('eliminar un tipo de servicio y un estado tambien los saca', () async {
+    test('los CUATRO catalogos se eliminan con la misma API', () async {
+      // v7: era 'eliminar un tipo de servicio y un estado'. Los estados se
+      // eliminaron y marcas/grupos entraron; los cuatro metodos se llaman igual
+      // y por eso el test los recorre a los cuatro.
       final c = nuevo();
       await c.cargar();
       await c.guardarTipoServicio('Temporal S', '100');
-      await c.guardarEstado('Temporal E');
+      await c.guardarMarca('Temporal M');
+      await c.guardarGrupoServicio('Temporal G');
 
       final idServicio = c.tiposServicio
           .firstWhere((s) => s.nombre == 'Temporal S')
           .id!;
-      final idEstado = c.estados
-          .firstWhere((e) => e.nombre == 'Temporal E')
+      final idMarca = c.marcas.firstWhere((m) => m.nombre == 'Temporal M').id!;
+      final idGrupo = c.gruposServicio
+          .firstWhere((g) => g.nombre == 'Temporal G')
           .id!;
 
       expect(await c.eliminarTipoServicio(idServicio), isTrue);
-      expect(await c.eliminarEstado(idEstado), isTrue);
+      expect(await c.eliminarMarca(idMarca), isTrue);
+      expect(await c.eliminarGrupoServicio(idGrupo), isTrue);
 
       expect(c.tiposServicio.any((s) => s.nombre == 'Temporal S'), isFalse);
-      expect(c.estados.any((e) => e.nombre == 'Temporal E'), isFalse);
+      expect(c.marcas.any((m) => m.nombre == 'Temporal M'), isFalse);
+      expect(c.gruposServicio.any((g) => g.nombre == 'Temporal G'), isFalse);
     });
 
     test('eliminar un id que no existe avisa y no rompe la pantalla', () async {
@@ -176,7 +213,12 @@ void main() {
       await c.cargar();
       final antes = c.tecnicos.length;
 
-      expect(await c.eliminarTecnico(999999), isTrue);
+      // v7: un UUID con forma valida pero que no esta en la base. Antes era
+      // `999999`, que ya no compila porque los ids son texto.
+      expect(
+        await c.eliminarTecnico('ffffffff-ffff-4fff-8fff-ffffffffffff'),
+        isTrue,
+      );
 
       // Sin fila que borrar NO es un error: la vista no tiene por que mostrar un
       // Snackbar rojo por algo que el usuario no hizo mal.
