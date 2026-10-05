@@ -588,13 +588,14 @@ class CitaRepository implements BaseRepository<Cita> {
   ///
   /// [SyncService] usa esto para saber que subir. El `LIMIT` evita saturar la
   /// base si un dispositivo lleva meses sin sincronizar.
+  ///
+  /// Incluye las borradas: el borrado logico (`eliminado_en IS NOT NULL`) tambien
+  /// tiene que subirse a Firebase para que la nube refleje la eliminacion.
   Future<List<Cita>> obtenerPendientesDeSync({int limite = 50}) async {
     final db = await _helper.base;
     final filas = await db.query(
       tabla,
-      where:
-          "${DatabaseHelper.colSyncStatus} = 'pending' "
-          "AND ${DatabaseHelper.colEliminadoEn} IS NULL",
+      where: "${DatabaseHelper.colSyncStatus} = 'pending'",
       orderBy: '${DatabaseHelper.colActualizadoEn} ASC',
       limit: limite,
     );

@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import 'package:autofix/features/citas/data/cita_repository.dart';
 import 'package:autofix/features/citas/models/cita.dart';
+import 'package:autofix/features/sync/sync_service.dart';
 
 /// Estado y logica de la pantalla de citas.
 ///
@@ -70,6 +71,8 @@ class CitasController extends ChangeNotifier {
     if (ok == null) return false;
     _citas = ok;
     notifyListeners();
+    // Sube a Firebase en segundo plano, sin bloquear la UI.
+    SyncService.instance.pushPending();
     return true;
   }
 
@@ -83,6 +86,8 @@ class CitasController extends ChangeNotifier {
     if (ok == null) return false;
     _citas = ok;
     notifyListeners();
+    // Sube a Firebase en segundo plano.
+    SyncService.instance.pushPending();
     return true;
   }
 
@@ -101,6 +106,8 @@ class CitasController extends ChangeNotifier {
     if (ok == null) return false;
     _citas = ok;
     notifyListeners();
+    // Sube el borrado logico a Firebase en segundo plano.
+    SyncService.instance.pushPending();
     return true;
   }
 
