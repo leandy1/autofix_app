@@ -73,7 +73,7 @@ void main() {
 
   /// Dia de hoy mas [dias], a medianoche: la misma aritmetica que hacen las
   /// flechas del encabezado.
-  DateTime _dia(int dias) {
+  DateTime dia(int dias) {
     final n = DateTime.now();
     return DateTime(n.year, n.month, n.day + dias);
   }
@@ -81,7 +81,7 @@ void main() {
   /// Los mismos meses cortos que usa la pantalla. Se duplican a proposito: si el
   /// rotulo cambia de 'oct' a 'oct.', el test tiene que romperse, porque el
   /// formato del texto es parte de lo que se esta fijando aqui.
-  const List<String> _meses = <String>[
+  const List<String> meses = <String>[
     'ene', 'feb', 'mar', 'abr', 'may', 'jun', //
     'jul', 'ago', 'sep', 'oct', 'nov', 'dic',
   ];
@@ -219,7 +219,7 @@ void main() {
     );
     expect(
       find.text(
-        'No hay citas del ${_dia(2).day} ${_meses[_dia(2).month - 1]}.',
+        'No hay citas del ${dia(2).day} ${meses[dia(2).month - 1]}.',
       ),
       findsOneWidget,
     );

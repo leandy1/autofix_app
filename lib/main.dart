@@ -15,12 +15,20 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Inicializa Firebase (usa el archivo generado por FlutterFire CLI).
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-
-  // Autenticacion anonima silenciosa: el usuario entra sin credenciales.
-  // El UID generado se usa como `eliminado_por` en el borrado logico y como
-  // propietario de los documentos en Firestore.
-  await FirebaseAuth.instance.signInAnonymously();
+  try {
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    }
+    try {
+      await FirebaseAuth.instance.signInAnonymously();
+    } catch (e) {
+      debugPrint('FirebaseAuth anonymous sign-in skipped: $e');
+    }
+  } catch (e) {
+    debugPrint('Firebase init skipped: $e');
+  }
 
   // Banner con fondo: el `headerNavy` de la paleta necesita status bar
   // transparente o queda una franja blanca fea arriba.

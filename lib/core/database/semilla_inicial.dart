@@ -17,6 +17,7 @@
 /// Marcas quedo en pausa hasta que el equipo defina si la fuente es la API web
 /// de Andy o esta base. Por eso no habia lista de marcas aqui (v7: ya se agrego).
 ///
+library;
 
 /// Un taller de la semilla, con los datos crudos.
 ///

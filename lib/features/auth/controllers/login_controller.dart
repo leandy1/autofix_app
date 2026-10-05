@@ -11,11 +11,15 @@ class LoginController extends ChangeNotifier {
   User? _currentUser;
 
   LoginController() {
-    _currentUser = FirebaseAuth.instance.currentUser;
-    FirebaseAuth.instance.authStateChanges().listen((user) {
-      _currentUser = user;
-      notifyListeners();
-    });
+    try {
+      _currentUser = FirebaseAuth.instance.currentUser;
+      FirebaseAuth.instance.authStateChanges().listen((user) {
+        _currentUser = user;
+        notifyListeners();
+      });
+    } catch (_) {
+      // FirebaseAuth not active or initialized (e.g. test environment)
+    }
   }
 
   LoginRole get selectedRole => _selectedRole;
