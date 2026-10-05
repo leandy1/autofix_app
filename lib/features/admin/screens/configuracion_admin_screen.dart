@@ -570,16 +570,6 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
     }
   }
 
-  Future<void> _agregarEstado() async {
-    final nombre = _estadoController.text;
-    final ok = await _cfg.guardarEstado(nombre);
-    if (!mounted) return;
-    if (ok) {
-      _estadoController.clear();
-    } else {
-      _mostrarError();
-    }
-  }
 
   Future<void> _agregarTipoServicio() async {
     final ok = await _cfg.guardarTipoServicio(
