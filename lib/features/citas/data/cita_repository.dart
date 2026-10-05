@@ -350,9 +350,13 @@ class CitaRepository implements BaseRepository<Cita> {
       throw ArgumentError('No se puede actualizar una cita sin id.');
     }
     final db = await _helper.base;
+    // Forzamos sync_status = 'pending' para que SyncService detecte la edicion
+    // y la suba a Firebase. Si se dejara el valor del modelo, una cita ya
+    // sincronizada quedaria como 'synced' y el push la ignoraria.
+    final mapa = cita.toMap()..[DatabaseHelper.colSyncStatus] = 'pending';
     return db.update(
       tabla,
-      cita.toMap(),
+      mapa,
       where: '${DatabaseHelper.colId} = ?',
       whereArgs: <Object?>[id],
       conflictAlgorithm: ConflictAlgorithm.abort,
@@ -377,6 +381,8 @@ class CitaRepository implements BaseRepository<Cita> {
       <String, Object?>{
         DatabaseHelper.colEstado: estado.name,
         DatabaseHelper.colActualizadoEn: ahoraIso(),
+        // Marcamos 'pending' para que SyncService suba el cambio de estado a Firebase.
+        DatabaseHelper.colSyncStatus: 'pending',
       },
       where:
           '${DatabaseHelper.colId} = ? '
@@ -445,6 +451,8 @@ class CitaRepository implements BaseRepository<Cita> {
         DatabaseHelper.colEliminadoEn: aIsoUtc(ahora),
         DatabaseHelper.colEliminadoPor: eliminadaPor,
         DatabaseHelper.colActualizadoEn: aIsoUtc(ahora),
+        // Marcamos 'pending' para que SyncService suba el borrado a Firebase.
+        DatabaseHelper.colSyncStatus: 'pending',
       },
       where:
           '${DatabaseHelper.colId} = ? '
