@@ -2,6 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Sin esta clave iOS TERMINA la app al pedir el permiso de ubicacion. -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>AutoFix usa tu ubicacion para mostrarte los talleres mas cercanos.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

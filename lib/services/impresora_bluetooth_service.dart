@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_classic_bluetooth/flutter_classic_bluetooth.dart';
 
-import '../models/recibo_impresion.dart';
+import '../shared/models/recibo_impresion.dart';
 
 class ImpresoraBluetoothService {
   const ImpresoraBluetoothService();
