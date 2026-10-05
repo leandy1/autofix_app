@@ -173,4 +173,33 @@ void main() {
       expect(tester.takeException(), isNull);
     }
   });
+
+  testWidgets('filtra las citas por texto de búsqueda y limpia los filtros', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: CitasScreen())),
+    );
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 250)),
+    );
+    await tester.pump();
+
+    // Abrir filtros avanzados
+    await tester.tap(find.text('Filtros avanzados'));
+    await tester.pumpAndSettle();
+
+    // Escribir búsqueda por texto
+    final inputBusqueda = find.byType(TextField).first;
+    await tester.enterText(inputBusqueda, 'Toyota');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Filtros avanzados (Activos)'), findsOneWidget);
+
+    // Limpiar filtro
+    await tester.tap(find.text('Limpiar'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Filtros avanzados'), findsOneWidget);
+  });
 }

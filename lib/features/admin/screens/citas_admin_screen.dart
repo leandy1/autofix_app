@@ -1392,18 +1392,77 @@ class _CitasScreenState extends State<CitasScreen> {
   DateTime _fechaSeleccionada = DateTime.now();
   bool _filtrosExpandido = false;
   String? _categoriaExpandida = 'En proceso';
+  late final TextEditingController _busquedaController;
+  String? _tecnicoFiltro;
+  bool _buscarEnTodasLasFechas = false;
   final CitasController _citasController = CitasController();
 
   @override
   void initState() {
     super.initState();
+    _busquedaController = TextEditingController();
     _citasController.cargar();
   }
 
   @override
   void dispose() {
+    _busquedaController.dispose();
     _citasController.dispose();
     super.dispose();
+  }
+
+  List<cita_data.Cita> _obtenerCitasFiltradas(String categoria) {
+    final query = _busquedaController.text.trim().toLowerCase();
+    final bool hayFiltroTecnico =
+        _tecnicoFiltro != null && _tecnicoFiltro != 'Todos';
+
+    List<cita_data.Cita> listaBase;
+    if (_buscarEnTodasLasFechas) {
+      final momento = DateTime.now();
+      listaBase = _citasController.citas.where((c) {
+        final estadoCita = c.esAtrasada(momento)
+            ? cita_data.Cita.etiquetaAtrasadas
+            : c.etiquetaUI(momento);
+        return estadoCita == categoria;
+      }).toList();
+    } else {
+      final agrupadas = _citasController.agruparPorEstado(_fechaSeleccionada);
+      listaBase = agrupadas[categoria] ?? const <cita_data.Cita>[];
+    }
+
+    if (query.isEmpty && !hayFiltroTecnico) {
+      return listaBase;
+    }
+
+    return listaBase.where((cita) {
+      if (hayFiltroTecnico && cita.tecnico != _tecnicoFiltro) {
+        return false;
+      }
+      if (query.isNotEmpty) {
+        final cliente = cita.cliente.toLowerCase();
+        final telefono = cita.telefono.toLowerCase();
+        final vehiculo = cita.vehiculo.toLowerCase();
+        final marca = cita.marca.toLowerCase();
+        final modelo = cita.modelo.toLowerCase();
+        final placa = cita.placa.toLowerCase();
+        final tecnico = cita.tecnico.toLowerCase();
+        final descripcion = cita.descripcion.toLowerCase();
+        final servicios = cita.servicios.join(' ').toLowerCase();
+
+        final coincide = cliente.contains(query) ||
+            telefono.contains(query) ||
+            vehiculo.contains(query) ||
+            marca.contains(query) ||
+            modelo.contains(query) ||
+            placa.contains(query) ||
+            tecnico.contains(query) ||
+            descripcion.contains(query) ||
+            servicios.contains(query);
+
+        if (!coincide) return false;
+      }
+      return true;
+    }).toList();
   }
 
   cita_data.Cita _aCitaPersistida(CitaAdmin cita) {
@@ -1547,33 +1606,33 @@ class _CitasScreenState extends State<CitasScreen> {
             const SizedBox(height: 16),
             _buildFiltrosAvanzados(),
             const SizedBox(height: 16),
-            for (final categoria in kColorPorEstado.keys)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: ListenableBuilder(
-                  listenable: _citasController,
-                  builder: (context, _) {
-                    final citasPorEstado = _citasController.agruparPorEstado(
-                      _fechaSeleccionada,
-                    );
-                    if (categoria == 'ATRASADAS' &&
-                        (citasPorEstado[categoria]?.isEmpty ?? true)) {
-                      return const SizedBox.shrink();
-                    }
-
-                    return _buildEstadoAccordion(
-                      nombre: categoria,
-                      color: kColorPorEstado[categoria]!,
-                      expanded: _categoriaExpandida == categoria,
-                      onTap: () => setState(() {
-                        _categoriaExpandida = _categoriaExpandida == categoria
-                            ? null
-                            : categoria;
-                      }),
-                    );
-                  },
-                ),
-              ),
+            ListenableBuilder(
+              listenable: _citasController,
+              builder: (context, _) {
+                return Column(
+                  children: [
+                    for (final categoria in kColorPorEstado.keys) ...[
+                      if (categoria != 'ATRASADAS' ||
+                          _obtenerCitasFiltradas(categoria).isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _buildEstadoAccordion(
+                            nombre: categoria,
+                            color: kColorPorEstado[categoria]!,
+                            expanded: _categoriaExpandida == categoria,
+                            onTap: () => setState(() {
+                              _categoriaExpandida =
+                                  _categoriaExpandida == categoria
+                                      ? null
+                                      : categoria;
+                            }),
+                          ),
+                        ),
+                    ],
+                  ],
+                );
+              },
+            ),
           ],
         ),
       ),
@@ -1881,6 +1940,10 @@ class _CitasScreenState extends State<CitasScreen> {
   }
 
   Widget _buildFiltrosAvanzados() {
+    final hayFiltrosActivos = _busquedaController.text.isNotEmpty ||
+        (_tecnicoFiltro != null && _tecnicoFiltro != 'Todos') ||
+        _buscarEnTodasLasFechas;
+
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -1903,18 +1966,53 @@ class _CitasScreenState extends State<CitasScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               child: Row(
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.filter_alt_outlined,
                     size: 18,
-                    color: AppColors.textGray,
+                    color: hayFiltrosActivos
+                        ? AppColors.orangePrimary
+                        : AppColors.textGray,
                   ),
                   const SizedBox(width: 10),
-                  const Expanded(
+                  Expanded(
                     child: Text(
-                      'Filtros avanzados',
-                      style: TextStyle(color: AppColors.textGray, fontSize: 14),
+                      hayFiltrosActivos
+                          ? 'Filtros avanzados (Activos)'
+                          : 'Filtros avanzados',
+                      style: TextStyle(
+                        color: hayFiltrosActivos
+                            ? AppColors.orangePrimary
+                            : AppColors.textGray,
+                        fontSize: 14,
+                        fontWeight: hayFiltrosActivos
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                      ),
                     ),
                   ),
+                  if (hayFiltrosActivos) ...[
+                    InkWell(
+                      onTap: () {
+                        setState(() {
+                          _busquedaController.clear();
+                          _tecnicoFiltro = null;
+                          _buscarEnTodasLasFechas = false;
+                        });
+                      },
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        child: Text(
+                          'Limpiar',
+                          style: TextStyle(
+                            color: Colors.redAccent,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                  ],
                   AnimatedRotation(
                     turns: _filtrosExpandido ? 0.5 : 0,
                     duration: const Duration(milliseconds: 200),
@@ -1934,34 +2032,121 @@ class _CitasScreenState extends State<CitasScreen> {
                 : CrossFadeState.showSecond,
             firstChild: Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: TextField(
-                decoration: InputDecoration(
-                  hintText: 'Buscar por cliente, vehículo o placa...',
-                  hintStyle: const TextStyle(
-                    color: AppColors.placeholderGray,
-                    fontSize: 13,
-                  ),
-                  prefixIcon: const Icon(
-                    Icons.search,
-                    size: 18,
-                    color: AppColors.textGray,
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: AppColors.inputBorder),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(
-                      color: AppColors.orangePrimary,
-                      width: 1.5,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: _busquedaController,
+                    onChanged: (_) => setState(() {}),
+                    decoration: InputDecoration(
+                      hintText: 'Buscar por cliente, vehículo o placa...',
+                      hintStyle: const TextStyle(
+                        color: AppColors.placeholderGray,
+                        fontSize: 13,
+                      ),
+                      prefixIcon: const Icon(
+                        Icons.search,
+                        size: 18,
+                        color: AppColors.textGray,
+                      ),
+                      suffixIcon: _busquedaController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.close, size: 18),
+                              onPressed: () {
+                                _busquedaController.clear();
+                                setState(() {});
+                              },
+                            )
+                          : null,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide:
+                            const BorderSide(color: AppColors.inputBorder),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(
+                          color: AppColors.orangePrimary,
+                          width: 1.5,
+                        ),
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
                   ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: _tecnicoFiltro ?? 'Todos',
+                    decoration: InputDecoration(
+                      labelText: 'Filtrar por técnico',
+                      labelStyle: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textGray,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide:
+                            const BorderSide(color: AppColors.inputBorder),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(
+                          color: AppColors.orangePrimary,
+                          width: 1.5,
+                        ),
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    items: [
+                      const DropdownMenuItem(
+                        value: 'Todos',
+                        child: Text(
+                          'Todos los técnicos',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                      ),
+                      ...demoTecnicosAdmin.map(
+                        (t) => DropdownMenuItem(
+                          value: t,
+                          child: Text(
+                            t,
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      ),
+                    ],
+                    onChanged: (val) => setState(() {
+                      _tecnicoFiltro = val == 'Todos' ? null : val;
+                    }),
                   ),
-                ),
+                  const SizedBox(height: 8),
+                  CheckboxListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    activeColor: AppColors.orangePrimary,
+                    title: const Text(
+                      'Buscar en todas las fechas',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: AppColors.textDark,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    value: _buscarEnTodasLasFechas,
+                    onChanged: (val) => setState(() {
+                      _buscarEnTodasLasFechas = val ?? false;
+                    }),
+                  ),
+                ],
               ),
             ),
             secondChild: const SizedBox(width: double.infinity, height: 0),
@@ -1977,9 +2162,7 @@ class _CitasScreenState extends State<CitasScreen> {
     required bool expanded,
     required VoidCallback onTap,
   }) {
-    final citas =
-        _citasController.agruparPorEstado(_fechaSeleccionada)[nombre] ??
-        const <cita_data.Cita>[];
+    final citas = _obtenerCitasFiltradas(nombre);
     final cantidadVisible = citas.length;
     return Column(
       children: [
