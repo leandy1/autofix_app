@@ -1,10 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'package:autofix/core/database/database_helper.dart';
 import 'package:autofix/features/admin/screens/citas_admin_screen.dart';
 import 'package:autofix/shared/models/cita_admin.dart';
 
 void main() {
+  setUpAll(() {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+    DatabaseHelper.nombreBaseParaPruebas = 'autofix_citas_admin_widget_test.db';
+  });
+
+  tearDownAll(() async {
+    await DatabaseHelper.resetParaPruebas();
+    DatabaseHelper.nombreBaseParaPruebas = null;
+  });
+
+  setUp(() async {
+    await DatabaseHelper.resetParaPruebas();
+  });
+
   testWidgets('muestra la cita con el diseño de admin y el estado correcto', (
     tester,
   ) async {
@@ -130,5 +147,81 @@ void main() {
     await tester.tap(find.text('Eliminar'));
     await tester.pumpAndSettle();
     expect(eliminado, idCita);
+  });
+
+  testWidgets('cierra nueva cita sin aserciones si un campo tiene foco', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: CitasScreen())),
+    );
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 250)),
+    );
+    await tester.pump();
+
+    for (var attempt = 0; attempt < 2; attempt++) {
+      await tester.tap(find.text('Nueva'));
+      await tester.pump(const Duration(milliseconds: 500));
+      if (attempt == 1) {
+        expect(
+          tester
+              .widget<TextFormField>(find.byType(TextFormField).first)
+              .controller
+              ?.text,
+          isEmpty,
+        );
+      }
+      await tester.tap(find.byType(TextFormField).first);
+      await tester.enterText(
+        find.byType(TextFormField).first,
+        'Ana Torres $attempt',
+      );
+      await tester.pump();
+
+      await tester.tap(find.byIcon(Icons.close).last);
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('Nueva Cita'), findsNothing);
+      expect(tester.takeException(), isNull);
+    }
+  });
+
+  testWidgets('filtra las citas por texto de búsqueda y limpia los filtros', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(800, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: CitasScreen())),
+    );
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 250)),
+    );
+    await tester.pump();
+
+    // Abrir filtros avanzados
+    await tester.scrollUntilVisible(
+      find.text('Filtros avanzados'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('Filtros avanzados'));
+    await tester.pumpAndSettle();
+
+    // Escribir búsqueda por texto
+    final inputBusqueda = find.byType(TextField).first;
+    await tester.enterText(inputBusqueda, 'Toyota');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Filtros avanzados (Activos)'), findsOneWidget);
+
+    // Limpiar filtro
+    await tester.tap(find.text('Limpiar'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Filtros avanzados'), findsOneWidget);
   });
 }
