@@ -6,6 +6,7 @@ import 'package:autofix/features/citas/models/cita.dart' as cita_data;
 import 'package:autofix/features/citas/presentation/citas_controller.dart';
 import 'package:autofix/shared/models/cita_admin.dart';
 import 'package:autofix/shared/models/demo_admin_data.dart';
+import 'package:autofix/shared/models/recibo_impresion.dart';
 import 'package:autofix/shared/theme/app_colors.dart';
 
 import 'dashboard_admin_screen.dart';
@@ -348,7 +349,22 @@ class CitaAdminCard extends StatelessWidget {
                         Navigator.pop(dialogContext);
                         Navigator.of(context).push(
                           MaterialPageRoute<void>(
-                            builder: (_) => const ImpresorasBluetoothScreen(),
+                            builder: (_) => ImpresorasBluetoothScreen(
+                              recibo: ReciboImpresion(
+                                numero:
+                                    'REC-${cita.id.toString().padLeft(6, '0')}',
+                                fecha:
+                                    '${_fechaFormateada()} · '
+                                    '${cita.hora.format(context)}',
+                                cliente: cita.cliente,
+                                telefono: cita.telefono,
+                                vehiculo:
+                                    '${cita.marca} ${cita.modelo} ${cita.anio}'
+                                        .trim(),
+                                placa: cita.placa,
+                                servicios: List.unmodifiable(cita.servicios),
+                              ),
+                            ),
                           ),
                         );
                       },

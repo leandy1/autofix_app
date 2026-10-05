@@ -38,6 +38,7 @@ dependencies:
 
   # Diseno (Leandy): graficas del dashboard admin.
   fl_chart: ^1.2.0
+  flutter_classic_bluetooth: ^1.7.0
 
   # Almacenamiento local y Conectividad (Sandy): SQLite, detector de red,
   # rutas de archivo y formato de fechas.
