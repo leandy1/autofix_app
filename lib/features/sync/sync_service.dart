@@ -149,42 +149,47 @@ class SyncService {
   /// Callback del `onSnapshot` global. Hace upsert en SQLite.
   void _onSnapshot(QuerySnapshot<Map<String, dynamic>> snap) async {
     for (final change in snap.docChanges) {
-      final doc = change.doc;
-      final data = doc.data();
-      if (data == null) continue;
+      try {
+        final doc = change.doc;
+        final data = doc.data();
+        if (data == null) continue;
 
-      // Ignora documentos de otros usuarios.
-      final ownerUid = data['ownerUid'] as String?;
-      if (ownerUid != _currentUid()) continue;
+        // Ignora documentos de otros usuarios.
+        final ownerUid = data['ownerUid'] as String?;
+        if (ownerUid != _currentUid()) continue;
 
-      final cita = _mapToCita(doc.id, data);
-
-      if (change.type == DocumentChangeType.removed) {
-        // Firestore no suele borrar (soft delete en app), pero por si acaso:
-        _repo.borrar(doc.id);
-        continue;
-      }
-
-      // Conflicto simple: gana el `actualizado_en` mas reciente.
-      final local = await _repo.obtenerPorId(doc.id);
-      if (local != null) {
-        final localTime = local.actualizadoEn?.millisecondsSinceEpoch ?? 0;
-        final remoteTime =
-            (data['actualizado_en'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
-        if (localTime > remoteTime) {
-          // Local mas reciente: re-subira en el proximo push.
+        if (change.type == DocumentChangeType.removed) {
+          // Firestore no suele borrar (soft delete en app), pero por si acaso:
+          await _repo.borrar(doc.id);
           continue;
         }
-      }
 
-      // Upsert: inserta o actualiza.
-      if (local == null) {
-        await _repo.insertarConId(cita);
-      } else {
-        await _repo.actualizar(cita);
+        final cita = _mapToCita(doc.id, data);
+
+        // Conflicto: gana el `actualizado_en` mas reciente.
+        // Las fechas en Firestore viajan como String ISO (porque toMap() usa
+        // aIsoUtc). Leemos directamente el string para comparar.
+        final local = await _repo.obtenerPorId(doc.id);
+        if (local != null) {
+          final localMs = local.actualizadoEn?.millisecondsSinceEpoch ?? 0;
+          final remoteStr = data['actualizado_en'] as String?;
+          final remoteMs = remoteStr != null
+              ? DateTime.tryParse(remoteStr)?.millisecondsSinceEpoch ?? 0
+              : 0;
+          if (localMs > remoteMs) {
+            // Local mas reciente: re-subira en el proximo push.
+            continue;
+          }
+        }
+
+        // Usa fusionarDesdeNube en vez de actualizar() para NO marcar
+        // sync_status = 'pending': la nube ya tiene este dato, no hay que volver
+        // a subirlo y no queremos crear un loop push -> snapshot -> push.
+        await _repo.fusionarDesdeNube(cita);
+        await _repo.marcarSincronizada(doc.id);
+      } catch (e) {
+        print('[SyncService] Error procesando doc ${change.doc.id}: $e');
       }
-      // Marca sincronizada (la version local ya coincide con la nube).
-      await _repo.marcarSincronizada(doc.id);
     }
   }
 
@@ -197,13 +202,22 @@ class SyncService {
   }
 
   /// Convierte documento Firestore a `Cita`.
+  /// Las fechas llegan como String ISO (aIsoUtc), no como Timestamp.
   Cita _mapToCita(String id, Map<String, dynamic> data) {
+    DateTime? _parseDate(Object? val) {
+      if (val == null) return null;
+      if (val is String) return DateTime.tryParse(val)?.toUtc();
+      // Por si algun documento antiguo tiene Timestamp real de Firestore:
+      if (val is Timestamp) return val.toDate().toUtc();
+      return null;
+    }
+
     return Cita(
       id: id,
       codigoVisible: data['codigo_visible'] as String? ?? 'PENDIENTE',
-      cliente: data['cliente'] as String,
+      cliente: data['cliente'] as String? ?? '',
       telefono: data['telefono'] as String? ?? '',
-      vehiculo: data['vehiculo'] as String,
+      vehiculo: data['vehiculo'] as String? ?? '',
       marca: data['marca'] as String? ?? '',
       modelo: data['modelo'] as String? ?? '',
       anio: (data['anio'] as num?)?.toInt() ?? 0,
@@ -211,20 +225,18 @@ class SyncService {
       servicios: List<String>.from(data['servicios'] as List? ?? []),
       tecnico: data['tecnico'] as String? ?? '',
       descripcion: data['descripcion'] as String? ?? '',
-      fechaCita:
-          (data['fecha_cita'] as Timestamp?)?.toDate().toUtc() ??
-          DateTime.now().toUtc(),
+      fechaCita: _parseDate(data['fecha_cita']) ?? DateTime.now().toUtc(),
       estado: _estadoFromString(data['estado'] as String? ?? 'pendiente'),
       tallerId: data['taller_id'] as String?,
-      creadoEn: (data['creado_en'] as Timestamp?)?.toDate().toUtc(),
-      actualizadoEn: (data['actualizado_en'] as Timestamp?)?.toDate().toUtc(),
+      creadoEn: _parseDate(data['creado_en']),
+      actualizadoEn: _parseDate(data['actualizado_en']),
       total: (data['total'] as num?)?.toInt() ?? 0,
       trazabilidad: Trazabilidad(
-        eliminadoEn: (data['eliminado_en'] as Timestamp?)?.toDate().toUtc(),
+        eliminadoEn: _parseDate(data['eliminado_en']),
         eliminadoPor: data['eliminado_por'] as String?,
-        restauradoEn: (data['restaurado_en'] as Timestamp?)?.toDate().toUtc(),
+        restauradoEn: _parseDate(data['restaurado_en']),
       ),
-      syncStatus: (data['sync_status'] as String?) ?? 'pending',
+      syncStatus: (data['sync_status'] as String?) ?? 'synced',
     );
   }
 
