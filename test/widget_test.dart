@@ -1,8 +1,10 @@
 import 'package:connectivity_plus_platform_interface/connectivity_plus_platform_interface.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:autofix/app/conectividad_app.dart';
+import 'package:autofix/core/database/database_helper.dart';
 import 'package:autofix/main.dart' show AutoFixApp;
 import 'package:autofix/features/auth/screens/login_screen.dart';
 import 'package:autofix/shared/theme/app_colors.dart';
@@ -14,6 +16,17 @@ import 'support/red_falsa.dart';
 /// (alguien saca el `builder`, o mueve el `ConectividadApp` por fuera del
 /// `MaterialApp` y cada `Scaffold` tapa el banner), asi que va fijo en test.
 void main() {
+  setUpAll(() {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+    DatabaseHelper.nombreBaseParaPruebas = 'autofix_main_widget_test.db';
+  });
+
+  tearDownAll(() async {
+    await DatabaseHelper.resetParaPruebas();
+    DatabaseHelper.nombreBaseParaPruebas = null;
+  });
+
   Widget montarApp() => const ConectividadApp(child: AutoFixApp());
 
   late RedFalsa red;
@@ -49,7 +62,9 @@ void main() {
     expect(banner, findsOneWidget);
   });
 
-  testWidgets('el banner sobrevive a la navegacion entre pantallas', (tester) async {
+  testWidgets('el banner sobrevive a la navegacion entre pantallas', (
+    tester,
+  ) async {
     await tester.pumpWidget(montarApp());
     await tester.pump();
 

@@ -73,10 +73,7 @@ InputDecoration clienteInputDecoration(
     ),
     focusedBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(10),
-      borderSide: const BorderSide(
-        color: AppColors.orangePrimary,
-        width: 1.5,
-      ),
+      borderSide: const BorderSide(color: AppColors.orangePrimary, width: 1.5),
     ),
   );
 }
@@ -149,8 +146,9 @@ Widget botonAccionCliente(
     child: ElevatedButton(
       onPressed: onPressed,
       style: ElevatedButton.styleFrom(
-        backgroundColor:
-            selected ? AppColors.headerNavy : AppColors.orangePrimary,
+        backgroundColor: selected
+            ? AppColors.headerNavy
+            : AppColors.orangePrimary,
         foregroundColor: Colors.white,
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),

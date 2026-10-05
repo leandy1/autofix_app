@@ -14,15 +14,23 @@ class ConnectivityScope extends InheritedNotifier<ConnectivityService> {
   }) : super(notifier: servicio);
 
   static ConnectivityService of(BuildContext context) {
-    final scope = context.dependOnInheritedWidgetOfExactType<ConnectivityScope>();
-    assert(scope?.notifier != null, 'ConectivityScope no encontrado en el arbol.');
+    final scope = context
+        .dependOnInheritedWidgetOfExactType<ConnectivityScope>();
+    assert(
+      scope?.notifier != null,
+      'ConectivityScope no encontrado en el arbol.',
+    );
     return scope!.notifier!;
   }
 
   static ConnectivityService read(BuildContext context) {
-    final element = context.getElementForInheritedWidgetOfExactType<ConnectivityScope>();
+    final element = context
+        .getElementForInheritedWidgetOfExactType<ConnectivityScope>();
     final scope = element?.widget as ConnectivityScope?;
-    assert(scope?.notifier != null, 'ConectivityScope no encontrado en el arbol.');
+    assert(
+      scope?.notifier != null,
+      'ConectivityScope no encontrado en el arbol.',
+    );
     return scope!.notifier!;
   }
 }

@@ -49,6 +49,12 @@ dependencies:
   geolocator: 14.1.1
   url_launcher: 6.2.5
 
+  # Firebase (Fase 2): Core, Auth anonima y Firestore para sincronizacion.
+  firebase_core: ^3.15.2
+  firebase_auth: ^5.7.0
+  cloud_firestore: ^5.6.12
+  collection: ^1.18.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

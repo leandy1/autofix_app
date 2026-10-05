@@ -32,7 +32,7 @@ import 'package:autofix/features/citas/models/resumen_citas.dart';
 /// ingresos contarian todo el historial en vez de lo del dia (tambien mentira).
 class DashboardAdminController extends ChangeNotifier {
   DashboardAdminController({CitaRepository? repositorio})
-      : _repo = repositorio ?? CitaRepository.instance;
+    : _repo = repositorio ?? CitaRepository.instance;
 
   final CitaRepository _repo;
 
@@ -119,11 +119,11 @@ class DashboardAdminController extends ChangeNotifier {
   /// dibuja nada pero si ensucia la leyenda con una fila en 0%, y el orden lo
   /// fija el enum, no el `GROUP BY` de SQL, que puede devolver las filas en
   /// cualquier orden segua el indice que este usando.
-  List<({EstadoCita estado, int cantidad})> get repartoPorEstado =>
-      EstadoCita.values
-          .map((e) => (estado: e, cantidad: _global.contar(e)))
-          .where((r) => r.cantidad > 0)
-          .toList(growable: false);
+  List<({EstadoCita estado, int cantidad})> get repartoPorEstado => EstadoCita
+      .values
+      .map((e) => (estado: e, cantidad: _global.contar(e)))
+      .where((r) => r.cantidad > 0)
+      .toList(growable: false);
 
   /// Ordenes abiertas del taller: lo que esta en turno y todavia no se entrego.
   ///

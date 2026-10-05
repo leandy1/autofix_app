@@ -64,12 +64,11 @@ List<Taller> ordenarPorCercania(
   // Copia antes de ordenar: `sort` muta la lista, y la que llega viene de
   // `_talleres`, que es el estado del widget. Ordenarla en el sitio mezclaria
   // el orden de pintado del mapa con el orden de presentacion del modal.
-  return [...talleres]
-    ..sort(
-      (a, b) => a
-          .distanciaKmDesde(latitudUsuario, longitudUsuario)
-          .compareTo(b.distanciaKmDesde(latitudUsuario, longitudUsuario)),
-    );
+  return [...talleres]..sort(
+    (a, b) => a
+        .distanciaKmDesde(latitudUsuario, longitudUsuario)
+        .compareTo(b.distanciaKmDesde(latitudUsuario, longitudUsuario)),
+  );
 }
 
 /// Intent `geo:` para abrir la RUTA en la app de mapas del telefono.
@@ -118,9 +117,7 @@ Uri uriDeRuta(Taller taller) {
   final lat = taller.latitud;
   final lng = taller.longitud;
 
-  return Uri.parse(
-    'geo:$lat,$lng?q=$lat,$lng(${_etiquetaGeo(taller.nombre)})',
-  );
+  return Uri.parse('geo:$lat,$lng?q=$lat,$lng(${_etiquetaGeo(taller.nombre)})');
 }
 
 /// Mapa de los talleres afiliados con su ubicación en vivo.
@@ -142,7 +139,9 @@ class TalleresMapaScreen extends StatefulWidget {
   /// verdad de "que taller tiene elegido el cliente" esta en el dashboard y
   /// duplicar ese estado aca es como aparecen dos indices distintos: al tocar
   /// una tarjeta, el modal marcaria una y el formulario otra.
-  final int? tallerSeleccionadoId;
+  ///
+  /// `String?` desde la v7 (UUID).
+  final String? tallerSeleccionadoId;
 
   /// Cuando es `true` la pantalla no trae `Scaffold` ni `AppBar` propios, para
   /// poder incrustarse dentro del dashboard del cliente, que ya tiene los suyos.
@@ -360,8 +359,15 @@ class _TalleresMapaScreenState extends State<TalleresMapaScreen> {
   }
 
   /// Traduce el `data` de una anotacion al taller y lo explora.
+  ///
+  /// El id se lee como `String?` y no `int?`: MapLibre devuelve el `data` como
+  /// el mapa que se le dio al crear la anotacion, y como el `id` del taller ahora
+  /// es un UUID (TEXT), el cast a `int` revienta con un TypeError en CADA tap.
+  ///
+  /// Por eso tambien se compara con `==` sobre `String?`: el `null == null` de
+  /// una anotacion sin id no deberia abrir nada, y por eso hay un `if` antes.
   void _abrirSiHayTaller(dynamic data) {
-    final id = (data as Map?)?['tallerId'] as int?;
+    final id = (data as Map?)?['tallerId'] as String?;
     if (id == null) return;
 
     // `orElse` evita el `StateError` si el taller se dio de baja entre la
@@ -406,11 +412,7 @@ class _TalleresMapaScreenState extends State<TalleresMapaScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  etiquetaDistancia(
-                    taller,
-                    pos?.latitude,
-                    pos?.longitude,
-                  ),
+                  etiquetaDistancia(taller, pos?.latitude, pos?.longitude),
                   style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
@@ -625,11 +627,8 @@ class _TalleresMapaScreenState extends State<TalleresMapaScreen> {
   /// y es deliberado: un orden alfabetico es estable entre instalaciones (dos
   /// devices con la misma semilla muestran la misma lista) y no depende de en
   /// que orden se grabaron las filas. Ver `TallerRepository.obtenerActivos`.
-  List<Taller> get _talleresOrdenados => ordenarPorCercania(
-    _talleres,
-    _posicion?.latitude,
-    _posicion?.longitude,
-  );
+  List<Taller> get _talleresOrdenados =>
+      ordenarPorCercania(_talleres, _posicion?.latitude, _posicion?.longitude);
 
   @override
   Widget build(BuildContext context) {
@@ -861,9 +860,7 @@ class _TarjetaTaller extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 2),
                 child: Icon(
-                  esElElegido
-                      ? Icons.location_on
-                      : Icons.location_on_outlined,
+                  esElElegido ? Icons.location_on : Icons.location_on_outlined,
                   size: 20,
                   color: AppColors.orangePrimary,
                 ),
@@ -959,9 +956,7 @@ class _BotonPrimario extends StatelessWidget {
         backgroundColor: AppColors.orangePrimary,
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(vertical: 13),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
   }
@@ -994,9 +989,7 @@ class _BotonSecundario extends StatelessWidget {
         foregroundColor: AppColors.orangePrimary,
         side: const BorderSide(color: AppColors.orangePrimary, width: 1.4),
         padding: const EdgeInsets.symmetric(vertical: 13),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
   }

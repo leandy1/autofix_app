@@ -3,7 +3,10 @@ import 'package:autofix/core/database/database_helper.dart';
 import 'package:autofix/core/database/semilla_inicial.dart';
 import 'package:autofix/features/citas/data/cita_repository.dart';
 import 'package:autofix/features/citas/models/cita.dart';
-import 'package:autofix/features/configuracion/data/estado_repository.dart';
+import 'package:autofix/features/configuracion/data/grupo_servicio_repository.dart';
+import 'package:autofix/features/configuracion/data/marca_repository.dart';
+import 'package:autofix/features/configuracion/data/tecnico_repository.dart';
+import 'package:autofix/features/configuracion/data/tipo_servicio_repository.dart';
 import 'package:autofix/features/talleres/data/taller_repository.dart';
 import 'package:autofix/features/talleres/models/taller.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -64,10 +67,7 @@ void main() {
       final info = await db.rawQuery(
         'PRAGMA table_info(${DatabaseHelper.tablaCitas})',
       );
-      expect(
-        info.map((f) => f['name']),
-        contains(DatabaseHelper.colTallerId),
-      );
+      expect(info.map((f) => f['name']), contains(DatabaseHelper.colTallerId));
     });
 
     test('latitud y longitud son REAL, no INTEGER', () async {
@@ -88,26 +88,29 @@ void main() {
       expect(tipoDe(DatabaseHelper.colLongitud), 'REAL');
     });
 
-    test('las coordenadas conservan los decimales al hacer round-trip', () async {
-      // Con un INTEGER truncado, este test daria 18.0 y pasaria igual. Por eso se
-      // compara contra el valor exacto de la semilla.
-      final refriauto = SemillaInicial.talleres.firstWhere(
-        (t) => t.nombre == 'Global Refriauto',
-      );
+    test(
+      'las coordenadas conservan los decimales al hacer round-trip',
+      () async {
+        // Con un INTEGER truncado, este test daria 18.0 y pasaria igual. Por eso se
+        // compara contra el valor exacto de la semilla.
+        final refriauto = SemillaInicial.talleres.firstWhere(
+          (t) => t.nombre == 'Global Refriauto',
+        );
 
-      final guardado = await TallerRepository.instance.obtenerPorNombre(
-        'Global Refriauto',
-      );
+        final guardado = await TallerRepository.instance.obtenerPorNombre(
+          'Global Refriauto',
+        );
 
-      expect(guardado, isNotNull);
-      expect(guardado!.latitud, refriauto.latitud);
-      expect(guardado.longitud, refriauto.longitud);
-      // Coordenadas reales del local. El assert contra el literal es el que
-      // atrapa el truncado a entero: si la columna volviera a ser INTEGER,
-      // esto daria 18.0 y pasaria igual que con el round-trip de arriba.
-      expect(guardado.latitud, closeTo(18.4624868, 0.0000001));
-      expect(guardado.longitud, closeTo(-69.9517036, 0.0000001));
-    });
+        expect(guardado, isNotNull);
+        expect(guardado!.latitud, refriauto.latitud);
+        expect(guardado.longitud, refriauto.longitud);
+        // Coordenadas reales del local. El assert contra el literal es el que
+        // atrapa el truncado a entero: si la columna volviera a ser INTEGER,
+        // esto daria 18.0 y pasaria igual que con el round-trip de arriba.
+        expect(guardado.latitud, closeTo(18.4624868, 0.0000001));
+        expect(guardado.longitud, closeTo(-69.9517036, 0.0000001));
+      },
+    );
 
     test('taller_id es INTEGER, no TEXT', () async {
       // Si fuera TEXT, el id 1 se guardaria como '1' y el
@@ -121,7 +124,8 @@ void main() {
           .firstWhere((f) => f['name'] == DatabaseHelper.colTallerId)['type']
           .toString()
           .toUpperCase();
-      expect(tipo, 'INTEGER');
+      // v7: la PK pasa a TEXT/UUID, asi que la FK tambien debe ser TEXT.
+      expect(tipo, 'TEXT');
     });
   });
 
@@ -156,8 +160,16 @@ void main() {
       // -68. Un punto fuera de esa caja significa un taller en otro pais, que
       // es exactamente el bug de invertir [lat, lng] por [lng, lat].
       for (final t in await TallerRepository.instance.obtenerTodas()) {
-        expect(t.latitud, inInclusiveRange(17.5, 19.9), reason: '${t.nombre} lat');
-        expect(t.longitud, inInclusiveRange(-72.0, -68.0), reason: '${t.nombre} lng');
+        expect(
+          t.latitud,
+          inInclusiveRange(17.5, 19.9),
+          reason: '${t.nombre} lat',
+        );
+        expect(
+          t.longitud,
+          inInclusiveRange(-72.0, -68.0),
+          reason: '${t.nombre} lng',
+        );
       }
     });
 
@@ -172,15 +184,18 @@ void main() {
       );
     });
 
-    test('"AutoFix Central" esta sembrado, que es lo que evita el crash', () async {
-      // `dashboard_cliente_screen.dart` trae `_selectedWorkshop = 'AutoFix
-      // Central'` hardcodeado y `agendar_cita_cliente_section.dart` la busca con
-      // `firstWhere`. Sin esta fila, esa pantalla revienta al abrirla.
-      expect(
-        await TallerRepository.instance.obtenerPorNombre('AutoFix Central'),
-        isNotNull,
-      );
-    });
+    test(
+      '"AutoFix Central" esta sembrado, que es lo que evita el crash',
+      () async {
+        // `dashboard_cliente_screen.dart` trae `_selectedWorkshop = 'AutoFix
+        // Central'` hardcodeado y `agendar_cita_cliente_section.dart` la busca con
+        // `firstWhere`. Sin esta fila, esa pantalla revienta al abrirla.
+        expect(
+          await TallerRepository.instance.obtenerPorNombre('AutoFix Central'),
+          isNotNull,
+        );
+      },
+    );
   });
 
   group('CRUD de talleres', () {
@@ -202,25 +217,28 @@ void main() {
       expect(creado.id, id);
     });
 
-    test('READ: obtenerTodas ordena por nombre sin distinguir mayusculas', () async {
-      await TallerRepository.instance.crear(
-        const Taller(nombre: 'zapateria', latitud: 18.5, longitud: -69.9),
-      );
-      await TallerRepository.instance.crear(
-        const Taller(nombre: 'Abarrotes', latitud: 18.5, longitud: -69.9),
-      );
+    test(
+      'READ: obtenerTodas ordena por nombre sin distinguir mayusculas',
+      () async {
+        await TallerRepository.instance.crear(
+          const Taller(nombre: 'zapateria', latitud: 18.5, longitud: -69.9),
+        );
+        await TallerRepository.instance.crear(
+          const Taller(nombre: 'Abarrotes', latitud: 18.5, longitud: -69.9),
+        );
 
-      final nombres = (await TallerRepository.instance.obtenerTodas())
-          .map((t) => t.nombre)
-          .toList();
+        final nombres = (await TallerRepository.instance.obtenerTodas())
+            .map((t) => t.nombre)
+            .toList();
 
-      // Se compara el orden RELATIVO, no la posicion, para que agregar un taller
-      // a la semilla no rompa este test.
-      expect(
-        nombres.indexOf('Abarrotes'),
-        lessThan(nombres.indexOf('zapateria')),
-      );
-    });
+        // Se compara el orden RELATIVO, no la posicion, para que agregar un taller
+        // a la semilla no rompa este test.
+        expect(
+          nombres.indexOf('Abarrotes'),
+          lessThan(nombres.indexOf('zapateria')),
+        );
+      },
+    );
 
     test('READ: obtenerPorNombre ignora mayusculas y espacios', () async {
       // No se usa 'Taller Gomez' porque ya viene en la semilla y el UNIQUE lo
@@ -244,8 +262,9 @@ void main() {
       // El caso de uso real: el formulario busca el taller que el cliente eligio
       // por nombre, y ese texto viene de la base, no de una constante.
       expect(
-        (await TallerRepository.instance.obtenerPorNombre('  global refriauto '))
-            ?.nombre,
+        (await TallerRepository.instance.obtenerPorNombre(
+          '  global refriauto ',
+        ))?.nombre,
         'Global Refriauto',
       );
     });
@@ -257,10 +276,7 @@ void main() {
       await TallerRepository.instance.darDeBaja(id);
 
       final activos = await TallerRepository.instance.obtenerActivos();
-      expect(
-        activos.map((t) => t.nombre),
-        isNot(contains('Temporal')),
-      );
+      expect(activos.map((t) => t.nombre), isNot(contains('Temporal')));
       // Pero sigue en la lista de administracion, para poder reactivarlo.
       expect(
         (await TallerRepository.instance.obtenerTodas()).map((t) => t.nombre),
@@ -296,7 +312,12 @@ void main() {
     });
 
     test('DELETE: eliminar un id inexistente devuelve 0 filas', () async {
-      expect(await TallerRepository.instance.eliminar(999999), 0);
+      expect(
+        await TallerRepository.instance.eliminar(
+          'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        ),
+        0,
+      );
     });
 
     test('actualizar sin id lanza en vez de fallar en silencio', () async {
@@ -314,11 +335,7 @@ void main() {
       // UNIQUE COLLATE NOCASE lo detiene. Sin ese indice, el mapa mostraria dos
       // circulos orange en la misma esquina.
       await TallerRepository.instance.crear(
-        const Taller(
-          nombre: 'Refriauto Norte',
-          latitud: 18.4,
-          longitud: -69.9,
-        ),
+        const Taller(nombre: 'Refriauto Norte', latitud: 18.4, longitud: -69.9),
       );
 
       expect(
@@ -364,7 +381,12 @@ void main() {
       // El numero importa como control: si la formula estuviera mal (radio
       // equivocado, grados sin convertir, [lat, lng] invertido), daria un valor
       // completamente distinto y este test lo atrapa.
-      final d = Taller.distanciaHaversineKm(18.4861, -69.9312, 19.4517, -70.6970);
+      final d = Taller.distanciaHaversineKm(
+        18.4861,
+        -69.9312,
+        19.4517,
+        -70.6970,
+      );
       expect(d, closeTo(134, 3));
     });
 
@@ -391,7 +413,12 @@ void main() {
     test('dos puntos casi iguales NO producen NaN', () async {
       // El clamp de `sqrt(min(1, a))` existe por esto: por redondeo, `a` puede
       // pasar de 1 y `asin` de eso devuelve NaN, que arruina el orden de la lista.
-      final d = Taller.distanciaHaversineKm(18.4861, -69.9312, 18.4861, -69.9312);
+      final d = Taller.distanciaHaversineKm(
+        18.4861,
+        -69.9312,
+        18.4861,
+        -69.9312,
+      );
       expect(d.isNaN, isFalse);
     });
 
@@ -410,7 +437,7 @@ void main() {
 
   group('cita <-> taller', () {
     // La v5 elimino `codigo_qr`, asi que cada cita se distingue por `cliente`.
-    Cita citaCon({String cliente = 'Cliente', int? tallerId}) => Cita(
+    Cita citaCon({String cliente = 'Cliente', String? tallerId}) => Cita(
       cliente: cliente,
       vehiculo: 'Toyota Corolla',
       fechaCita: DateTime(2026, 10, 15, 10),
@@ -470,13 +497,11 @@ void main() {
       final id = (await TallerRepository.instance.obtenerPorNombre(
         'Global Refriauto',
       ))!.id!;
-      expect(id, isA<int>());
+      // v7: la PK es TEXT/UUID, no INTEGER. Un id numerico ya no existe.
+      expect(id, isA<String>());
 
       await CitaRepository.instance.crear(citaCon(tallerId: id));
-      expect(
-        (await CitaRepository.instance.obtenerPorTaller(id)).length,
-        1,
-      );
+      expect((await CitaRepository.instance.obtenerPorTaller(id)).length, 1);
     });
 
     test('update de la cita conserva el taller', () async {
@@ -487,12 +512,11 @@ void main() {
       final citaId = await CitaRepository.instance.crear(
         citaCon(tallerId: tallerId),
       );
-      await CitaRepository.instance.crear(citaCon(cliente: 'Cliente Otra', tallerId: tallerId));
-
-      await CitaRepository.instance.cambiarEstado(
-        citaId,
-        EstadoCita.enProceso,
+      await CitaRepository.instance.crear(
+        citaCon(cliente: 'Cliente Otra', tallerId: tallerId),
       );
+
+      await CitaRepository.instance.cambiarEstado(citaId, EstadoCita.enProceso);
       final releida = await CitaRepository.instance.obtenerPorId(citaId);
 
       // `cambiarEstado` es un UPDATE parcial: solo manda la columna del estado.
@@ -569,29 +593,44 @@ void main() {
       await base.close();
     }
 
-    test('un dispositivo con v3 conserva sus citas y gana los talleres', () async {
+    test('un dispositivo con v3 arranca con los talleres y catalogos de la v7', () async {
+      // v7: este test se reescribio entero. Antes se llamaba 'conserva sus citas'
+      // y hacia `expect(citas.length, 1)`. Con `_versionBase = 7` eso es falso:
+      // la v7 dropea `citas` a proposito (ver `DatabaseHelper._migrar`), porque
+      // cambiar la PK de INTEGER a TEXT/UUID no se puede hacer copiando filas.
       await sembrarBaseV3(qr: 'VIEJO-V3');
 
-      // Abrir con el helper dispara onUpgrade: agrega la columna y crea la tabla.
+      // Abrir con el helper dispara onUpgrade.
       final citas = await CitaRepository.instance.obtenerTodas();
-      expect(citas.length, 1, reason: 'la migracion NO debe perder datos');
-      // `codigo_qr` desaparece en la v5, asi que la fila se reconoce por `cliente`.
-      expect(citas.first.cliente, 'Cliente Anterior');
-      expect(citas.first.placa, '');
+      expect(citas, isEmpty, reason: 'la v7 reinicia el esquema a proposito');
 
-      // Las citas viejas no tienen taller: por eso la columna es nullable.
-      expect(citas.first.tallerId, isNull);
-
+      // Lo que si importa: la tabla de talleres y los catalogos quedan creados y sembrados.
       expect(
         (await TallerRepository.instance.obtenerTodas()).length,
         SemillaInicial.talleres.length,
       );
+      expect(
+        (await TecnicoRepository.instance.obtenerTodas()).length,
+        SemillaInicial.tecnicos.length,
+      );
+      expect(
+        (await TipoServicioRepository.instance.obtenerTodas()).length,
+        SemillaInicial.tiposServicio.length,
+      );
+      expect(
+        (await MarcaRepository.instance.obtenerTodas()).length,
+        SemillaInicial.marcas.length,
+      );
+      expect(
+        (await GrupoServicioRepository.instance.obtenerTodas()).length,
+        SemillaInicial.gruposServicio.length,
+      );
     });
 
-    test('un dispositivo con v3 puede empezar a agendar con taller', () async {
-      // El punto de la migracion: la cita vieja quedo sin taller, pero las nuevas
-      // ya pueden Referentiallo. Sin la columna, el formulario de David no
-      // tendria donde guardar el id.
+    test('tras migrar a v7 se puede agendar con taller', () async {
+      // v7: este test se reescribio. Antes asumia que la cita vieja sobrevivio
+      // (`expect(...).length, 2`). Con la v7 la cita vieja desaparece, asi que
+      // solo queda la nueva.
       await sembrarBaseV3(qr: 'VIEJO-AGENDAR');
 
       final tallerId = (await TallerRepository.instance.obtenerPorNombre(
@@ -600,17 +639,17 @@ void main() {
 
       final nuevaId = await CitaRepository.instance.crear(
         Cita(
-                    cliente: 'Cliente Nuevo',
+          cliente: 'Cliente Nuevo',
           vehiculo: 'Kia Rio',
-          fechaCita: DateTime(2026, 11, 3, 14),
+          fechaCita: DateTime.utc(2026, 11, 3, 14),
           tallerId: tallerId,
         ),
       );
 
       final nueva = await CitaRepository.instance.obtenerPorId(nuevaId);
       expect(nueva!.tallerId, tallerId);
-      // Y la vieja sigue intacta al lado.
-      expect((await CitaRepository.instance.obtenerTodas()).length, 2);
+      // Solo la cita nueva existe.
+      expect((await CitaRepository.instance.obtenerTodas()).length, 1);
     });
 
     test('un dispositivo con v1 salta de v1 a v4 en una sola apertura', () async {
@@ -646,17 +685,24 @@ void main() {
       await base.close();
 
       final citas = await CitaRepository.instance.obtenerTodas();
-      expect(citas.length, 1);
-      // `codigo_qr` no existe desde la v5; la fila se reconoce por `cliente`.
-      expect(citas.first.cliente, 'Cliente Viejo');
-      // Columnas de la v2 y de la v4: llegan con su default, no en null.
-      expect(citas.first.telefono, '');
-      expect(citas.first.anio, 0);
-      expect(citas.first.tallerId, isNull);
+      // v7: la migracion dropea las tablas y reinicia el esquema, asi que las citas
+      // viejas no se conservan. Ver la nota larga de `DatabaseHelper._migrar`.
+      expect(citas, isEmpty);
+      // Y los catalogos quedan creados y sembrados.
 
+      // v7: los estados ya no existen. El test comprueba que el salto de v1->v7
+      // no deja la base a medias: los catalogos del punto 6 estan presentes.
       expect(
-        (await EstadoRepository.instance.obtenerTodas()).length,
-        SemillaInicial.estados.length,
+        (await TecnicoRepository.instance.obtenerTodas()).length,
+        SemillaInicial.tecnicos.length,
+      );
+      expect(
+        (await TipoServicioRepository.instance.obtenerTodas()).length,
+        SemillaInicial.tiposServicio.length,
+      );
+      expect(
+        (await MarcaRepository.instance.obtenerTodas()).length,
+        SemillaInicial.marcas.length,
       );
       expect(
         (await TallerRepository.instance.obtenerTodas()).length,

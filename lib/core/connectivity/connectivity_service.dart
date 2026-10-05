@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
+import 'package:collection/collection.dart';
 
 /// Estado de red segun lo que la app puede afirmar en este instante.
 ///
@@ -31,6 +32,14 @@ class ConnectivityService extends ChangeNotifier {
   final Connectivity _connectivity = Connectivity();
 
   StreamSubscription<List<ConnectivityResult>>? _suscripcion;
+
+  /// Stream para consumidores externos (ej. SyncService) que quieran reaccionar
+  /// a cambios de conectividad (reconexion -> pushPending()).
+  final _connectivityController =
+      StreamController<List<ConnectivityResult>>.broadcast();
+
+  Stream<List<ConnectivityResult>> get onConnectivityChanged =>
+      _connectivityController.stream;
 
   /// Reintentos de reescuchar si el stream muere. Acotado a proposito: si la
   /// plataforma quedo inutilizable, insistir para siempre es un bucle que
@@ -127,7 +136,8 @@ class ConnectivityService extends ChangeNotifier {
     // mantiene "en linea", asi que el banner no cambia, pero el transporte si
     // y un consumidor que dibuje el icono tiene que enterarse. Con el codigo
     // anterior (comparar solo `length`) ese cambio se tragaba en silencio.
-    if (nuevoEstado == _estado && listEquals(_resultados, resultados)) {
+    if (nuevoEstado == _estado &&
+        const ListEquality().equals(_resultados, resultados)) {
       return;
     }
 
@@ -135,6 +145,9 @@ class ConnectivityService extends ChangeNotifier {
     _resultados = List<ConnectivityResult>.unmodifiable(resultados);
     _estado = nuevoEstado;
     notifyListeners();
+
+    // Notificar a consumidores externos (ej. SyncService)
+    _connectivityController.add(resultados);
   }
 
   @override
@@ -143,6 +156,7 @@ class ConnectivityService extends ChangeNotifier {
     // `notifyListeners()` sobre un `ChangeNotifier` ya liberado.
     _descartado = true;
     _suscripcion?.cancel();
+    _connectivityController.close();
     super.dispose();
   }
 }

@@ -33,15 +33,15 @@ class _LoginScreenState extends State<LoginScreen> {
     final contrasena = _passwordController.text;
     if (_loginController.esAccesoDev(usuario, contrasena)) {
       Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => const TalleresAfiliadosScreen(),
-        ),
+        MaterialPageRoute(builder: (_) => const TalleresAfiliadosScreen()),
       );
       return;
     }
     if (_loginController.esIntentoDevInvalido(usuario, contrasena)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('La contraseña de desarrollador no es válida.')),
+        const SnackBar(
+          content: Text('La contraseña de desarrollador no es válida.'),
+        ),
       );
       return;
     }

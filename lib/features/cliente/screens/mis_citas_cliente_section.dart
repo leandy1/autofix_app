@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-
 import 'package:autofix/features/cliente/widgets/cliente_section_widgets.dart';
 import 'package:autofix/shared/models/cliente_dashboard_data.dart';
 import 'package:autofix/shared/models/demo_cliente_data.dart';

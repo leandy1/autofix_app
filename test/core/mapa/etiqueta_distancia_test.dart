@@ -94,10 +94,7 @@ void main() {
 
   group('etiquetaDistancia', () {
     test('sin GPS dice "Distancia no disponible"', () {
-      expect(
-        etiquetaDistancia(_gazcue, null, null),
-        kDistanciaNoDisponible,
-      );
+      expect(etiquetaDistancia(_gazcue, null, null), kDistanciaNoDisponible);
     });
 
     test('delega en la version nullable y solo cambia el fallback', () {

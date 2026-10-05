@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:autofix/features/configuracion/presentation/configuracion_controller.dart';
 import 'package:autofix/shared/models/demo_admin_data.dart';
 import 'package:autofix/shared/theme/app_colors.dart';
+
 import 'dashboard_admin_screen.dart';
 import 'citas_admin_screen.dart';
+
 import 'package:autofix/features/auth/screens/login_screen.dart';
 
 class ConfiguracionScreen extends StatefulWidget {
@@ -28,7 +30,6 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
   final TextEditingController _precioServicioController =
       TextEditingController();
   final TextEditingController _tecnicoController = TextEditingController();
-  final TextEditingController _estadoController = TextEditingController();
   final TextEditingController _marcaController = TextEditingController();
   final TextEditingController _grupoController = TextEditingController();
 
@@ -50,7 +51,6 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
     _nombreServicioController.dispose();
     _precioServicioController.dispose();
     _tecnicoController.dispose();
-    _estadoController.dispose();
     _marcaController.dispose();
     _grupoController.dispose();
     super.dispose();
@@ -95,20 +95,19 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
                 onEliminar: _cfg.eliminarTecnico,
               ),
               const SizedBox(height: 16),
-              // PAUSADO: Marcas sigue con datos demo. Falta que el equipo defina
-              // si la fuente es la API web de Andy o esta base; hasta ese dia no se
-              // toca ni el repo ni el controller, para no escribir la tabla desde
-              // dos lados. `id: null` deja la fila sin borrar y el boton sigue como
-              // no-op para que la tarjeta se vea igual que antes.
-              // Cuando se decida, se le pasa el repo de marcas y se saca esto.
+              // v7: Marcas paso de `demoMarcasConfiguracion` (const en
+              // `demo_admin_data.dart`) a filas de la tabla `marcas`. El punto 6
+              // del encargo define que la fuente es esta base. El `onAgregar` y el
+              // `onEliminar` ya no son no-op: el boton esta cableado.
               _buildListaSimpleCard(
                 titulo: 'Marcas de Vehículo',
                 hint: 'Ej: Nissan',
                 controller: _marcaController,
-                items: demoMarcasConfiguracion
-                    .map((m) => (nombre: m, id: null))
+                items: _cfg.marcas
+                    .map((m) => (nombre: m.nombre, id: m.id))
                     .toList(),
-                onAgregar: () {},
+                onAgregar: _agregarMarca,
+                onEliminar: _cfg.eliminarMarca,
               ),
               const SizedBox(height: 16),
               _buildGruposDeServiciosCard(),
@@ -448,26 +447,29 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
   }
 
   // ---------------------------------------------------------------------
-  // Secciones simples: Técnicos, Estados, Marcas de Vehículo.
+  // Secciones simples: Técnicos y Marcas de Vehículo.
   //
   // Cada item es un record `(nombre, id)` y el id es nullable por dos motivos:
   // las tarjetas en pausa (Marcas) traen datos de demo que no tienen id, y una
   // entidad recien insertada todavia no lo tiene. El id viaja con el nombre en
-  // vez de buscarse: recorrer los tres catalogos para deducir cual fila se esta
-  // borrando borra la equivocada en cuanto dos comparten nombre ('Pendiente' es
-  // un estado y podria ser un tecnico).
+  // vez de buscarse: recorrer los catalogos para deducir cual fila se esta
+  // borrando borra la equivocada en cuanto dos comparten nombre ('Frenos' puede
+  // ser un tecnico y un tipo de servicio).
   //
   // `onAgregar` y `onEliminar` en `null` dejan la tarjeta en modo lectura, que
   // es lo que queda para Marcas mientras se decide su dueno.
+  //
+  // El `id` es `String?` desde la v7 (UUID), no `int?`. Ver
+  // `lib/core/utils/uuid.dart`.
   // ---------------------------------------------------------------------
 
   Widget _buildListaSimpleCard({
     required String titulo,
     required String hint,
     required TextEditingController controller,
-    required List<({String nombre, int? id})> items,
+    required List<({String nombre, String? id})> items,
     VoidCallback? onAgregar,
-    Future<bool> Function(int id)? onEliminar,
+    Future<bool> Function(String id)? onEliminar,
   }) {
     return _sectionCard(
       titulo: titulo,
@@ -550,13 +552,17 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
   }
 
   // ---------------------------------------------------------------------
-  // Acciones de las tres tarjetas con persistencia.
+  // Acciones de las tarjetas con persistencia.
   //
   // Todas pasan por un `_guardar` comun: el controller devuelve `bool` y deja el
   // motivo en `error`. El `if (!mounted)` despues de cada `await` es
   // OBLIGATORIO, no opcional: entre el await y el `setState` el usuario puede
   // haber salido de la pantalla, y `context` sobre un State muerto revienta la
   // app con "setState() called after dispose()".
+  //
+  // NOTA v7: la accion de agregar ESTADOS se elimino con el catalogo. El estado
+  // de una cita es el enum `EstadoCita`, cerrado y no editable; la seccion de
+  // estados ya no existe ni en el diseno.
   // ---------------------------------------------------------------------
 
   Future<void> _agregarTecnico() async {
@@ -570,7 +576,6 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
     }
   }
 
-
   Future<void> _agregarTipoServicio() async {
     final ok = await _cfg.guardarTipoServicio(
       _nombreServicioController.text,
@@ -580,6 +585,22 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
     if (ok) {
       _nombreServicioController.clear();
       _precioServicioController.clear();
+    } else {
+      _mostrarError();
+    }
+  }
+
+  /// Alta de marca (punto 6). Mismo patron que [agregarTecnico]: limpia el campo si
+  /// la escritura salio, muestra el error del controller si no.
+  ///
+  /// El mensaje de error lo pone `ConfiguracionController._validarNombre`, asi que
+  /// aca no se distingue "campo vacio" de "ya existe": el controller ya sabe decir
+  /// cual de las dos fue y el SnackBar lo muestra tal cual.
+  Future<void> _agregarMarca() async {
+    final ok = await _cfg.guardarMarca(_marcaController.text);
+    if (!mounted) return;
+    if (ok) {
+      _marcaController.clear();
     } else {
       _mostrarError();
     }
@@ -649,10 +670,26 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
   }
 
   // ---------------------------------------------------------------------
-  // "Grupos de Servicios" — se deja UNA tarjeta de ejemplo fija (no una
-  // lista real) solo para mostrar cómo se ve un grupo expandido, con su
-  // acordeón funcionando (abrir/cerrar) y el modal de selección de
-  // servicios abriendo y cerrando.
+  // "Grupos de Servicios" (punto 6)
+  //
+  // QUÉ ESTÁ CONECTADO Y QUÉ NO:
+  //
+  // - El alta y la lista de GRUPOS sí están conectados: `_cfg.gruposServicio`
+  //   viene de la tabla `grupos_servicio` y `_agregarGrupo` escribe en ella.
+  // - El ACORDEÓN DE SERVICIOS sigue siendo el de `demoGruposServiciosAdmin`.
+  //   Es lo único de esta tarjeta que NO toca la base, y a proposito: la relación
+  //   grupo -> servicios necesita una tabla puente y la decisión de si un
+  //   servicio puede estar en varios grupos, y esa decisión no está tomada. El
+  //   doc de `GrupoServicio` la explica.
+  //
+  // Cuando se decida, el orden es: (1) tabla puente en la v8, (2) `obtenerServiciosDelGrupo`
+  // en `GrupoServicioRepository`, (3) reemplazar `_grupoDemoExpandido` por el id del
+  // grupo real y leer de ahi. Ese dia la lista de arriba y el acordeón pasan a
+  // ser la misma fila.
+  //
+  // Por ahora el acordeón muestra `demoGruposServiciosAdmin.first` en vez del
+  // primer grupo real, para que no se note el empalme: es la MISMA tarjeta con el
+  // mismo texto que la v6 mostraba.
   // ---------------------------------------------------------------------
 
   Widget _buildGruposDeServiciosCard() {
@@ -661,19 +698,54 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // PAUSADO: el boton se deja como no-op y no deshabilitado a proposito.
-          // Poner `onAgregar: null` lo pinta en gris y cambia el diseno de una
-          // tarjeta que el usuario pidio dejar intacta.
           _buildCampoAgregar(
             controller: _grupoController,
             hint: 'Ej: Electricidad',
-            onAgregar: () {},
+            onAgregar: _agregarGrupo,
           ),
+          const SizedBox(height: 12),
+          // Los grupos reales. El `X` los borra de verdad (con confirmacion,
+          // igual que las marcas).
+          for (final grupo in _cfg.gruposServicio)
+            _filaItemDemo(
+              nombre: grupo.nombre,
+              onEliminar: () => _confirmarEliminar(
+                'grupo de servicios',
+                grupo.nombre,
+                () => _cfg.eliminarGrupoServicio(grupo.id!),
+              ),
+            ),
+          // El estado vacio se escribe en vez de dejar la tarjeta en blanco: un
+          // espacio sin texto se lee como "la app fallo", y con la base recien
+          // creada ese es un resultado legitimo.
+          if (_cfg.gruposServicio.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                'Todavía no hay grupos de servicios.',
+                style: TextStyle(
+                  color: AppColors.textGray,
+                  fontSize: 13,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
           const SizedBox(height: 12),
           _buildGrupoDemoAcordeon(),
         ],
       ),
     );
+  }
+
+  /// Alta de grupo de servicios. Sin precio: un grupo agrupa, no se cobra.
+  Future<void> _agregarGrupo() async {
+    final ok = await _cfg.guardarGrupoServicio(_grupoController.text);
+    if (!mounted) return;
+    if (ok) {
+      _grupoController.clear();
+    } else {
+      _mostrarError();
+    }
   }
 
   Widget _buildGrupoDemoAcordeon() {

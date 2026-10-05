@@ -29,9 +29,10 @@ import 'package:autofix/features/cliente/widgets/cliente_section_widgets.dart';
 /// semilla los siembra en 0. El día que haga falta centavos, se suman enteros
 /// de centavos y se divide acá.
 String formatearPesosDR(int monto) {
-  final conSeparadores = monto
-      .toString()
-      .replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+$)'), (m) => '${m[1]},');
+  final conSeparadores = monto.toString().replaceAllMapped(
+    RegExp(r'(\d)(?=(\d{3})+$)'),
+    (m) => '${m[1]},',
+  );
 
   return 'RD\$ $conSeparadores';
 }
@@ -61,7 +62,11 @@ class AgendarCitaClienteSection extends StatefulWidget {
 
   /// Identificador del taller. Es el dato que se guarda en `citas.taller_id`;
   /// el nombre es una etiqueta y puede repetirse o cambiar.
-  final int? tallerSeleccionadoId;
+  ///
+  /// `String?` desde la v7: es el UUID del taller, no un numero. Antes era `int?`
+  /// y por eso `==` comparaba autoincrementos que solo tenían sentido dentro de
+  /// ESTE dispositivo.
+  final String? tallerSeleccionadoId;
 
   final ValueChanged<Taller> onTallerSelected;
 
@@ -159,8 +164,9 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
     final todos = await TipoServicioRepository.instance.obtenerTodas();
     if (!mounted) return;
     setState(() {
-      _serviciosDisponibles =
-          todos.where((s) => s.activo).toList(growable: false);
+      _serviciosDisponibles = todos
+          .where((s) => s.activo)
+          .toList(growable: false);
       _cargandoServicios = false;
     });
   }
@@ -424,8 +430,7 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
           title:
               tallerActual?.nombre ??
               (_cargandoTalleres ? 'Cargando talleres...' : 'Sin seleccionar'),
-          subtitle:
-              tallerActual == null
+          subtitle: tallerActual == null
               ? 'Toca para ver los afiliados'
               : _subtituloDe(tallerActual),
           onTap: _seleccionarTaller,
@@ -433,11 +438,7 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
         const SizedBox(height: 8),
         Row(
           children: [
-            const Icon(
-              Icons.info_outline,
-              size: 13,
-              color: AppColors.textGray,
-            ),
+            const Icon(Icons.info_outline, size: 13, color: AppColors.textGray),
             const SizedBox(width: 6),
             const Expanded(
               child: Text(

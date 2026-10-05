@@ -4,6 +4,7 @@ import 'package:autofix/features/talleres/data/taller_repository.dart';
 import 'package:autofix/features/talleres/models/taller.dart';
 import 'package:autofix/shared/theme/app_colors.dart';
 import 'package:autofix/features/auth/screens/login_screen.dart';
+
 import 'agendar_cita_cliente_section.dart';
 import 'mis_citas_cliente_section.dart';
 import 'talleres_mapa_screen.dart';
@@ -21,7 +22,8 @@ class _DashboardClienteScreenState extends State<DashboardClienteScreen> {
 
   /// Identificador del taller elegido. Viaja del mapa al formulario y es lo que
   /// se guarda en `citas.taller_id`.
-  int? _tallerSeleccionadoId;
+  /// UUID del taller elegido (`String?` desde la v7, no `int?`).
+  String? _tallerSeleccionadoId;
 
   static const _sectionTitles = [
     'Talleres cercanos',

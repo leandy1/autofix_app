@@ -144,11 +144,26 @@ const demoGruposServiciosAdmin = [
 ];
 
 const demoTecnicosConfiguracion = demoTecnicosAdmin;
-const demoEstadosConfiguracion = [
-  'Pendiente',
-  'En diagnóstico',
-  'En proceso',
-  'Esperando pieza',
-  'Completado',
-];
-const demoMarcasConfiguracion = demoMarcasVehiculo;
+
+// ---------------------------------------------------------------------------
+// v7: SE BORRARON `demoEstadosConfiguracion` y `demoMarcasConfiguracion`.
+//
+// `demoEstadosConfiguracion` era la lista de 'En diagnóstico' / 'Esperando pieza'
+// con tildes y mayusculas que pintaba la tarjeta de estados de Configuracion. Esa
+// tarjeta ya no existe (el estado de una cita es el enum cerrado `EstadoCita`,
+// no una fila editable) y la lista se fue con ella. Dejarla aca era peor que
+// sobrante: alguien la encontraba, la usaba como si fuera el catalogo real, y
+// escribia un estado que `EstadoCita.desdeNombre` no reconoce, con lo que la cita
+// queda en estado desconocido al leerla de la base.
+//
+// `demoMarcasConfiguracion` era `demoMarcasVehiculo` reexportada con otro nombre.
+// Las marcas pasaron a ser filas de la tabla `marcas` (punto 6 del encargo), y la
+// pantalla de Configuracion ya lee de `_cfg.marcas`. La `const` no se "convierte":
+// se elimina, porque dos listas de marcas en el codigo es una que alguien va a
+// actualizar y la otra no.
+//
+// `demoEstadosAdmin` NO se toco: esa sigue viva en `citas_admin_screen.dart` como
+// las etiquetas del filtro de estado, que es un filtro de TEXTO sobre una columna
+// de texto y no un catalogo. Si alguna vez pasa a filtrar por el enum, se
+// deriva de `EstadoSolicitudCita.values` y esta lista se borra tambien.
+// ---------------------------------------------------------------------------
