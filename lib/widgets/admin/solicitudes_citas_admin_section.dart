@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/demo_admin_data.dart';
+import '../../models/recibo_impresion.dart';
 import '../../models/solicitud_cita_cliente.dart';
 import '../../screens/admin/impresoras_bluetooth_screen.dart';
 import '../../models/servicio_taller.dart';
@@ -612,7 +613,8 @@ class CitaClasificadaAdminCard extends StatelessWidget {
                   Align(
                     alignment: Alignment.centerRight,
                     child: OutlinedButton.icon(
-                      onPressed: () => _mostrarRecibo(context),
+                      onPressed: () =>
+                          _mostrarRecibo(context, previewOnly: previewOnly),
                       icon: const Icon(Icons.receipt_long_outlined, size: 17),
                       label: const Text('Imprimir recibo'),
                       style: OutlinedButton.styleFrom(
@@ -637,8 +639,14 @@ class CitaClasificadaAdminCard extends StatelessWidget {
     );
   }
 
-  void _mostrarRecibo(BuildContext context) {
+  void _mostrarRecibo(
+    BuildContext context, {
+    required bool previewOnly,
+  }) {
     final vehicle = _parseVehicle(solicitud.vehiculo);
+    final numeroRecibo =
+        'REC-${solicitud.fecha.year}-'
+        '${solicitud.id.toString().padLeft(4, '0')}';
     showDialog<void>(
       context: context,
       builder: (dialogContext) => Dialog(
@@ -736,8 +744,7 @@ class CitaClasificadaAdminCard extends StatelessWidget {
                       const Divider(color: AppColors.inputBorder),
                       _ReciboDato(
                         label: 'Recibo',
-                        value:
-                            'REC-2026-${solicitud.id.toString().padLeft(4, '0')}',
+                        value: numeroRecibo,
                       ),
                       _ReciboDato(
                         label: 'Fecha',
@@ -849,9 +856,22 @@ class CitaClasificadaAdminCard extends StatelessWidget {
                         Navigator.pop(dialogContext);
                         Navigator.of(context).push(
                           MaterialPageRoute<void>(
-                            builder: (_) => const ImpresorasBluetoothScreen(),
+                          builder: (_) => ImpresorasBluetoothScreen(
+                            recibo: ReciboImpresion(
+                              numero: numeroRecibo,
+                              fecha: _formatSchedule(context),
+                              cliente: solicitud.cliente,
+                              telefono: solicitud.telefono,
+                              vehiculo: vehicle.name,
+                              placa: vehicle.plate,
+                              servicios: List.unmodifiable(
+                                solicitud.servicios,
+                              ),
+                              esDemostracion: previewOnly,
+                            ),
                           ),
-                        );
+                        ),
+                      );
                       },
                       icon: const Icon(Icons.print_outlined, size: 17),
                       label: const Text('Imprimir'),
