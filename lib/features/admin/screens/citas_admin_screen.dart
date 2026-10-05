@@ -1391,7 +1391,7 @@ class CitasScreen extends StatefulWidget {
 class _CitasScreenState extends State<CitasScreen> {
   DateTime _fechaSeleccionada = DateTime.now();
   bool _filtrosExpandido = false;
-  String? _categoriaExpandida = 'En proceso';
+  String? _categoriaExpandida;
   late final TextEditingController _busquedaController;
   String? _tecnicoFiltro;
   bool _buscarEnTodasLasFechas = false;
@@ -2128,23 +2128,26 @@ class _CitasScreenState extends State<CitasScreen> {
                     }),
                   ),
                   const SizedBox(height: 8),
-                  CheckboxListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    controlAffinity: ListTileControlAffinity.leading,
-                    activeColor: AppColors.orangePrimary,
-                    title: const Text(
-                      'Buscar en todas las fechas',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        color: AppColors.textDark,
-                        fontWeight: FontWeight.w500,
+                  Material(
+                    color: Colors.transparent,
+                    child: CheckboxListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      activeColor: AppColors.orangePrimary,
+                      title: const Text(
+                        'Buscar en todas las fechas',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: AppColors.textDark,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
+                      value: _buscarEnTodasLasFechas,
+                      onChanged: (val) => setState(() {
+                        _buscarEnTodasLasFechas = val ?? false;
+                      }),
                     ),
-                    value: _buscarEnTodasLasFechas,
-                    onChanged: (val) => setState(() {
-                      _buscarEnTodasLasFechas = val ?? false;
-                    }),
                   ),
                 ],
               ),
