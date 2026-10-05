@@ -1,178 +1,100 @@
+import 'package:connectivity_plus_platform_interface/connectivity_plus_platform_interface.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-import 'package:autofix/core/database/database_helper.dart';
-import 'package:autofix/features/admin/screens/citas_admin_screen.dart';
-import 'package:autofix/shared/models/cita_admin.dart';
+import 'package:autofix/app/conectividad_app.dart';
+import 'package:autofix/main.dart' show AutoFixApp;
+import 'package:autofix/features/auth/screens/login_screen.dart';
+import 'package:autofix/shared/theme/app_colors.dart';
 
+import 'support/red_falsa.dart';
+
+/// El banner de Conectividad es el requisito: tiene que verse en TODA pantalla
+/// sin que cada una lo monte. Eso se rompe de formas que el analyzer no ve
+/// (alguien saca el `builder`, o mueve el `ConectividadApp` por fuera del
+/// `MaterialApp` y cada `Scaffold` tapa el banner), asi que va fijo en test.
 void main() {
-  setUpAll(() {
-    sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
-    DatabaseHelper.nombreBaseParaPruebas = 'autofix_widget_test.db';
+  Widget montarApp() => const ConectividadApp(child: AutoFixApp());
+
+  late RedFalsa red;
+  late ConnectivityPlatform plataformaOriginal;
+
+  setUp(() {
+    plataformaOriginal = ConnectivityPlatform.instance;
+    // Red sin conexión DECIDIDA, no deducida. Antes esto se apoyaba en que el
+    // plugin real no está registrado en el test y el servicio asumía "offline":
+    // el banner aparecía por accidente, y el mismo test pasaba aunque el
+    // banner se hubiera roto. El tiempo real de reacción lo cubre
+    // `conectividad_test.dart`.
+    red = RedFalsa(estado: const [ConnectivityResult.none]);
+    ConnectivityPlatform.instance = red;
   });
 
-  tearDownAll(() async {
-    await DatabaseHelper.resetParaPruebas();
-    DatabaseHelper.nombreBaseParaPruebas = null;
+  tearDown(() async {
+    ConnectivityPlatform.instance = plataformaOriginal;
+    await red.dispose();
   });
 
-  setUp(() async {
-    await DatabaseHelper.resetParaPruebas();
+  testWidgets('el banner queda montado dentro del Navigator', (tester) async {
+    await tester.pumpWidget(montarApp());
+    await tester.pump();
+
+    // Busca el banner en el arbol del `MaterialApp`, no en el de arriba: si
+    // alguien lo deja envuelto por fuera, el `find` igual lo encuentra y el
+    // test pasa mentiroso.
+    final banner = find.descendant(
+      of: find.byType(MaterialApp),
+      matching: find.byIcon(Icons.wifi_off),
+    );
+    expect(banner, findsOneWidget);
   });
 
-  testWidgets('muestra la cita con el diseño de admin y el estado correcto', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(360, 800));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
+  testWidgets('el banner sobrevive a la navegacion entre pantallas', (tester) async {
+    await tester.pumpWidget(montarApp());
+    await tester.pump();
 
-    final cita = CitaAdmin(
-      id: 42,
-      cliente: 'Ana López',
-      telefono: '8091234567',
-      marca: 'Toyota',
-      modelo: 'Corolla',
-      anio: '2022',
-      placa: 'A123456',
-      servicios: const ['Cambio de aceite', 'Lavado'],
-      fecha: DateTime(2026, 9, 29),
-      hora: const TimeOfDay(hour: 10, minute: 30),
-      estado: EstadoCitaAdmin.enProceso,
-      descripcion: 'Revisión general',
-      tecnico: 'Carlos',
-      total: 7500,
-    );
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(body: CitaAdminCard(cita: cita)),
-      ),
-    );
-
-    expect(find.text('Ana López'), findsOneWidget);
-    expect(find.text('En proceso'), findsOneWidget);
-    expect(find.text('Toyota Corolla 2022'), findsOneWidget);
-    expect(find.text('A123456'), findsOneWidget);
-    expect(find.text(r'RD$ 7500'), findsOneWidget);
-
-    await tester.tap(find.text('Ver detalle'));
-    await tester.pumpAndSettle();
-    expect(find.text('Editar'), findsOneWidget);
-    expect(find.text('Eliminar'), findsOneWidget);
-    expect(find.text('Cerrar'), findsOneWidget);
-    expect(tester.getRect(find.text('Editar')).right, lessThan(360));
-    expect(
-      (tester.getCenter(find.text('Eliminar')).dy -
-              tester.getCenter(find.text('Editar')).dy)
-          .abs(),
-      lessThan(1),
-    );
-    expect(
-      (tester.getCenter(find.text('Eliminar')).dy -
-              tester.getCenter(find.text('Cerrar')).dy)
-          .abs(),
-      lessThan(1),
-    );
-    expect(tester.takeException(), isNull);
-    expect(find.text('Nombre'), findsOneWidget);
-    expect(find.text('Ana'), findsOneWidget);
-    expect(find.text('Apellido'), findsOneWidget);
-    expect(find.text('López'), findsOneWidget);
-    expect(find.text('Teléfono'), findsOneWidget);
-    expect(find.text('Cédula'), findsNothing);
-    expect(find.text('Correo'), findsNothing);
-    expect(find.text('Color'), findsNothing);
-  });
-
-  testWidgets('invoca editar y eliminar desde la vista de detalle', (
-    tester,
-  ) async {
-    final cita = CitaAdmin(
-      id: 7,
-      cliente: 'Beatriz',
-      telefono: '8092223344',
-      marca: 'Honda',
-      modelo: 'Civic',
-      anio: '2021',
-      placa: 'B765432',
-      servicios: const ['Cambio de aceite'],
-      fecha: DateTime(2026, 10, 2),
-      hora: const TimeOfDay(hour: 11, minute: 0),
-      estado: EstadoCitaAdmin.pendiente,
-      descripcion: 'Alineación',
-      tecnico: 'Técnico 1',
-      total: 2500,
-    );
-
-    var editado = false;
-    var eliminado = -1;
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: CitaAdminCard(
-            cita: cita,
-            onEdited: (_) => editado = true,
-            onDeleted: (id) => eliminado = id,
-          ),
+    // `builder` de `MaterialApp` rebuildea el Navigator entero; si el banner
+    // vivia en un `StatefulWidget` hermano, esta pantalla nueva lo perderia.
+    final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+    navigator.push(
+      MaterialPageRoute<void>(
+        builder: (_) => Scaffold(
+          backgroundColor: AppColors.background,
+          body: const Center(child: Text('Pantalla secundaria')),
         ),
       ),
     );
-
-    await tester.tap(find.text('Ver detalle'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Editar'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Guardar cambios'));
-    await tester.pumpAndSettle();
-    expect(editado, isTrue);
-
-    await tester.tap(find.text('Ver detalle'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Eliminar'));
-    await tester.pumpAndSettle();
-    expect(eliminado, 7);
+    expect(find.text('Pantalla secundaria'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(MaterialApp),
+        matching: find.byIcon(Icons.wifi_off),
+      ),
+      findsOneWidget,
+    );
   });
 
-  testWidgets('cierra nueva cita sin aserciones si un campo tiene foco', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      const MaterialApp(home: Scaffold(body: CitasScreen())),
+  testWidgets('el banner no se superpone con la pantalla', (tester) async {
+    await tester.pumpWidget(montarApp());
+    await tester.pumpAndSettle();
+
+    // Si se montara con un `Stack` por fuera del `MaterialApp` en vez de con
+    // `builder`, el banner y el contenido ocuparian el mismo sitio. El alto del
+    // banner tiene que estar DESCONTADO del alto disponible para el hijo.
+    final column = tester.widget<Column>(find.byType(Column).first);
+    expect(
+      column.children.whereType<Expanded>(),
+      isNotEmpty,
+      reason: 'el hijo del banner debe ir dentro de un Expanded',
     );
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 250)),
-    );
+  });
+
+  testWidgets('la app arranca en el login de Leandy', (tester) async {
+    await tester.pumpWidget(montarApp());
     await tester.pump();
 
-    for (var attempt = 0; attempt < 2; attempt++) {
-      await tester.tap(find.text('Nueva'));
-      await tester.pump(const Duration(milliseconds: 500));
-      if (attempt == 1) {
-        expect(
-          tester
-              .widget<TextFormField>(find.byType(TextFormField).first)
-              .controller
-              ?.text,
-          isEmpty,
-        );
-      }
-      await tester.tap(find.byType(TextFormField).first);
-      await tester.enterText(
-        find.byType(TextFormField).first,
-        'Ana Torres $attempt',
-      );
-      await tester.pump();
-
-      await tester.tap(find.byIcon(Icons.close).last);
-      await tester.pump(const Duration(milliseconds: 500));
-      await tester.pump(const Duration(milliseconds: 500));
-
-      expect(find.text('Nueva Cita'), findsNothing);
-      expect(tester.takeException(), isNull);
-    }
+    expect(find.byType(LoginScreen), findsOneWidget);
   });
 }

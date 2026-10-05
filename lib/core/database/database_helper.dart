@@ -2,6 +2,9 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
+import 'semilla_citas_demo.dart';
+import 'semilla_inicial.dart';
+
 /// Punto unico de acceso a SQLite (Singleton).
 ///
 /// Singleton de SQLite: UNA sola conexion abierta para todo el proceso, clave
@@ -27,14 +30,29 @@ class DatabaseHelper {
   static String get _nombre => nombreBaseParaPruebas ?? _nombreBase;
 
   /// v1 = esquema base de la unidad de almacenamiento.
-  /// v2 = se agregan telefono, marca, modelo, anio, placa, servicios y tecnico.
-  /// v3 = se elimina codigo_qr y se persiste el total de la cita.
+  /// v2 = se agregan los campos que el formulario de Leandy ya captura
+  ///      (telefono, marca, modelo, anio, placa, servicios, tecnico).
+  /// v3 = los catalogos de Configuracion (tecnicos, tipos de servicio, estados).
+  /// v4 = la red de talleres AFILIADOS y el vinculo de la cita con el taller.
+  /// v5 = se elimina codigo_qr de citas y se agrega total (histórico inmutable).
+  /// v6 = indice en `citas.fecha_cita`, que es por donde filtran el Dashboard y
+  ///      la lista de Citas.
+  ///
   /// OJO: subir la version NO borra la base, dispara `onUpgrade`, que es lo
   /// que permite a un dispositivo que ya instalo la v1 seguir funcionando.
-  static const int _versionBase = 3;
+  static const int _versionBase = 6;
+
+  /// Nombre del indice de [tablaCitas] por fecha.
+  ///
+  /// Publico y no privado a proposito: las pruebas de migracion lo consultan con
+  /// `PRAGMA index_list` para atar el `CREATE INDEX` con la version del esquema.
+  /// Un `PRAGMA` escrito a mano en el test con el nombre puesto de cabeza no
+  /// comprueba nada, porque pasa igual si el nombre cambia.
+  static const String idxCitasFecha = 'idx_citas_fecha';
 
   static const String tablaCitas = 'citas';
   static const String colId = 'id';
+  static const String colCodigoQr = 'codigo_qr';
   static const String colCliente = 'cliente';
   static const String colTelefono = 'telefono';
   static const String colVehiculo = 'vehiculo';
@@ -51,6 +69,80 @@ class DatabaseHelper {
   static const String colActualizadoEn = 'actualizado_en';
   static const String colTotal = 'total';
 
+  // ------------------------------------------------------------------
+  // Catalogos de Configuracion (v3)
+  //
+  // Tecnicos, Tipos de Servicio y Estados son el mismo molde: una lista de
+  // nombres que el administrador mantiene. Por eso comparten las mismas
+  // columnas y el mismo constructor de tabla.
+  // ------------------------------------------------------------------
+
+  static const String tablaTecnicos = 'tecnicos';
+  static const String tablaTiposServicio = 'tipos_servicio';
+  static const String tablaEstados = 'estados';
+
+  static const String colNombre = 'nombre';
+  static const String colActivo = 'activo';
+  static const String colPrecio = 'precio';
+
+  // ------------------------------------------------------------------
+  // Talleres afiliados (v4)
+  //
+  // Directriz de Leandy: el mapa NO busca talleres libres en el mundo. Solo
+  // muestra los que estan en esta tabla, que es la red de afiliados de la
+  // empresa. Por eso `talleres` se siembra y se administra, y no se consulta
+  // a ningun servicio externo.
+  //
+  // `citas.taller_id` es lo que ata una cita al taller donde se agenda. Sin
+  // esa columna no hay forma de responder "dame las citas del Taller Gomez":
+  // el nombre del taller no sirve, porque dos filas con el mismo nombre
+  //Serian la misma cita a los ojos del sistema.
+  // ------------------------------------------------------------------
+
+  static const String tablaTalleres = 'talleres';
+
+  static const String colDireccion = 'direccion';
+  static const String colLatitud = 'latitud';
+  static const String colLongitud = 'longitud';
+  static const String colTallerId = 'taller_id';
+
+  // `colTelefono` NO se redeclara aca: ya existe arriba para `citas.telefono`, y
+  // el mismo nombre de columna significa lo mismo en las dos tablas (el telefono
+  // de un contacto, en texto, con guiones). Reutilizar la constante es lo que
+  // evita que un dia alguien escriba 'telefono' de una forma y 'fono' de otra.
+
+  /// Columnas de `talleres`, en el orden en que se declaran.
+  ///
+  /// `latitud`/`longitud` son REAL y no INTEGER a proposito: son grados
+  /// decimales. Con INTEGER, `18.4184` se trunca a 18 y el taller cae 46 km al
+  /// norte, en el Atlantico.
+  ///
+  /// `telefono` es TEXT y no INTEGER: en Republica Dominicana se escribe con
+  /// guiones ('809-555-0101').
+  static const Map<String, String> _columnasTalleres = <String, String>{
+    colNombre: 'TEXT NOT NULL',
+    colDireccion: 'TEXT NOT NULL DEFAULT \'\'',
+    colTelefono: 'TEXT NOT NULL DEFAULT \'\'',
+    colLatitud: 'REAL NOT NULL DEFAULT 0',
+    colLongitud: 'REAL NOT NULL DEFAULT 0',
+    colActivo: 'INTEGER NOT NULL DEFAULT 1',
+    colCreadoEn: 'TEXT NOT NULL',
+    colActualizadoEn: 'TEXT NOT NULL',
+  };
+
+  /// Columnas comunes a los tres catalogos, en el orden en que se declaran.
+  ///
+  /// Tenerlas en una constante evita duplicar los nombres entre la creacion y la
+  /// migracion, que es justamente como se producen los bugs de esquema: uno
+  /// escribe 'nombre' y el otro 'nombres', y el INSERT revienta con
+  /// "no such column" solo en produccion.
+  static const Map<String, String> _columnasCatalogo = <String, String>{
+    colNombre: 'TEXT NOT NULL',
+    colActivo: 'INTEGER NOT NULL DEFAULT 1',
+    colCreadoEn: 'TEXT NOT NULL',
+    colActualizadoEn: 'TEXT NOT NULL',
+  };
+
   /// Columnas que se agregan en v2, con su tipo y default.
   /// Estar en una constante evita duplicar los nombres entre `_crearEsquema`
   /// y `_migrarAV2`, que es como seroductionen bugs de migracion.
@@ -64,6 +156,23 @@ class DatabaseHelper {
     colTecnico: 'TEXT NOT NULL DEFAULT \'\'',
     colActualizadoEn: 'TEXT NOT NULL DEFAULT \'\'',
   };
+
+  /// Columna que se agrega a `citas` en la v4.
+  ///
+  /// INTEGER y no TEXT, aunque el tipo "TEXT" suene mas generico: el id de
+  /// `talleres` es un INTEGER, y si la columna fuera TEXT, SQLite guardaria el
+  /// 1 como la cadena '1'. Despues un `WHERE taller_id = 1` (numero) no
+  /// encuentra la fila, porque '1' != 1 en la comparacion, y el filtro de
+  /// "mis citas" devuelve vacio sin dar ningun error. Ese es el tipo de bug que
+  /// no aparece hasta que alguien pregunta por un historial.
+  ///
+  /// NULL y no NOT NULL: las citas que ya existen (v1 a v3) no tienen taller, y
+  /// las que crea el modulo del escaner QR todavia no lo_eligen. La columna
+  /// acepta null hasta que el formulario de David la empiece a mandar.
+  ///
+  /// OJO: no lleva `REFERENCES talleres(id)`. Ver la nota de `_crearTalleres`
+  /// para por que la FK va en el indice y no en la declaracion de la columna.
+  static const String _columnaTallerIdV4 = '$colTallerId INTEGER';
 
   Database? _base;
 
@@ -83,14 +192,18 @@ class DatabaseHelper {
     );
   }
 
-  /// `onCreate` crea directamente el esquema actual; las migraciones conservan
-  /// los datos de instalaciones que todavia tengan una version anterior.
+  /// `onCreate` solo corre la PRIMERA vez que se crea el archivo. Si armara el
+  /// `CREATE TABLE` con la version vieja y despues subiera la version, los
+  /// dispositivos que ya tenian la v1 se quedarian sin las columnas nuevas y
+  /// la app truena con "no such column". Por eso todas las versiones arman el
+  /// MISMO esquema completo y la migracion solo sirve para bases ya creadas.
   ///
   /// El SQL se arma en un solo string porque `execute` manda UNA sentencia
   /// completa: partir el CREATE TABLE en varias llamadas es SQL invalido.
   Future<void> _crearEsquema(Database db) async {
     final definiciones = <String>[
       '$colId INTEGER PRIMARY KEY AUTOINCREMENT',
+      // codigo_qr ELIMINADO (v5)
       '$colCliente TEXT NOT NULL',
       '$colVehiculo TEXT NOT NULL',
       ..._columnasV2.entries.map((e) => '${e.key} ${e.value}'),
@@ -98,73 +211,393 @@ class DatabaseHelper {
       '$colFechaCita TEXT NOT NULL',
       '$colEstado TEXT NOT NULL',
       '$colCreadoEn TEXT NOT NULL',
-      '$colTotal REAL NOT NULL DEFAULT 0',
+      // La v4. Va al final y sin NOT NULL a proposito: las citas que ya existen
+      // (creadas en la v1, v2 o v3) no tienen taller, y una columna NOT NULL
+      // sin default haria que el `ALTER TABLE` de la migracion fallara.
+      _columnaTallerIdV4,
+      '$colTotal INTEGER NOT NULL DEFAULT 0', // v5
     ];
 
     await db.execute('CREATE TABLE $tablaCitas (${definiciones.join(', ')})');
+    // Índice de QR ELIMINADO (v5)
+
+    // `talleres` ANTES que el indice de `citas.taller_id`: una FK necesita que
+    // la tabla que referencia exista.
+    await _crearTalleres(db);
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_citas_taller_id '
+      'ON $tablaCitas ($colTallerId)',
+    );
+    // v6. Toda consulta del Dashboard y de la pantalla de Citas filtra por dia
+    // con `fecha_cita LIKE 'AAAA-MM-DD%'`, que sin indice es un escaneo
+    // secuencial de la tabla completa. Con el volumen de un taller real eso se
+    // nota al cambiar de fecha en el calendario.
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS $idxCitasFecha '
+      'ON $tablaCitas ($colFechaCita)',
+    );
+
+    await _crearCatalogos(db);
+    await _sembrarCatalogos(db);
+    await _sembrarTalleres(db);
   }
 
-  Future<void> _migrar(
-    Database db,
-    int versionAnterior,
-    int versionNueva,
-  ) async {
-    if (versionAnterior < 2) await _migrarAV2(db);
-    if (versionAnterior < 3) await _migrarAV3(db);
+  /// Crea la tabla de talleres afiliados.
+  ///
+  /// `IF NOT EXISTS` por la misma razon que los catalogos: esta funcion la
+  /// llaman los dos caminos (creacion nueva y migracion) y no importa cual
+  /// llegue primero.
+  ///
+  /// Sobre la FK de `citas.taller_id` a `talleres.id`: NO va declarada como
+  /// `REFERENCES` en la columna, a proposito. SQLite no permite agregar una
+  /// columna con `REFERENCES` usando `ALTER TABLE` si la tabla ya tiene filas, y
+  /// mas importante: con `PRAGMA foreign_keys = ON` (que esta activo en
+  /// `onConfigure`), una FK restrictiva hace que borrar un taller con historial
+  /// falle, y el admin no tiene forma de dar de baja un taller. Por eso la
+  /// relacion se garantiza en la aplicacion, no en el motor: el
+  /// `TallerRepository` filtra por `activo` y nunca borra fisicamente un taller
+  /// que tenga citas. Es la baja logica la que evita perder el historial.
+  Future<void> _crearTalleres(DatabaseExecutor db) async {
+    final definiciones = <String>[
+      '$colId INTEGER PRIMARY KEY AUTOINCREMENT',
+      ..._columnasTalleres.entries.map((e) => '${e.key} ${e.value}'),
+    ];
+
+    await db.execute(
+      'CREATE TABLE IF NOT EXISTS $tablaTalleres (${definiciones.join(', ')})',
+    );
+
+    // `COLLATE NOCASE` para que el admin no pueda dar de alta "Global Refriauto"
+    // y "global refriauto" como dos afiliados distintos. Sin esto, el mapa
+    // muestra dos circulos orange en la misma esquina.
+    await db.execute(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_${tablaTalleres}_nombre '
+      'ON $tablaTalleres ($colNombre COLLATE NOCASE)',
+    );
   }
 
-  /// Migracion 1 -> 2. Un ALTER TABLE por columna dentro de una transaccion.
-  Future<void> _migrarAV2(Database db) async {
+  /// Siembra la red de talleres afiliados.
+  ///
+  /// El chequeo de vacio por tabla NO es paranoia, es el mismo motivo que en
+  /// `_sembrarCatalogos`: los dos caminos pueden correr, y sin el chequeo los
+  /// tres talleres se duplican.
+  Future<void> _sembrarTalleres(DatabaseExecutor db) async {
+    final existentes = await db.query(
+      tablaTalleres,
+      columns: <String>[colId],
+      limit: 1,
+    );
+    if (existentes.isNotEmpty) return;
+
+    final ahora = DateTime.now().toIso8601String();
+
+    for (final t in SemillaInicial.talleres) {
+      await db.insert(tablaTalleres, <String, Object?>{
+        colNombre: t.nombre,
+        colDireccion: t.direccion,
+        colTelefono: t.telefono,
+        colLatitud: t.latitud,
+        colLongitud: t.longitud,
+        colActivo: 1,
+        colCreadoEn: ahora,
+        colActualizadoEn: ahora,
+      });
+    }
+  }
+
+  /// Crea los tres catalogos de Configuracion con el mismo molde.
+  ///
+  /// `CREATE TABLE IF NOT EXISTS` y no `CREATE TABLE` porque esta misma funcion
+  /// la usan los dos caminos: el de una base nueva y el de la migracion. Con el
+  /// `IF NOT EXISTS` no importa cual de los dos llegue primero.
+  ///
+  /// Recibe un [DatabaseExecutor] y no un `Database` porque la creacion inicial
+  /// lo llama por fuera de la transaccion y la migracion por dentro: `Database` y
+  /// `Transaction` implementan las dos interfaces y asi el codigo se escribe una
+  /// sola vez.
+  Future<void> _crearCatalogos(DatabaseExecutor db) async {
+    await _crearTablaCatalogo(db, tablaTecnicos);
+    await _crearTablaCatalogo(
+      db,
+      tablaTiposServicio,
+      columnasExtra: <String>['$colPrecio INTEGER NOT NULL DEFAULT 0'],
+    );
+    await _crearTablaCatalogo(db, tablaEstados);
+  }
+
+  Future<void> _crearTablaCatalogo(
+    DatabaseExecutor db,
+    String tabla, {
+    List<String> columnasExtra = const <String>[],
+  }) async {
+    final definiciones = <String>[
+      '$colId INTEGER PRIMARY KEY AUTOINCREMENT',
+      ..._columnasCatalogo.entries.map((e) => '${e.key} ${e.value}'),
+      ...columnasExtra,
+    ];
+
+    await db.execute('CREATE TABLE IF NOT EXISTS $tabla (${definiciones.join(', ')})');
+
+    // `COLLATE NOCASE` compara sin distinguir mayusculas, asi que el indice
+    // IMPIDE que existan "Nissan" y "nissan" a la vez. Sin esto, el admin
+    // escribia "Toyota" y tres semanas despues "toyota" y le aparecian dos
+    // filas identicas en el desplegable de Marcas.
+    await db.execute(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_${tabla}_nombre '
+      'ON $tabla ($colNombre COLLATE NOCASE)',
+    );
+  }
+
+  /// Inserta el catalogo inicial del diseno en los tres catalogos.
+  ///
+  /// El chequeo de vacio por tabla NO es paranoia: la siembran los dos caminos
+  /// (creacion y migracion) y nada impide que ambos corran, por ejemplo si un
+  /// dispositivo se reinstala sin desinstalar del todo. Sin el `isEmpty`, esos
+  /// casos duplicarian los 14 registros iniciales.
+  Future<void> _sembrarCatalogos(DatabaseExecutor db) async {
+    final ahora = DateTime.now().toIso8601String();
+
+    // `extra` y no un `String? columnaPrecio`: los catalogos son el mismo molde y
+    // cada uno aporta sus columnas, asi que el parametro es un mapa y no una
+    // lista de casos. Agregar una columna nueva despues no obliga a tocar esto.
+    Future<void> sembrar(
+      String tabla,
+      List<String> nombres, {
+      Map<String, Object?> extra = const <String, Object?>{},
+    }) async {
+      final existentes = await db.query(tabla, columns: <String>[colId], limit: 1);
+      if (existentes.isNotEmpty) return;
+
+      for (final nombre in nombres) {
+        await db.insert(tabla, <String, Object?>{
+          colNombre: nombre,
+          colActivo: 1,
+          ...extra,
+          colCreadoEn: ahora,
+          colActualizadoEn: ahora,
+        });
+      }
+    }
+
+    await sembrar(tablaTecnicos, SemillaInicial.tecnicos);
+    await sembrar(
+      tablaTiposServicio,
+      SemillaInicial.tiposServicio,
+      extra: <String, Object?>{colPrecio: SemillaInicial.precioInicial},
+    );
+    await sembrar(tablaEstados, SemillaInicial.estados);
+  }
+
+  // ------------------------------------------------------------------
+  // Semilla de CITAS: la unica que es data de prueba de verdad
+  // ------------------------------------------------------------------
+
+  /// Inyecta un lote de citas de demostracion y devuelve cuantas se guardaron.
+  ///
+  /// A diferencia de `_sembrarCatalogos` y `_sembrarTalleres`, esta NO se llama
+  /// desde `_crearEsquema` ni desde `_migrar`, y eso es deliberado:
+  ///
+  /// - En una instalacion real, el administrador abriria el Dashboard con ~100
+  ///   clientes que no existen y una linea de ingresos que no es de nadie, sin
+  ///   forma de distinguirla de su negocio real.
+  /// - En los tests, `cita_repository_test.dart` asume que una base recien
+  ///   creada no tiene citas (`obtenerTodas()` vacio, `length == 2` despues de
+  ///   crear dos). Sembrarlas aqui rompe esas tres aserciones.
+  ///
+  /// Se activa a mano desde `main.dart`, y solo en modo debug. Ver la nota de
+  /// `SemillaCitasDemo`.
+  ///
+  /// El chequeo de vacio es la misma proteccion de las otras semillas: es una
+  /// operacion de desarrollo y la segunda llamada no debe duplicar el lote.
+  /// Si el taller ya tiene citas propias, no se inyecta nada y se devuelve 0,
+  /// porque un `INSERT` encima de data real es indistinguible de un bug.
+  static Future<int> sembrarCitasDemo({DateTime? referencia}) async {
+    final db = await instance.base;
+
+    final existentes = await db.query(
+      tablaCitas,
+      columns: <String>[colId],
+      limit: 1,
+    );
+    if (existentes.isNotEmpty) return 0;
+
+    // Los ids de `talleres` se LEEN de la base y no se suponen. Con tres
+    // talleres tiene toda la pinta de que el id es 1, 2, 3, y lo es, pero
+    // escribirlo a mano ata la semilla a un estado de la base que no depende de
+    // ella: el dia que se siembre un cuarto taller o se borre uno, las citas
+    // de demostracion apuntan a un taller equivocado sin que nada avise.
+    final filasTalleres = await db.query(
+      tablaTalleres,
+      columns: <String>[colId],
+      orderBy: colId,
+    );
+    final tallerIds = filasTalleres
+        .map((f) => (f[colId] as num).toInt())
+        .toList(growable: false);
+
+    final citas = SemillaCitasDemo.generar(
+      referencia: referencia ?? DateTime.now(),
+      tallerIds: tallerIds,
+    );
+
+    // En UNA transaccion: ~100 INSERT sueltos abren y cierran el statement uno por
+    // uno y se nota el arranque. Ademas, si algo falla a la mitad, la tabla
+    // queda con 60 citas y no con un lote coherente.
     await db.transaction((txn) async {
-      for (final entrada in _columnasV2.entries) {
-        await txn.execute('ALTER TABLE $tablaCitas ADD COLUMN ${entrada.key} ${entrada.value}');
+      for (final cita in citas) {
+        await txn.insert(tablaCitas, cita.toMap());
       }
     });
+
+    return citas.length;
   }
 
-  /// Migracion 2 -> 3. Reconstruye la tabla para retirar codigo_qr, que era
-  /// NOT NULL, y conservar todos los datos mientras agrega el total.
-  Future<void> _migrarAV3(Database db) async {
-    await db.transaction((txn) async {
-      const tablaNueva = 'citas_v3';
-      final definiciones = <String>[
-        '$colId INTEGER PRIMARY KEY AUTOINCREMENT',
-        '$colCliente TEXT NOT NULL',
-        '$colVehiculo TEXT NOT NULL',
-        ..._columnasV2.entries.map((e) => '${e.key} ${e.value}'),
-        '$colDescripcion TEXT NOT NULL DEFAULT \'\'',
-        '$colFechaCita TEXT NOT NULL',
-        '$colEstado TEXT NOT NULL',
-        '$colCreadoEn TEXT NOT NULL',
-        '$colTotal REAL NOT NULL DEFAULT 0',
-      ];
-      const columnasExistentes = [
-        colId,
-        colCliente,
-        colTelefono,
-        colVehiculo,
-        colMarca,
-        colModelo,
-        colAnio,
-        colPlaca,
-        colServicios,
-        colTecnico,
-        colDescripcion,
-        colFechaCita,
-        colEstado,
-        colCreadoEn,
-        colActualizadoEn,
-      ];
+  /// Borra las citas de demostracion y deja el taller como estaba.
+  ///
+  /// El reverso de [sembrarCitasDemo], para cuando ya sevio suficiente grafico
+  /// de mentira y hay que probar el Dashboard con la data real. Borra TODO lo
+  /// que hay en `citas`, no solo el lote demo: no hay forma de distinguir una
+  /// fila sembrada de una creada por el admin, y un WHERE que adivinase seria
+  /// peor que un borrado honesto.
+  ///
+  /// Por eso lleva una advertencia en el nombre y no se llama desde ningun
+  /// lugar de la app.
+  @visibleForTesting
+  static Future<void> limpiarCitasParaPruebas() async {
+    final db = await instance.base;
+    await db.delete(tablaCitas);
+  }
 
-      await txn.execute(
-        'CREATE TABLE $tablaNueva (${definiciones.join(', ')})',
-      );
-      await txn.execute(
-        'INSERT INTO $tablaNueva (${columnasExistentes.join(', ')}, $colTotal) '
-        'SELECT ${columnasExistentes.join(', ')}, 0 FROM $tablaCitas',
-      );
-      await txn.execute('DROP TABLE $tablaCitas');
-      await txn.execute('ALTER TABLE $tablaNueva RENAME TO $tablaCitas');
+  /// Migracion por pasos: 1 -> 2 agrega columnas a `citas`, 2 -> 3 agrega los
+  /// catalogos de Configuracion, 3 -> 4 agrega los talleres afiliados y el
+  /// vinculo `citas.taller_id`, 4 -> 5 reconstruye `citas` sin `codigo_qr` y con
+  /// `total`, 5 -> 6 agrega el indice de `fecha_cita`.
+  ///
+  /// Antes esto era `if (versionAnterior >= 2) return;`, que con una v3 nueva
+  /// impidia hacer exactamente lo mismo que hacia: al agregar pasos hay que
+  /// dejar de cortar el flujo y pasar a preguntar por cada version. Un `return`
+  /// temprano aqui es el bug clasico de las migraciones encadenadas.
+  ///
+  /// El orden de los pasos importa y no es solo por legibilidad: cada uno asume
+  /// el mundo que dejo el anterior. El paso 6 va ultimo porque el paso 5 borra
+  /// la tabla.
+  ///
+  /// Todo dentro de UNA transaccion: si algo falla, SQLite revierte el paquete
+  /// entero y la base queda como estaba. Migrar a medias es peor que no migrar.
+  Future<void> _migrar(Database db, int versionAnterior, int versionNueva) async {
+    if (versionAnterior >= _versionBase) return;
+
+    await db.transaction((txn) async {
+      if (versionAnterior < 2) {
+        for (final entrada in _columnasV2.entries) {
+          await txn.execute(
+            'ALTER TABLE $tablaCitas ADD COLUMN ${entrada.key} ${entrada.value}',
+          );
+        }
+      }
+
+      if (versionAnterior < 3) {
+        await _crearCatalogos(txn);
+        // Un dispositivo que ya tenia citas entra por aca y recibe el catalogo
+        // inicial: si no, el admin veria sus citas pero las tres tarjetas de
+        // Configuracion vacias en un taller que ya venia funcionando.
+        await _sembrarCatalogos(txn);
+      }
+
+      if (versionAnterior < 4) {
+        // Orden obligatorio: primero el `ALTER TABLE` de `citas`, despues la
+        // tabla `talleres`. Al reves, el indice de `taller_id` no tendria tabla
+        // a la que apuntar y el `CREATE INDEX` falla.
+        //
+        // `taller_id` se agrega con `ALTER TABLE` y NO va en `_crearEsquema` de
+        // las versiones viejas: por eso el paso es explicito aqui, en vez de
+        // meterse en el bucle de `_columnasV2`.
+        await txn.execute(
+          'ALTER TABLE $tablaCitas ADD COLUMN $_columnaTallerIdV4',
+        );
+        await _crearTalleres(txn);
+        await txn.execute(
+          'CREATE INDEX IF NOT EXISTS idx_citas_taller_id '
+          'ON $tablaCitas ($colTallerId)',
+        );
+        // Un dispositivo que ya venia usando la app entra por aca y recibe la
+        // red de afiliados: si no, su mapa abriria en blanco y pareceria que el
+        // mapa esta roto.
+        await _sembrarTalleres(txn);
+      }
+
+      if (versionAnterior < 5) {
+        // Eliminar índice de codigo_qr si existe y reconstruir tabla sin codigo_qr + total
+        await txn.execute('DROP INDEX IF EXISTS idx_citas_codigo_qr');
+
+        await txn.execute('''
+          CREATE TABLE citas_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cliente TEXT NOT NULL,
+            telefono TEXT NOT NULL DEFAULT '',
+            vehiculo TEXT NOT NULL,
+            marca TEXT NOT NULL DEFAULT '',
+            modelo TEXT NOT NULL DEFAULT '',
+            anio INTEGER NOT NULL DEFAULT 0,
+            placa TEXT NOT NULL DEFAULT '',
+            servicios TEXT NOT NULL DEFAULT '[]',
+            tecnico TEXT NOT NULL DEFAULT '',
+            descripcion TEXT NOT NULL DEFAULT '',
+            fecha_cita TEXT NOT NULL,
+            estado TEXT NOT NULL,
+            creado_en TEXT NOT NULL,
+            actualizado_en TEXT NOT NULL DEFAULT '',
+            taller_id INTEGER,
+            total INTEGER NOT NULL DEFAULT 0
+          )
+        ''');
+
+        await txn.execute('''
+          INSERT INTO citas_new (
+            id, cliente, telefono, vehiculo, marca, modelo, anio, placa,
+            servicios, tecnico, descripcion, fecha_cita, estado,
+            creado_en, actualizado_en, taller_id, total
+          )
+          SELECT
+            id,
+            cliente,
+            COALESCE(telefono, '') AS telefono,
+            vehiculo,
+            COALESCE(marca, '') AS marca,
+            COALESCE(modelo, '') AS modelo,
+            COALESCE(anio, 0) AS anio,
+            COALESCE(placa, '') AS placa,
+            COALESCE(servicios, '[]') AS servicios,
+            COALESCE(tecnico, '') AS tecnico,
+            COALESCE(descripcion, '') AS descripcion,
+            fecha_cita,
+            estado,
+            creado_en,
+            COALESCE(actualizado_en, '') AS actualizado_en,
+            taller_id,
+            0 AS total
+          FROM citas
+        ''');
+
+        await txn.execute('DROP TABLE citas');
+        await txn.execute('ALTER TABLE citas_new RENAME TO citas');
+        await txn.execute('CREATE INDEX IF NOT EXISTS idx_citas_taller_id ON citas (taller_id)');
+      }
+
+      if (versionAnterior < 6) {
+        // DESPUES del paso 5, y esto no es un detalle de orden sin importancia:
+        // el paso 5 reconstruye la tabla (DROP TABLE citas + RENAME) para
+        // quitar `codigo_qr`. Los indices pertenecen a la tabla, asi que un
+        // `CREATE INDEX` puesto antes del paso 5 se va con la tabla vieja y el
+        // dispositivo queda migrado a la v6 SIN indice. Un `IF NOT EXISTS` no
+        // salva: el nombre del indice desaparecio junto con el, asi que el
+        // `IF NOT EXISTS` lo crearia sin problema y nadie veria que el paso
+        // corrio en el momento equivocado. Solo el orden lo evita.
+        await txn.execute(
+          'CREATE INDEX IF NOT EXISTS $idxCitasFecha '
+          'ON $tablaCitas ($colFechaCita)',
+        );
+      }
     });
   }
 

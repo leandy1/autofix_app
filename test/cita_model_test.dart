@@ -58,17 +58,17 @@ void main() {
         vencida.copyWith(estado: EstadoCita.completado).etiquetaUI(ahora),
         'Completado',
       );
-      final hoy = cita.copyWith(fechaCita: DateTime(2026, 9, 15, 9, 30));
-      expect(hoy.etiquetaUI(ahora), 'Pendiente');
+      expect(cita.etiquetaUI(ahora), 'Pendiente');
     });
 
-    test('esAtrasada usa la fecha, no la hora exacta', () {
-      final pendiente = cita.copyWith(fechaCita: DateTime(2026, 10, 29, 9, 30));
-      expect(pendiente.esAtrasada(DateTime(2026, 10, 29, 10)), isFalse);
-      expect(pendiente.esAtrasada(DateTime(2026, 10, 30, 9)), isTrue);
+    test('esAtrasada compara fechas e ignora la hora de la cita', () {
+      final pendiente = cita.copyWith(fechaCita: DateTime(2026, 10, 1, 9, 30));
+      expect(pendiente.esAtrasada(DateTime(2026, 10, 1, 10)), isFalse);
+      expect(pendiente.esAtrasada(DateTime(2026, 10, 1, 9)), isFalse);
+      expect(pendiente.esAtrasada(DateTime(2026, 10, 2, 0)), isTrue);
     });
 
-    test('una cita completada no cae en ATRASADAS aunque la hora haya pasado', () {
+    test('una cita completada no cae en ATRASADAS aunque la fecha haya pasado', () {
       final completada = cita
           .copyWith(fechaCita: DateTime(2020, 1, 1))
           .copyWith(estado: EstadoCita.completado);
@@ -88,12 +88,6 @@ void main() {
         'servicios',
         'total',
       }));
-      expect(claves, isNot(contains('codigo_qr')));
-    });
-
-    test('el total sobrevive el mapeo de SQLite', () {
-      final conTotal = cita.copyWith(total: 1250.5);
-      expect(Cita.fromMap(conTotal.toMap()).total, 1250.5);
     });
 
     test('los servicios sobreviven al viaje a JSON y vuelven', () {

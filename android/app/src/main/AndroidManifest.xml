@@ -1,4 +1,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Necesaria para que connectivity_plus detecte los cambios de red -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+
+    <!-- INTERNET: descarga los tiles del mapa y el estilo de MapLibre.
+         CRÍTICO: antes este permiso solo estaba declarado en src/debug/ y
+         src/profile/, que es lo que usa `flutter run`. En un build release el
+         mapa salía en blanco sin dar ningún error. Por eso va en main/. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- Ubicación: para localizar al cliente y ordenar los talleres por cercanía -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+
     <application
         android:label="autofix"
         android:name="${applicationName}"
@@ -40,6 +53,20 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+
+        <!-- "Abrir en Maps": declaramos el esquema geo: para que Android 11+
+             (API 30) deje ver las apps que lo manejan. Sin esta entrada, la
+             visibilidad de paquetes hace que el sistema reporte que NADIE
+             entiende el intent, y `launchUrl` falla sin error visible.
+
+             OJO: esto NO agrega ninguna API de pago ni clave. El intent lo
+             resuelve Waze o Google Maps si estan instalados; si no hay ninguno,
+             Android lo abre en el navegador. El calculo de la ruta y el ETA
+             los hace esa app, no nosotros. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="geo"/>
         </intent>
     </queries>
 </manifest>

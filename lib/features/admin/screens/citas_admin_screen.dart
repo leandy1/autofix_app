@@ -10,6 +10,7 @@ import 'package:autofix/shared/theme/app_colors.dart';
 
 import 'dashboard_admin_screen.dart';
 import 'configuracion_admin_screen.dart';
+import 'impresoras_bluetooth_screen.dart';
 
 const Map<String, Color> kColorPorEstado = {
   'ATRASADAS': AppColors.atrasadas,
@@ -24,12 +25,23 @@ class CitaAdminCard extends StatelessWidget {
     required this.cita,
     this.onEdited,
     this.onDeleted,
+    this.onEstadoCambiado,
     super.key,
   });
 
   final CitaAdmin cita;
   final ValueChanged<CitaAdmin>? onEdited;
   final ValueChanged<int>? onDeleted;
+
+  /// Cambio de estado del desplegable.
+  ///
+  /// Va separado de [onEdited] a proposito. Un cambio de estado es un UPDATE
+  /// parcial: solo cambia `estado` y `actualizado_en`. Si viajara por
+  /// [onEdited], el admin reescribiria la fila completa, y con ella las
+  /// columnas que la pantalla no edita (`taller_id`, `creado_en`), que es
+  /// exactamente como una cita se desasociaba de su taller al mover el
+  /// desplegable.
+  final void Function(EstadoCitaAdmin nuevoEstado)? onEstadoCambiado;
 
   static String _estadoTexto(EstadoCitaAdmin estado) {
     switch (estado) {
@@ -63,6 +75,265 @@ class CitaAdminCard extends StatelessWidget {
 
   String _fechaFormateada() =>
       '${cita.fecha.day.toString().padLeft(2, '0')}/${cita.fecha.month.toString().padLeft(2, '0')}/${cita.fecha.year}';
+
+  void _mostrarRecibo(BuildContext context) {
+    Widget linea(String etiqueta, String valor, {bool destacado = false}) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                etiqueta,
+                style: TextStyle(
+                  color: destacado ? AppColors.headerNavy : AppColors.textGray,
+                  fontSize: destacado ? 14 : 12,
+                  fontWeight: destacado ? FontWeight.w800 : FontWeight.w400,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Flexible(
+              child: Text(
+                valor,
+                textAlign: TextAlign.end,
+                style: TextStyle(
+                  color: AppColors.headerNavy,
+                  fontSize: destacado ? 16 : 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 440,
+            maxHeight: MediaQuery.sizeOf(context).height * 0.88,
+          ),
+          child: Column(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: AppColors.orangePrimary,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.build_rounded,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          const Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'AutoFix',
+                                style: TextStyle(
+                                  color: AppColors.headerNavy,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              Text(
+                                'RECIBO DE SERVICIO',
+                                style: TextStyle(
+                                  color: AppColors.textGray,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.8,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.greenAccent.withValues(
+                              alpha: 0.12,
+                            ),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.check_circle,
+                                color: AppColors.greenAccent,
+                                size: 15,
+                              ),
+                              SizedBox(width: 6),
+                              Text(
+                                'SERVICIO COMPLETADO',
+                                style: TextStyle(
+                                  color: AppColors.greenAccent,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.4,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      const Divider(color: AppColors.inputBorder),
+                      linea(
+                        'Recibo',
+                        'REC-${cita.id.toString().padLeft(6, '0')}',
+                      ),
+                      linea(
+                        'Fecha',
+                        '${_fechaFormateada()} · ${cita.hora.format(context)}',
+                      ),
+                      const SizedBox(height: 14),
+                      const Text(
+                        'CLIENTE',
+                        style: TextStyle(
+                          color: AppColors.textGray,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      linea('Nombre', cita.cliente),
+                      linea('Teléfono', cita.telefono),
+                      const SizedBox(height: 14),
+                      const Text(
+                        'VEHÍCULO',
+                        style: TextStyle(
+                          color: AppColors.textGray,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      linea(
+                        'Vehículo',
+                        '${cita.marca} ${cita.modelo} ${cita.anio}'.trim(),
+                      ),
+                      linea('Placa', cita.placa),
+                      const SizedBox(height: 18),
+                      const Divider(color: AppColors.inputBorder),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'SERVICIO',
+                                style: TextStyle(
+                                  color: AppColors.textGray,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              'IMPORTE',
+                              style: TextStyle(
+                                color: AppColors.textGray,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (cita.servicios.isEmpty)
+                        linea('Servicios', 'Sin servicios registrados')
+                      else
+                        for (final servicio in cita.servicios)
+                          linea(servicio, 'RD\$ —'),
+                      const Divider(color: AppColors.inputBorder),
+                      linea(
+                        'TOTAL',
+                        'RD\$ ${cita.total.toStringAsFixed(0)}',
+                        destacado: true,
+                      ),
+                      const Divider(color: AppColors.inputBorder),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Gracias por confiar en AutoFix.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: AppColors.textGray,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const Divider(height: 1, color: AppColors.inputBorder),
+              Padding(
+                padding: const EdgeInsets.all(14),
+                child: Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(dialogContext),
+                      child: const Text('Cerrar'),
+                    ),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(dialogContext);
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const ImpresorasBluetoothScreen(),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.print_outlined, size: 17),
+                      label: const Text('Imprimir'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.headerNavy,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   Future<void> _editarCita(BuildContext context) async {
     await showDialog<void>(
@@ -364,6 +635,20 @@ class CitaAdminCard extends StatelessWidget {
                           _ => cita.estado,
                         };
 
+                        // 'Atrasadas' no es un estado: es una vista calculada
+                        // (fecha ya pasada) sobre citas pendientes. Por eso el
+                        // item viene deshabilitado y aqui nunca se persiste.
+                        if (nuevoEstadoEnum == EstadoCitaAdmin.atrasada) return;
+
+                        if (onEstadoCambiado != null) {
+                          onEstadoCambiado!(nuevoEstadoEnum);
+                          return;
+                        }
+
+                        // Sin handler de update parcial (la tarjeta se usa
+                        // suelta en tests o previews) se cae al guardado
+                        // completo, arrastrando ahora los campos de
+                        // auditoria para no perderlos en el camino.
                         onEdited?.call(
                           CitaAdmin(
                             id: cita.id,
@@ -380,6 +665,9 @@ class CitaAdminCard extends StatelessWidget {
                             descripcion: cita.descripcion,
                             tecnico: cita.tecnico,
                             total: cita.total,
+                            tallerId: cita.tallerId,
+                            creadoEn: cita.creadoEn,
+                            actualizadoEn: cita.actualizadoEn,
                           ),
                         );
                       },
@@ -446,33 +734,60 @@ class CitaAdminCard extends StatelessWidget {
           const Divider(height: 1, color: Color(0xFFE7EAF0)),
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: Text(
-                    'RD\$ ${cita.total.toStringAsFixed(0)}',
-                    style: TextStyle(
-                      color: AppColors.completado,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'RD\$ ${cita.total.toStringAsFixed(0)}',
+                        style: TextStyle(
+                          color: AppColors.completado,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    OutlinedButton(
+                      onPressed: () => _mostrarDetalle(context),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.headerNavy,
+                        side: const BorderSide(color: AppColors.inputBorder),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: const Text('Ver detalle'),
+                    ),
+                  ],
+                ),
+                if (cita.estado == EstadoCitaAdmin.completada) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _mostrarRecibo(context),
+                      icon: const Icon(Icons.receipt_long_outlined, size: 17),
+                      label: const Text('Imprimir recibo'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.greenAccent,
+                        side: const BorderSide(color: AppColors.greenAccent),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
                     ),
                   ),
-                ),
-                OutlinedButton(
-                  onPressed: () => _mostrarDetalle(context),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.headerNavy,
-                    side: const BorderSide(color: AppColors.inputBorder),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 10,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: const Text('Ver detalle'),
-                ),
+                ],
               ],
             ),
           ),
@@ -1125,7 +1440,14 @@ class _CitasScreenState extends State<CitasScreen> {
       descripcion: cita.descripcion,
       fechaCita: fechaCita,
       estado: estado,
-      total: cita.total,
+      // `Cita` de v5 guarda el total como `int`; `CitaAdmin` lo maneja como
+      // `double` para el formateo de moneda. La conversion va en el puente.
+      total: cita.total.round(),
+      // Sin esto el mapeo se perdia de ida y vuelta: la cita volvia a
+      // `base` sin taller y sin fecha de alta.
+      tallerId: cita.tallerId,
+      creadoEn: cita.creadoEn,
+      actualizadoEn: cita.actualizadoEn,
     );
   }
 
@@ -1165,13 +1487,34 @@ class _CitasScreenState extends State<CitasScreen> {
       estado: estado,
       descripcion: cita.descripcion,
       tecnico: cita.tecnico,
-      total: cita.total,
+      total: cita.total.toDouble(),
+      tallerId: cita.tallerId,
+      creadoEn: cita.creadoEn,
+      actualizadoEn: cita.actualizadoEn,
     );
   }
 
   Future<void> _guardarEdicion(CitaAdmin cita) async {
     final guardada = await _citasController.guardar(_aCitaPersistida(cita));
     if (!guardada && mounted) _mostrarErrorPersistencia();
+  }
+
+  /// Mueve la cita de estado sin reescribir el resto de la fila.
+  ///
+  /// 'Atrasadas' no se persiste: es una etiqueta derivada de la fecha, no un
+  /// estado guardado. Si el admin la eligiera, la cita quedaria con un estado
+  /// que ninguna consulta por estado reconoce.
+  Future<void> _cambiarEstadoCita(int id, EstadoCitaAdmin nuevo) async {
+    if (nuevo == EstadoCitaAdmin.atrasada) return;
+    final estado = switch (nuevo) {
+      EstadoCitaAdmin.pendiente => cita_data.EstadoCita.pendiente,
+      EstadoCitaAdmin.esperandoPieza => cita_data.EstadoCita.esperandoPieza,
+      EstadoCitaAdmin.enProceso => cita_data.EstadoCita.enProceso,
+      EstadoCitaAdmin.completada => cita_data.EstadoCita.completado,
+      EstadoCitaAdmin.atrasada => cita_data.EstadoCita.pendiente,
+    };
+    final cambiado = await _citasController.cambiarEstado(id, estado);
+    if (!cambiado && mounted) _mostrarErrorPersistencia();
   }
 
   Future<void> _eliminarCita(int id) async {
@@ -1209,16 +1552,26 @@ class _CitasScreenState extends State<CitasScreen> {
                 padding: const EdgeInsets.only(bottom: 12),
                 child: ListenableBuilder(
                   listenable: _citasController,
-                  builder: (context, _) => _buildEstadoAccordion(
-                    nombre: categoria,
-                    color: kColorPorEstado[categoria]!,
-                    expanded: _categoriaExpandida == categoria,
-                    onTap: () => setState(() {
-                      _categoriaExpandida = _categoriaExpandida == categoria
-                          ? null
-                          : categoria;
-                    }),
-                  ),
+                  builder: (context, _) {
+                    final citasPorEstado = _citasController.agruparPorEstado(
+                      _fechaSeleccionada,
+                    );
+                    if (categoria == 'ATRASADAS' &&
+                        (citasPorEstado[categoria]?.isEmpty ?? true)) {
+                      return const SizedBox.shrink();
+                    }
+
+                    return _buildEstadoAccordion(
+                      nombre: categoria,
+                      color: kColorPorEstado[categoria]!,
+                      expanded: _categoriaExpandida == categoria,
+                      onTap: () => setState(() {
+                        _categoriaExpandida = _categoriaExpandida == categoria
+                            ? null
+                            : categoria;
+                      }),
+                    );
+                  },
                 ),
               ),
           ],
@@ -1714,6 +2067,11 @@ class _CitasScreenState extends State<CitasScreen> {
                           cita: _citaParaTarjeta(cita),
                           onEdited: (citaActualizada) {
                             _guardarEdicion(citaActualizada);
+                          },
+                          onEstadoCambiado: (nuevoEstado) {
+                            final id = cita.id;
+                            if (id == null) return;
+                            _cambiarEstadoCita(id, nuevoEstado);
                           },
                           onDeleted: (id) {
                             _eliminarCita(id);

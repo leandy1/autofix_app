@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import '../../../core/data/base_repository.dart';
+import 'package:autofix/core/data/base_repository.dart';
 
 /// Estados que realmente se guardan.
 ///
@@ -51,6 +51,7 @@ class Cita implements EntidadPersistida {
     this.descripcion = '',
     required this.fechaCita,
     this.estado = EstadoCita.pendiente,
+    this.tallerId,
     this.creadoEn,
     this.actualizadoEn,
     this.total = 0,
@@ -71,12 +72,14 @@ class Cita implements EntidadPersistida {
   static const String _kDescripcion = 'descripcion';
   static const String _kFechaCita = 'fecha_cita';
   static const String _kEstado = 'estado';
+  static const String _kTallerId = 'taller_id';
   static const String _kCreadoEn = 'creado_en';
   static const String _kActualizadoEn = 'actualizado_en';
   static const String _kTotal = 'total';
 
   @override
   final int? id;
+
 
   final String cliente;
   final String telefono;
@@ -90,29 +93,35 @@ class Cita implements EntidadPersistida {
   final String descripcion;
   final DateTime fechaCita;
   final EstadoCita estado;
+
+  /// Id del taller AFILIADO donde se agenda la cita.
+  ///
+  /// `int?` y no `int` a proposito: las citas que ya existian antes de la v4 no
+  /// tienen taller, y las que crea el escaner QR todavia no lo_eligen. Nullable
+  /// significa "no sabemos todavia", que es distinto de "taller 0".
+  ///
+  /// Y es un id, NO el nombre del taller. Con el nombre no se puede responder
+  /// "dame las citas de Global Refriauto" de forma confiable, y dos filas con el
+  /// mismo nombre serian la misma cita a los ojos del sistema.
+  final int? tallerId;
+
   final DateTime? creadoEn;
-  final double total;
 
   @override
   final DateTime? actualizadoEn;
+  final int total;
 
-  /// La cita queda atrasada solo si la fecha calendario ya paso respecto al
-  /// dia que se esta consultando en la UI.
+  /// "La fecha ya paso y todavia no se completo". La hora de la cita no cambia
+  /// la clasificacion: una cita de hoy sigue vigente hasta el final del dia.
   ///
-  /// Importante: la misma cita no se marca como atrasada en su dia si estoy
-  /// revisando ese mismo dia; solo pasa a "ATRASADAS" cuando la fecha de la
-  /// cita es anterior al dia actual de la vista y no esta completada.
+  /// `ahora` va por parametro a proposito: leer el reloj adentro hace que dos
+  /// dispositivos clasifiquen la misma cita distinto, y en cuanto haya
+  /// sincronizacion eso ya no es una discrepancia visual sino conflicto de datos.
+  /// Quien arma la lista lo pasa una sola vez para toda la pasada.
   bool esAtrasada(DateTime ahora) {
-    if (estado == EstadoCita.completado) return false;
-
-    final fechaConsulta = DateTime(ahora.year, ahora.month, ahora.day);
-    final fechaCitaSinHora = DateTime(
-      fechaCita.year,
-      fechaCita.month,
-      fechaCita.day,
-    );
-
-    return fechaCitaSinHora.isBefore(fechaConsulta);
+    final fechaDia = DateTime(fechaCita.year, fechaCita.month, fechaCita.day);
+    final ahoraDia = DateTime(ahora.year, ahora.month, ahora.day);
+    return estado != EstadoCita.completado && fechaDia.isBefore(ahoraDia);
   }
 
   /// Llave exacta del mapa de colores de la UI. Va en mayusculas porque asi
@@ -134,9 +143,10 @@ class Cita implements EntidadPersistida {
     String? descripcion,
     DateTime? fechaCita,
     EstadoCita? estado,
+    int? tallerId,
     DateTime? creadoEn,
     DateTime? actualizadoEn,
-    double? total,
+    int? total,
   }) {
     return Cita(
       id: id ?? this.id,
@@ -152,6 +162,7 @@ class Cita implements EntidadPersistida {
       descripcion: descripcion ?? this.descripcion,
       fechaCita: fechaCita ?? this.fechaCita,
       estado: estado ?? this.estado,
+      tallerId: tallerId ?? this.tallerId,
       creadoEn: creadoEn ?? this.creadoEn,
       actualizadoEn: actualizadoEn ?? this.actualizadoEn,
       total: total ?? this.total,
@@ -175,8 +186,25 @@ class Cita implements EntidadPersistida {
       _kDescripcion: descripcion,
       _kFechaCita: fechaCita.toIso8601String(),
       _kEstado: estado.name,
-      _kCreadoEn: (creadoEn ?? DateTime.now()).toIso8601String(),
-      _kActualizadoEn: (actualizadoEn ?? DateTime.now()).toIso8601String(),
+      // `tallerId` va siempre en el mapa, incluso cuando es null: es lo que
+      // limpia la columna si se desasigna el taller. Omitirla en un UPDATE
+      // dejaria el id viejo pegado a la cita.
+      _kTallerId: tallerId,
+      // `creado_en` se ESCRIBE UNA SOLA VEZ, al crear. Si el UPDATE lo mandara
+      // siempre, cada guardado reescribiria la fecha de creacion y se perderia
+      // la trazabilidad de cuando se agendo la cita.
+      //
+      // Por eso la columna solo entra en el mapa si la cita no tiene id (alta)
+      // o si el modelo conoce el valor original. En cualquier otro caso se
+      // omite del mapa, y `db.update` deja intacta la columna que ya esta en la
+      // base. Antes esto decia `(creadoEn ?? DateTime.now())`, que en un UPDATE
+      // sin `creadoEn` plantaba la hora del guardado como si fuera la de alta.
+      if (id == null || creadoEn != null)
+        _kCreadoEn: (creadoEn ?? DateTime.now()).toIso8601String(),
+      // `actualizado_en` es lo contrario por definicion: se refresca en cada
+      // escritura, porque de eso sirve. Se sella con el reloj en vez de copiar
+      // el valor que venga, asi un UPDATE cuenta como modificacion real.
+      _kActualizadoEn: DateTime.now().toIso8601String(),
       _kTotal: total,
     };
   }
@@ -194,11 +222,20 @@ class Cita implements EntidadPersistida {
       servicios: _leerServicios(map[_kServicios]),
       tecnico: (map[_kTecnico] as String?) ?? '',
       descripcion: (map[_kDescripcion] as String?) ?? '',
-      fechaCita: DateTime.parse(map[_kFechaCita]! as String),
-      estado: EstadoCita.desdeNombre(map[_kEstado]! as String),
-      creadoEn: DateTime.tryParse(map[_kCreadoEn]! as String),
-      actualizadoEn: DateTime.tryParse(map[_kActualizadoEn] as String? ?? ''),
-      total: (map[_kTotal] as num?)?.toDouble() ?? 0,
+      fechaCita: DateTime.parse(map[_kFechaCita] as String),
+      estado: EstadoCita.desdeNombre(map[_kEstado] as String),
+      tallerId: (map[_kTallerId] as num?)?.toInt(),
+      creadoEn: () {
+        final v = map[_kCreadoEn];
+        if (v == null || (v is String && v.isEmpty)) return null;
+        return DateTime.tryParse(v as String);
+      }(),
+      actualizadoEn: () {
+        final v = map[_kActualizadoEn];
+        if (v == null || (v is String && v.isEmpty)) return null;
+        return DateTime.tryParse(v as String);
+      }(),
+      total: (map[_kTotal] as int?) ?? 0,
     );
   }
 

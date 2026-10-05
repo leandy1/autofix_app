@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 
-import '../data/cita_repository.dart';
-import '../models/cita.dart';
+import 'package:autofix/features/citas/data/cita_repository.dart';
+import 'package:autofix/features/citas/models/cita.dart';
 
 /// Estado y logica de la pantalla de citas.
 ///
@@ -97,31 +97,31 @@ class CitasController extends ChangeNotifier {
     return true;
   }
 
+
+
   /// Citas del dia agrupadas por la etiqueta que consume la UI.
+  ///
+  /// Al consultar el dia actual, incluye en ATRASADAS las citas pendientes de
+  /// cualquier fecha anterior, para que el atraso se gestione desde hoy.
   ///
   /// El `ahora` se fija UNA vez por llamada: si cada fila calculara su propia
   /// hora, dos citas del mismo segundo podrian caer en grupos distintos y el
   /// conteo del acordeon no cerraria con la lista.
   Map<String, List<Cita>> agruparPorEstado(DateTime fecha, {DateTime? ahora}) {
-    final referencia = fecha;
+    final momento = ahora ?? DateTime.now();
     final dia = _claveDia(fecha);
+    final hoy = _claveDia(momento);
     final mapa = <String, List<Cita>>{
       for (final etiqueta in etiquetas) etiqueta: <Cita>[],
     };
 
     for (final cita in _citas) {
-      final claveCita = _claveDia(cita.fechaCita);
-      final esFechaElegida = claveCita == dia;
-      final esAtrasada = cita.esAtrasada(referencia) && !esFechaElegida;
-
-      if (esFechaElegida) {
-        mapa[cita.etiquetaUI(referencia)]!.add(cita);
+      if (dia == hoy && cita.esAtrasada(momento)) {
+        mapa[Cita.etiquetaAtrasadas]!.add(cita);
         continue;
       }
-
-      if (esAtrasada) {
-        mapa[Cita.etiquetaAtrasadas]!.add(cita);
-      }
+      if (_claveDia(cita.fechaCita) != dia) continue;
+      mapa[cita.etiquetaUI(momento)]!.add(cita);
     }
     return mapa;
   }
