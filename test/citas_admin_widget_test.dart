@@ -177,6 +177,9 @@ void main() {
   testWidgets('filtra las citas por texto de búsqueda y limpia los filtros', (
     tester,
   ) async {
+    await tester.binding.setSurfaceSize(const Size(800, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
     await tester.pumpWidget(
       const MaterialApp(home: Scaffold(body: CitasScreen())),
     );
@@ -186,6 +189,11 @@ void main() {
     await tester.pump();
 
     // Abrir filtros avanzados
+    await tester.scrollUntilVisible(
+      find.text('Filtros avanzados'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.tap(find.text('Filtros avanzados'));
     await tester.pumpAndSettle();
 
