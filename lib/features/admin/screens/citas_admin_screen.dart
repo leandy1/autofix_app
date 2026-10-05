@@ -2086,620 +2086,98 @@ class _CitasScreenState extends State<CitasScreen> {
     );
   }
 
-  Widget _tituloSeccionModal(String texto) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
-        texto,
-        style: const TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          color: AppColors.textGray,
-          letterSpacing: 0.5,
-        ),
-      ),
-    );
+  bool _esMismoDia(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  String _formatearFechaCorta(DateTime fecha) {
+    return '${fecha.day.toString().padLeft(2, '0')}/${fecha.month.toString().padLeft(2, '0')}/${fecha.year}';
+  }
+
+  String _formatearFechaLarga(DateTime fecha) {
+    const meses = [
+      'enero',
+      'febrero',
+      'marzo',
+      'abril',
+      'mayo',
+      'junio',
+      'julio',
+      'agosto',
+      'septiembre',
+      'octubre',
+      'noviembre',
+      'diciembre',
+    ];
+    return '${fecha.day} de ${meses[fecha.month - 1]}';
   }
 
   Future<void> _abrirFormularioNuevaCita() async {
-    final clienteController = TextEditingController();
-    final telefonoController = TextEditingController();
-    final modeloController = TextEditingController();
-    final anioController = TextEditingController();
-    final placaController = TextEditingController();
-    final descripcionController = TextEditingController();
-    String? marcaSeleccionada;
-    String? tecnicoSeleccionado;
-    String estadoSeleccionado = 'Pendiente';
-    DateTime fecha = DateTime.now();
-    TimeOfDay? hora;
-    final Set<String> serviciosMarcados = {};
-    final formKey = GlobalKey<FormState>();
-    bool guardando = false;
-    bool intentoGuardar = false;
-
     await showDialog<void>(
       context: context,
       useRootNavigator: true,
       builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            final hoy = DateTime.now();
-            final fechaCita = DateTime(
-              fecha.year,
-              fecha.month,
-              fecha.day,
-              hora?.hour ?? 0,
-              hora?.minute ?? 0,
-            );
-            final fechaAnterior = DateTime(
-              fecha.year,
-              fecha.month,
-              fecha.day,
-            ).isBefore(DateTime(hoy.year, hoy.month, hoy.day));
-            final horaAnterior =
-                hora != null && fechaCita.isBefore(hoy) && !fechaAnterior;
-            return Dialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(
-                  maxWidth: 460,
-                  maxHeight: 680,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(18),
-                      decoration: const BoxDecoration(
-                        color: AppColors.headerNavy,
-                        borderRadius: BorderRadius.vertical(
-                          top: Radius.circular(14),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Nueva Cita',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          InkWell(
-                            onTap: () => Navigator.of(context).pop(),
-                            child: const Icon(Icons.close, color: Colors.white),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Flexible(
-                      child: Material(
-                        color: AppColors.background,
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.all(18),
-
-                          child: Form(
-                            key: formKey,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _tituloSeccionModal('DATOS DEL CLIENTE'),
-                                TextFormField(
-                                  controller: clienteController,
-                                  textCapitalization: TextCapitalization.words,
-                                  decoration: _decoracionCampo(
-                                    'Nombre completo',
-                                  ).copyWith(hintText: 'Nombre del cliente'),
-                                  validator: (valor) {
-                                    final nombre = valor?.trim() ?? '';
-                                    if (nombre.isEmpty) {
-                                      return 'Ingresa el nombre del cliente.';
-                                    }
-                                    if (nombre.length < 3) {
-                                      return 'El nombre debe tener al menos 3 caracteres.';
-                                    }
-                                    if (RegExp(r'\d').hasMatch(nombre)) {
-                                      return 'El nombre no puede contener números.';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                                const SizedBox(height: 10),
-                                TextFormField(
-                                  controller: telefonoController,
-                                  keyboardType: TextInputType.phone,
-                                  decoration: _decoracionCampo('Teléfono')
-                                      .copyWith(hintText: '809-000-0000'),
-                                  validator: (valor) {
-                                    final telefono = valor?.trim() ?? '';
-                                    if (telefono.isEmpty) {
-                                      return 'Ingresa el teléfono del cliente.';
-                                    }
-                                    if (!RegExp(r'^[+\d\s().-]+$')
-                                        .hasMatch(telefono)) {
-                                      return 'El teléfono contiene caracteres no válidos.';
-                                    }
-                                    final digitos = telefono.replaceAll(
-                                      RegExp(r'\D'),
-                                      '',
-                                    );
-                                    if (digitos.length < 10 ||
-                                        digitos.length > 15) {
-                                      return 'Ingresa un teléfono válido (10 a 15 dígitos).';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                                const SizedBox(height: 16),
-                                _tituloSeccionModal('DATOS DEL VEHÍCULO'),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: DropdownButtonFormField<String>(
-                                        initialValue: marcaSeleccionada,
-                                        decoration: _decoracionCampo('Marca'),
-                                        validator: (valor) => valor == null
-                                            ? 'Selecciona la marca.'
-                                            : null,
-                                        hint: const Text(
-                                          'Seleccionar',
-                                          style: TextStyle(fontSize: 13),
-                                        ),
-                                        items: demoMarcasVehiculo
-                                            .map(
-                                              (m) => DropdownMenuItem(
-                                                value: m,
-                                                child: Text(
-                                                  m,
-                                                  style: const TextStyle(
-                                                    fontSize: 13,
-                                                  ),
-                                                ),
-                                              ),
-                                            )
-                                            .toList(),
-                                        onChanged: (valor) => setDialogState(
-                                          () => marcaSeleccionada = valor,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: TextFormField(
-                                        controller: modeloController,
-                                        textCapitalization:
-                                            TextCapitalization.words,
-                                        decoration: _decoracionCampo('Modelo')
-                                            .copyWith(hintText: 'Ej: Corolla'),
-                                        validator: (valor) {
-                                          if (valor?.trim().isEmpty ?? true) {
-                                            return 'Ingresa el modelo.';
-                                          }
-                                          return null;
-                                        },
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 10),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: TextFormField(
-                                        controller: anioController,
-                                        keyboardType: TextInputType.number,
-                                        decoration: _decoracionCampo('Año')
-                                            .copyWith(hintText: '2020'),
-                                        validator: (valor) {
-                                          final anio = int.tryParse(
-                                            valor?.trim() ?? '',
-                                          );
-                                          final anioActual =
-                                              DateTime.now().year;
-                                          if (anio == null) {
-                                            return 'Ingresa un año válido.';
-                                          }
-                                          if (anio < 1900 ||
-                                              anio > anioActual + 1) {
-                                            return 'El año debe estar entre 1900 y ${anioActual + 1}.';
-                                          }
-                                          return null;
-                                        },
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: TextFormField(
-                                        controller: placaController,
-                                        decoration: _decoracionCampo('Placa')
-                                            .copyWith(hintText: 'A123456'),
-                                        textCapitalization:
-                                            TextCapitalization.characters,
-                                        validator: (valor) {
-                                          final placa = valor?.trim() ?? '';
-                                          if (placa.isEmpty) {
-                                            return 'Ingresa la placa.';
-                                          }
-                                          if (!RegExp(r'^[A-Za-z0-9-]{4,10}$')
-                                              .hasMatch(placa)) {
-                                            return 'Usa de 4 a 10 letras, números o guiones.';
-                                          }
-                                          return null;
-                                        },
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 16),
-                                _tituloSeccionModal('SERVICIOS'),
-                                const Text(
-                                  'Seleccionar servicios',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: AppColors.textGray,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Container(
-                                  key: const ValueKey('servicios-cita'),
-                                  decoration: BoxDecoration(
-                                    border: Border.all(
-                                      color: AppColors.inputBorder,
-                                    ),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Column(
-                                    children: [
-                                      Container(
-                                        width: double.infinity,
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 10,
-                                          vertical: 8,
-                                        ),
-                                        color: const Color(0xFFF3F5F8),
-                                        child: const Text(
-                                          'TIPOS DE SERVICIO',
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w700,
-                                            color: AppColors.textGray,
-                                          ),
-                                        ),
-                                      ),
-                                      ...demoServiciosAdmin.map(
-                                        (servicio) => CheckboxListTile(
-                                          dense: true,
-                                          controlAffinity:
-                                              ListTileControlAffinity.leading,
-                                          value: serviciosMarcados.contains(
-                                            servicio.nombre,
-                                          ),
-                                          onChanged: (checked) {
-                                            setDialogState(() {
-                                              if (checked == true) {
-                                                serviciosMarcados.add(
-                                                  servicio.nombre,
-                                                );
-                                              } else {
-                                                serviciosMarcados.remove(
-                                                  servicio.nombre,
-                                                );
-                                              }
-                                            });
-                                          },
-                                          title: Text(
-                                            '${servicio.nombre} · ${servicio.precio}',
-                                            style: const TextStyle(
-                                              fontSize: 13,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                if (intentoGuardar &&
-                                    serviciosMarcados.isEmpty) ...[
-                                  const SizedBox(height: 6),
-                                  const Text(
-                                    'Selecciona al menos un servicio.',
-                                    style: TextStyle(
-                                      color: Color(0xFFB3261E),
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                                const SizedBox(height: 16),
-                                _tituloSeccionModal('ASIGNACIÓN'),
-                                DropdownButtonFormField<String>(
-                                  initialValue: tecnicoSeleccionado,
-                                  decoration: _decoracionCampo('Técnico'),
-                                  validator: (valor) => valor == null
-                                      ? 'Selecciona un técnico.'
-                                      : null,
-                                  hint: const Text(
-                                    'Seleccionar técnico',
-                                    style: TextStyle(fontSize: 13),
-                                  ),
-                                  items: demoTecnicosAdmin
-                                      .map(
-                                        (t) => DropdownMenuItem(
-                                          value: t,
-                                          child: Text(
-                                            t,
-                                            style: const TextStyle(
-                                              fontSize: 13,
-                                            ),
-                                          ),
-                                        ),
-                                      )
-                                      .toList(),
-                                  onChanged: (valor) => setDialogState(
-                                    () => tecnicoSeleccionado = valor,
-                                  ),
-                                ),
-                                const SizedBox(height: 10),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: InkWell(
-                                        onTap: () async {
-                                          final nuevaFecha =
-                                              await showDatePicker(
-                                                context: context,
-                                                initialDate: fecha,
-                                                firstDate: DateTime(
-                                                  hoy.year,
-                                                  hoy.month,
-                                                  hoy.day,
-                                                ),
-                                                lastDate: DateTime(2100),
-                                              );
-                                          if (nuevaFecha != null) {
-                                            setDialogState(
-                                              () => fecha = nuevaFecha,
-                                            );
-                                          }
-                                        },
-                                        child: InputDecorator(
-                                          decoration: _decoracionCampo('Fecha')
-                                              .copyWith(
-                                                errorText:
-                                                    intentoGuardar &&
-                                                        fechaAnterior
-                                                    ? 'La fecha no puede ser anterior a hoy.'
-                                                    : null,
-                                              ),
-                                          child: Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              Text(
-                                                _formatearFechaCorta(fecha),
-                                                style: const TextStyle(
-                                                  fontSize: 13,
-                                                ),
-                                              ),
-                                              const Icon(
-                                                Icons.calendar_today_outlined,
-                                                size: 16,
-                                                color: AppColors.textGray,
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: InkWell(
-                                        onTap: () async {
-                                          final nuevaHora =
-                                              await showTimePicker(
-                                                context: context,
-                                                initialTime:
-                                                    hora ?? TimeOfDay.now(),
-                                              );
-                                          if (nuevaHora != null) {
-                                            setDialogState(
-                                              () => hora = nuevaHora,
-                                            );
-                                          }
-                                        },
-                                        child: InputDecorator(
-                                          decoration: _decoracionCampo('Hora')
-                                              .copyWith(
-                                                errorText: intentoGuardar
-                                                    ? hora == null
-                                                          ? 'Selecciona la hora.'
-                                                          : horaAnterior
-                                                          ? 'La hora debe ser futura.'
-                                                          : null
-                                                    : null,
-                                              ),
-                                          child: Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              Text(
-                                                hora == null
-                                                    ? '--:--'
-                                                    : hora!.format(context),
-                                                style: const TextStyle(
-                                                  fontSize: 13,
-                                                ),
-                                              ),
-                                              const Icon(
-                                                Icons.access_time,
-                                                size: 16,
-                                                color: AppColors.textGray,
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 10),
-                                DropdownButtonFormField<String>(
-                                  initialValue: estadoSeleccionado,
-                                  decoration: _decoracionCampo('Estado'),
-                                  items: demoEstadosAdmin
-                                      .map(
-                                        (e) => DropdownMenuItem(
-                                          value: e,
-                                          child: Text(
-                                            e,
-                                            style: const TextStyle(
-                                              fontSize: 13,
-                                            ),
-                                          ),
-                                        ),
-                                      )
-                                      .toList(),
-                                  onChanged: (valor) => setDialogState(
-                                    () => estadoSeleccionado =
-                                        valor ?? estadoSeleccionado,
-                                  ),
-                                ),
-                                const SizedBox(height: 10),
-                                TextFormField(
-                                  controller: descripcionController,
-                                  maxLines: 3,
-                                  decoration: _decoracionCampo('Descripción')
-                                      .copyWith(
-                                        hintText: 'Notas adicionales sobre la cita...',
-                                      ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    Container(
-                      width: double.infinity,
-                      color: AppColors.headerNavy,
-                      child: Padding(
-                        padding: const EdgeInsets.all(18),
-                        child: SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            onPressed: guardando
-                                ? null
-                                : () async {
-                                    setDialogState(() => intentoGuardar = true);
-                                    final formularioValido =
-                                        formKey.currentState?.validate() ??
-                                        false;
-                                    final fechaValida =
-                                        !fechaAnterior &&
-                                        hora != null &&
-                                        !horaAnterior;
-                                    final serviciosValidos =
-                                        serviciosMarcados.isNotEmpty;
-                                    if (!formularioValido ||
-                                        !fechaValida ||
-                                        !serviciosValidos) {
-                                      return;
-                                    }
-
-                                    final estado = switch (estadoSeleccionado) {
-                                      'Esperando Pieza' =>
-                                        cita_data.EstadoCita.esperandoPieza,
-                                      'En proceso' =>
-                                        cita_data.EstadoCita.enProceso,
-                                      'Completado' =>
-                                        cita_data.EstadoCita.completado,
-                                      _ => cita_data.EstadoCita.pendiente,
-                                    };
-                                    final anio = anioController.text.trim();
-                                    final cita = cita_data.Cita(
-                                      cliente: clienteController.text.trim(),
-                                      telefono: telefonoController.text.trim(),
-                                      vehiculo: _vehiculoPersistible(
-                                        marca: marcaSeleccionada!,
-                                        modelo: modeloController.text,
-                                        anio: anio,
-                                        placa: placaController.text,
-                                      ),
-                                      marca: marcaSeleccionada!,
-                                      modelo: modeloController.text.trim(),
-                                      anio: int.tryParse(anio) ?? 0,
-                                      placa: placaController.text.trim(),
-                                      servicios: serviciosMarcados.toList(),
-                                      fechaCita: DateTime(
-                                        fecha.year,
-                                        fecha.month,
-                                        fecha.day,
-                                        hora!.hour,
-                                        hora!.minute,
-                                      ),
-                                      estado: estado,
-                                      descripcion: descripcionController.text
-                                          .trim(),
-                                      tecnico: tecnicoSeleccionado ?? '',
-                                      total: 0,
-                                    );
-
-                                    setDialogState(() => guardando = true);
-                                    final guardada = await _citasController
-                                        .guardar(cita);
-                                    if (!context.mounted) return;
-                                    if (!guardada) {
-                                      setDialogState(() => guardando = false);
-                                      _mostrarErrorPersistencia();
-                                      return;
-                                    }
-                                    Navigator.of(context).pop();
-                                  },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.orangePrimary,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                            ),
-                            child: guardando
-                                ? const SizedBox.square(
-                                    dimension: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : const Text(
-                                    'Guardar Cita',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
+        return _CrearCitaDialog(
+          onSaved: (cita) async {
+            final guardada = await _citasController.guardar(cita);
+            if (!mounted) return guardada;
+            if (!guardada) {
+              _mostrarErrorPersistencia();
+            }
+            return guardada;
           },
         );
       },
     );
-    clienteController.dispose();
-    telefonoController.dispose();
-    modeloController.dispose();
-    anioController.dispose();
-    placaController.dispose();
-    descripcionController.dispose();
+  }
+}
+
+class _CrearCitaDialog extends StatefulWidget {
+  const _CrearCitaDialog({required this.onSaved});
+
+  final Future<bool> Function(cita_data.Cita cita) onSaved;
+
+  @override
+  State<_CrearCitaDialog> createState() => _CrearCitaDialogState();
+}
+
+class _CrearCitaDialogState extends State<_CrearCitaDialog> {
+  late final TextEditingController _clienteController;
+  late final TextEditingController _telefonoController;
+  late final TextEditingController _modeloController;
+  late final TextEditingController _anioController;
+  late final TextEditingController _placaController;
+  late final TextEditingController _descripcionController;
+
+  String? _marcaSeleccionada;
+  String? _tecnicoSeleccionado;
+  String _estadoSeleccionado = 'Pendiente';
+  DateTime _fecha = DateTime.now();
+  TimeOfDay? _hora;
+  final Set<String> _serviciosMarcados = {};
+  final _formKey = GlobalKey<FormState>();
+  bool _guardando = false;
+  bool _intentoGuardar = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _clienteController = TextEditingController();
+    _telefonoController = TextEditingController();
+    _modeloController = TextEditingController();
+    _anioController = TextEditingController();
+    _placaController = TextEditingController();
+    _descripcionController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _clienteController.dispose();
+    _telefonoController.dispose();
+    _modeloController.dispose();
+    _anioController.dispose();
+    _placaController.dispose();
+    _descripcionController.dispose();
+    super.dispose();
   }
 
   InputDecoration _decoracionCampo(String label) {
@@ -2726,28 +2204,603 @@ class _CitasScreenState extends State<CitasScreen> {
     );
   }
 
-  bool _esMismoDia(DateTime a, DateTime b) =>
-      a.year == b.year && a.month == b.month && a.day == b.day;
-
   String _formatearFechaCorta(DateTime fecha) {
     return '${fecha.day.toString().padLeft(2, '0')}/${fecha.month.toString().padLeft(2, '0')}/${fecha.year}';
   }
 
-  String _formatearFechaLarga(DateTime fecha) {
-    const meses = [
-      'enero',
-      'febrero',
-      'marzo',
-      'abril',
-      'mayo',
-      'junio',
-      'julio',
-      'agosto',
-      'septiembre',
-      'octubre',
-      'noviembre',
-      'diciembre',
-    ];
-    return '${fecha.day} de ${meses[fecha.month - 1]}';
+  String _vehiculoPersistible({
+    required String marca,
+    required String modelo,
+    required String anio,
+    required String placa,
+  }) {
+    final detalleAnio = anio.trim().isEmpty ? '' : ' (${anio.trim()})';
+    final detallePlaca = placa.trim().isEmpty ? '' : ' · ${placa.trim()}';
+    return '${marca.trim()} ${modelo.trim()}$detalleAnio$detallePlaca'.trim();
+  }
+
+  Widget _tituloSeccionModal(String texto) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        texto,
+        style: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: AppColors.textGray,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hoy = DateTime.now();
+    final fechaCita = DateTime(
+      _fecha.year,
+      _fecha.month,
+      _fecha.day,
+      _hora?.hour ?? 0,
+      _hora?.minute ?? 0,
+    );
+    final fechaAnterior = DateTime(
+      _fecha.year,
+      _fecha.month,
+      _fecha.day,
+    ).isBefore(DateTime(hoy.year, hoy.month, hoy.day));
+    final horaAnterior =
+        _hora != null && fechaCita.isBefore(hoy) && !fechaAnterior;
+
+    return Dialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          maxWidth: 460,
+          maxHeight: 680,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(18),
+              decoration: const BoxDecoration(
+                color: AppColors.headerNavy,
+                borderRadius: BorderRadius.vertical(
+                  top: Radius.circular(14),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Nueva Cita',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () {
+                      Navigator.of(context).pop();
+                    },
+                    child: const Icon(Icons.close, color: Colors.white),
+                  ),
+                ],
+              ),
+            ),
+            Flexible(
+              child: Material(
+                color: AppColors.background,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(18),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _tituloSeccionModal('DATOS DEL CLIENTE'),
+                        TextFormField(
+                          controller: _clienteController,
+                          textCapitalization: TextCapitalization.words,
+                          decoration: _decoracionCampo(
+                            'Nombre completo',
+                          ).copyWith(hintText: 'Nombre del cliente'),
+                          validator: (valor) {
+                            final nombre = valor?.trim() ?? '';
+                            if (nombre.isEmpty) {
+                              return 'Ingresa el nombre del cliente.';
+                            }
+                            if (nombre.length < 3) {
+                              return 'El nombre debe tener al menos 3 caracteres.';
+                            }
+                            if (RegExp(r'\d').hasMatch(nombre)) {
+                              return 'El nombre no puede contener números.';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 10),
+                        TextFormField(
+                          controller: _telefonoController,
+                          keyboardType: TextInputType.phone,
+                          decoration: _decoracionCampo('Teléfono')
+                              .copyWith(hintText: '809-000-0000'),
+                          validator: (valor) {
+                            final telefono = valor?.trim() ?? '';
+                            if (telefono.isEmpty) {
+                              return 'Ingresa el teléfono del cliente.';
+                            }
+                            if (!RegExp(r'^[+\d\s().-]+$')
+                                .hasMatch(telefono)) {
+                              return 'El teléfono contiene caracteres no válidos.';
+                            }
+                            final digitos = telefono.replaceAll(
+                              RegExp(r'\D'),
+                              '',
+                            );
+                            if (digitos.length < 10 ||
+                                digitos.length > 15) {
+                              return 'Ingresa un teléfono válido (10 a 15 dígitos).';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        _tituloSeccionModal('DATOS DEL VEHÍCULO'),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: DropdownButtonFormField<String>(
+                                initialValue: _marcaSeleccionada,
+                                decoration: _decoracionCampo('Marca'),
+                                validator: (valor) => valor == null
+                                    ? 'Selecciona la marca.'
+                                    : null,
+                                hint: const Text(
+                                  'Seleccionar',
+                                  style: TextStyle(fontSize: 13),
+                                ),
+                                items: demoMarcasVehiculo
+                                    .map(
+                                      (m) => DropdownMenuItem(
+                                        value: m,
+                                        child: Text(
+                                          m,
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (valor) => setState(
+                                  () => _marcaSeleccionada = valor,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: TextFormField(
+                                controller: _modeloController,
+                                textCapitalization:
+                                    TextCapitalization.words,
+                                decoration: _decoracionCampo('Modelo')
+                                    .copyWith(hintText: 'Ej: Corolla'),
+                                validator: (valor) {
+                                  if (valor?.trim().isEmpty ?? true) {
+                                    return 'Ingresa el modelo.';
+                                  }
+                                  return null;
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextFormField(
+                                controller: _anioController,
+                                keyboardType: TextInputType.number,
+                                decoration: _decoracionCampo('Año')
+                                    .copyWith(hintText: '2020'),
+                                validator: (valor) {
+                                  final anio = int.tryParse(
+                                    valor?.trim() ?? '',
+                                  );
+                                  final anioActual =
+                                      DateTime.now().year;
+                                  if (anio == null) {
+                                    return 'Ingresa un año válido.';
+                                  }
+                                  if (anio < 1900 ||
+                                      anio > anioActual + 1) {
+                                    return 'El año debe estar entre 1900 y ${anioActual + 1}.';
+                                  }
+                                  return null;
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: TextFormField(
+                                controller: _placaController,
+                                decoration: _decoracionCampo('Placa')
+                                    .copyWith(hintText: 'A123456'),
+                                textCapitalization:
+                                    TextCapitalization.characters,
+                                validator: (valor) {
+                                  final placa = valor?.trim() ?? '';
+                                  if (placa.isEmpty) {
+                                    return 'Ingresa la placa.';
+                                  }
+                                  if (!RegExp(r'^[A-Za-z0-9-]{4,10}$')
+                                      .hasMatch(placa)) {
+                                    return 'Usa de 4 a 10 letras, números o guiones.';
+                                  }
+                                  return null;
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        _tituloSeccionModal('SERVICIOS'),
+                        const Text(
+                          'Seleccionar servicios',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textGray,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Container(
+                          key: const ValueKey('servicios-cita'),
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: AppColors.inputBorder,
+                            ),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Column(
+                            children: [
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 8,
+                                ),
+                                color: const Color(0xFFF3F5F8),
+                                child: const Text(
+                                  'TIPOS DE SERVICIO',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.textGray,
+                                  ),
+                                ),
+                              ),
+                              ...demoServiciosAdmin.map(
+                                (servicio) => CheckboxListTile(
+                                  dense: true,
+                                  controlAffinity:
+                                      ListTileControlAffinity.leading,
+                                  value: _serviciosMarcados.contains(
+                                    servicio.nombre,
+                                  ),
+                                  onChanged: (checked) {
+                                    setState(() {
+                                      if (checked == true) {
+                                        _serviciosMarcados.add(
+                                          servicio.nombre,
+                                        );
+                                      } else {
+                                        _serviciosMarcados.remove(
+                                          servicio.nombre,
+                                        );
+                                      }
+                                    });
+                                  },
+                                  title: Text(
+                                    '${servicio.nombre} · ${servicio.precio}',
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (_intentoGuardar &&
+                            _serviciosMarcados.isEmpty) ...[
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Selecciona al menos un servicio.',
+                            style: TextStyle(
+                              color: Color(0xFFB3261E),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 16),
+                        _tituloSeccionModal('ASIGNACIÓN'),
+                        DropdownButtonFormField<String>(
+                          initialValue: _tecnicoSeleccionado,
+                          decoration: _decoracionCampo('Técnico'),
+                          validator: (valor) => valor == null
+                              ? 'Selecciona un técnico.'
+                              : null,
+                          hint: const Text(
+                            'Seleccionar técnico',
+                            style: TextStyle(fontSize: 13),
+                          ),
+                          items: demoTecnicosAdmin
+                              .map(
+                                (t) => DropdownMenuItem(
+                                  value: t,
+                                  child: Text(
+                                    t,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (valor) => setState(
+                            () => _tecnicoSeleccionado = valor,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: InkWell(
+                                onTap: () async {
+                                  final nuevaFecha =
+                                      await showDatePicker(
+                                        context: context,
+                                        initialDate: _fecha,
+                                        firstDate: DateTime(
+                                          hoy.year,
+                                          hoy.month,
+                                          hoy.day,
+                                        ),
+                                        lastDate: DateTime(2100),
+                                      );
+                                  if (nuevaFecha != null) {
+                                    setState(
+                                      () => _fecha = nuevaFecha,
+                                    );
+                                  }
+                                },
+                                child: InputDecorator(
+                                  decoration: _decoracionCampo('Fecha')
+                                      .copyWith(
+                                        errorText:
+                                            _intentoGuardar &&
+                                                fechaAnterior
+                                            ? 'La fecha no puede ser anterior a hoy.'
+                                            : null,
+                                      ),
+                                  child: Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        _formatearFechaCorta(_fecha),
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                      const Icon(
+                                        Icons.calendar_today_outlined,
+                                        size: 16,
+                                        color: AppColors.textGray,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: InkWell(
+                                onTap: () async {
+                                  final nuevaHora =
+                                      await showTimePicker(
+                                        context: context,
+                                        initialTime:
+                                            _hora ?? TimeOfDay.now(),
+                                      );
+                                  if (nuevaHora != null) {
+                                    setState(
+                                      () => _hora = nuevaHora,
+                                    );
+                                  }
+                                },
+                                child: InputDecorator(
+                                  decoration: _decoracionCampo('Hora')
+                                      .copyWith(
+                                        errorText: _intentoGuardar
+                                            ? _hora == null
+                                                  ? 'Selecciona la hora.'
+                                                  : horaAnterior
+                                                  ? 'La hora debe ser futura.'
+                                                  : null
+                                            : null,
+                                      ),
+                                  child: Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        _hora == null
+                                            ? '--:--'
+                                            : _hora!.format(context),
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                      const Icon(
+                                        Icons.access_time,
+                                        size: 16,
+                                        color: AppColors.textGray,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        DropdownButtonFormField<String>(
+                          initialValue: _estadoSeleccionado,
+                          decoration: _decoracionCampo('Estado'),
+                          items: demoEstadosAdmin
+                              .map(
+                                (e) => DropdownMenuItem(
+                                  value: e,
+                                  child: Text(
+                                    e,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (valor) => setState(
+                            () => _estadoSeleccionado =
+                                valor ?? _estadoSeleccionado,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        TextFormField(
+                          controller: _descripcionController,
+                          maxLines: 3,
+                          decoration: _decoracionCampo('Descripción')
+                              .copyWith(
+                                hintText: 'Notas adicionales sobre la cita...',
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Container(
+              width: double.infinity,
+              color: AppColors.headerNavy,
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _guardando
+                        ? null
+                        : () async {
+                            setState(() => _intentoGuardar = true);
+                            final formularioValido =
+                                _formKey.currentState?.validate() ??
+                                false;
+                            final fechaValida =
+                                !fechaAnterior &&
+                                _hora != null &&
+                                !horaAnterior;
+                            final serviciosValidos =
+                                _serviciosMarcados.isNotEmpty;
+                            if (!formularioValido ||
+                                !fechaValida ||
+                                !serviciosValidos) {
+                              return;
+                            }
+
+                            final estado = switch (_estadoSeleccionado) {
+                              'Esperando Pieza' =>
+                                cita_data.EstadoCita.esperandoPieza,
+                              'En proceso' =>
+                                cita_data.EstadoCita.enProceso,
+                              'Completado' =>
+                                cita_data.EstadoCita.completado,
+                              _ => cita_data.EstadoCita.pendiente,
+                            };
+                            final anio = _anioController.text.trim();
+                            final cita = cita_data.Cita(
+                              cliente: _clienteController.text.trim(),
+                              telefono: _telefonoController.text.trim(),
+                              vehiculo: _vehiculoPersistible(
+                                marca: _marcaSeleccionada!,
+                                modelo: _modeloController.text,
+                                anio: anio,
+                                placa: _placaController.text,
+                              ),
+                              marca: _marcaSeleccionada!,
+                              modelo: _modeloController.text.trim(),
+                              anio: int.tryParse(anio) ?? 0,
+                              placa: _placaController.text.trim(),
+                              servicios: _serviciosMarcados.toList(),
+                              fechaCita: DateTime(
+                                _fecha.year,
+                                _fecha.month,
+                                _fecha.day,
+                                _hora!.hour,
+                                _hora!.minute,
+                              ),
+                              estado: estado,
+                              descripcion: _descripcionController.text
+                                  .trim(),
+                              tecnico: _tecnicoSeleccionado ?? '',
+                              total: 0,
+                            );
+
+                            setState(() => _guardando = true);
+                            final guardada = await widget.onSaved(cita);
+                            if (!guardada) {
+                              setState(() => _guardando = false);
+                              return;
+                            }
+                            if (!context.mounted) return;
+                            Navigator.of(context).pop();
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.orangePrimary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: _guardando
+                        ? const SizedBox.square(
+                            dimension: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text(
+                            'Guardar Cita',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
