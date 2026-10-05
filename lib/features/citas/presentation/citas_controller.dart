@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 
+import 'package:autofix/core/auth/sesion_admin.dart';
 import 'package:autofix/features/citas/data/cita_repository.dart';
 import 'package:autofix/features/citas/models/cita.dart';
 import 'package:autofix/features/sync/sync_service.dart';
@@ -41,12 +42,21 @@ class CitasController extends ChangeNotifier {
 
   static String formatearFechaHora(DateTime fecha) => _fechaHora.format(fecha);
 
+  /// Consulta citas filtradas por taller si hay sesión de admin activa.
+  Future<List<Cita>> _obtenerCitas() {
+    final tallerId = SesionAdmin.instance.tallerId;
+    if (tallerId != null) {
+      return _repo.obtenerPorTaller(tallerId);
+    }
+    return _repo.obtenerTodas();
+  }
+
   Future<void> cargar() async {
     _cargando = true;
     _error = null;
     notifyListeners();
 
-    final resultado = await _intentar(() => _repo.obtenerTodas());
+    final resultado = await _intentar(() => _obtenerCitas());
     if (resultado != null) _citas = resultado;
     _cargando = false;
     notifyListeners();
@@ -59,13 +69,17 @@ class CitasController extends ChangeNotifier {
   /// de `obtenerTodas` es por fecha y una insercion al principio lo dejaria
   /// desalineado con lo que ve el usuario.
   Future<bool> guardar(Cita cita) async {
+    // Si hay sesión de admin activa y la cita no tiene taller, asignarlo.
+    final citaConTaller = (cita.tallerId == null && SesionAdmin.instance.activa)
+        ? cita.copyWith(tallerId: SesionAdmin.instance.tallerId)
+        : cita;
     final ok = await _intentar(() async {
-      if (cita.id == null) {
-        await _repo.crear(cita);
+      if (citaConTaller.id == null) {
+        await _repo.crear(citaConTaller);
       } else {
-        await _repo.actualizar(cita);
+        await _repo.actualizar(citaConTaller);
       }
-      return _repo.obtenerTodas();
+      return _obtenerCitas();
     });
 
     if (ok == null) return false;
@@ -80,7 +94,7 @@ class CitasController extends ChangeNotifier {
   Future<bool> cambiarEstado(String id, EstadoCita estado) async {
     final ok = await _intentar(() async {
       await _repo.cambiarEstado(id, estado);
-      return _repo.obtenerTodas();
+      return _obtenerCitas();
     });
 
     if (ok == null) return false;
@@ -100,7 +114,7 @@ class CitasController extends ChangeNotifier {
   Future<bool> eliminar(String id) async {
     final ok = await _intentar(() async {
       await _repo.eliminar(id);
-      return _repo.obtenerTodas();
+      return _obtenerCitas();
     });
 
     if (ok == null) return false;

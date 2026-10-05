@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:autofix/core/auth/sesion_admin.dart';
 import 'package:autofix/core/connectivity/connectivity_service.dart';
 import 'package:autofix/core/utils/borrado_logico.dart';
 import 'package:autofix/features/citas/data/cita_repository.dart';
@@ -45,9 +46,16 @@ class SyncService {
   Future<void> start() async {
     if (_snapshotSubscription != null) return;
 
-    _snapshotSubscription = _db
-        .collection('citas')
-        .where('ownerUid', isEqualTo: _currentUid())
+    // Si hay sesión de admin, filtrar por taller_id; si no, por ownerUid.
+    Query<Map<String, dynamic>> query;
+    final tallerId = SesionAdmin.instance.tallerId;
+    if (tallerId != null) {
+      query = _db.collection('citas').where('taller_id', isEqualTo: tallerId);
+    } else {
+      query = _db.collection('citas').where('ownerUid', isEqualTo: _currentUid());
+    }
+
+    _snapshotSubscription = query
         .snapshots(includeMetadataChanges: true)
         .listen(
           _onSnapshot,
@@ -154,9 +162,12 @@ class SyncService {
         final data = doc.data();
         if (data == null) continue;
 
-        // Ignora documentos de otros usuarios.
-        final ownerUid = data['ownerUid'] as String?;
-        if (ownerUid != _currentUid()) continue;
+        // Ignora documentos de otros usuarios (solo en modo anonimo).
+        // Cuando hay sesion de admin el query ya filtra por taller_id.
+        if (!SesionAdmin.instance.activa) {
+          final ownerUid = data['ownerUid'] as String?;
+          if (ownerUid != _currentUid()) continue;
+        }
 
         if (change.type == DocumentChangeType.removed) {
           // Firestore no suele borrar (soft delete en app), pero por si acaso:
