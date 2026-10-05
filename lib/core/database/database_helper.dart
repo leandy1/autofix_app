@@ -2,8 +2,6 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
-import 'package:autofix/core/utils/uuid.dart';
-
 import 'semilla_citas_demo.dart';
 import 'semilla_inicial.dart';
 
@@ -74,11 +72,15 @@ class DatabaseHelper {
   ///      se agregan los catalogos `marcas` y `grupos_servicio` que Leandy esta
   ///      construyendo en su UI de Configuracion (punto 6 del encargo).
   ///
+  /// v8 = SINCRONIZACION (Fase 2): agrega columna `sync_status` a `citas`
+  ///      para rastrear el estado de sincronizacion con Firestore ('pending' /
+  ///      'synced'). No dropea tablas: solo `ALTER TABLE ADD COLUMN`.
+  ///
   /// OJO: subir la version NO borra la base por si sola, dispara `onUpgrade`, que
   /// es lo que permite a un dispositivo que ya instalo la v1 seguir funcionando.
   /// En la v7 el `onUpgrade` hace `DROP TABLE`, asi que en ESTE caso si borra los
   /// datos, y es intencional (ver [_migrar]).
-  static const int _versionBase = 7;
+  static const int _versionBase = 8;
 
   /// Nombre del indice de [tablaCitas] por fecha.
   ///
@@ -110,6 +112,16 @@ class DatabaseHelper {
   static const String colCreadoEn = 'creado_en';
   static const String colActualizadoEn = 'actualizado_en';
   static const String colTotal = 'total';
+
+  // ------------------------------------------------------------------
+  // SINCRONIZACION (Fase 2)
+  //
+  // Columna para rastrear el estado de sincronizacion con Firestore.
+  // Valores: 'pending' (local creada/modificada, pendiente de subir),
+  // 'synced' (coincide con la nube). Se usa en SyncService para saber
+  // que filas subir y marcar como subidas tras push exitoso.
+  // ------------------------------------------------------------------
+  static const String colSyncStatus = 'sync_status';
 
   // ------------------------------------------------------------------
   // BORRADO LOGICO (v7)
@@ -326,6 +338,11 @@ class DatabaseHelper {
       _columnaTallerIdV4,
       '$colTotal INTEGER NOT NULL DEFAULT 0', // v5
       ..._columnasTrazabilidad, // v7
+      // v8 (Fase 2): estado de sincronizacion con Firestore.
+      // 'pending' = recien creada/modificada localmente, falta subir.
+      // 'synced' = coincide con la nube.
+      // Default 'pending' porque toda cita nueva nace local y hay que subirla.
+      "$colSyncStatus TEXT NOT NULL DEFAULT 'pending'",
     ];
 
     await db.execute('CREATE TABLE $tablaCitas (${definiciones.join(', ')})');
@@ -831,6 +848,10 @@ class DatabaseHelper {
       if (versionAnterior < 7) {
         await _migrarAV7(txn);
       }
+
+      if (versionAnterior < 8) {
+        await _migrarAV8(txn);
+      }
     });
   }
 
@@ -892,6 +913,29 @@ class DatabaseHelper {
     // 4. Las semillas ya corrieron dentro de `_crearEsquema`. `_sembrarTalleres`
     //    y `_sembrarCatalogos` hacen su propio chequeo de vacio, asi que el
     //    doble chequeo es inofensivo y hace que este paso se lea solo.
+  }
+
+  /// Paso 7 -> 8: Sincronizacion (Fase 2).
+  ///
+  /// Agrega la columna `sync_status` a la tabla `citas` SOLO si no existe.
+  /// La v7 ya la crea en `_crearEsquema`, asi que esta migracion solo es
+  /// necesaria para dispositivos que actualicen desde v6 o anterior sin pasar
+  /// por v7 (saltan directo a v8). Usa `PRAGMA table_info` para verificar.
+  Future<void> _migrarAV8(DatabaseExecutor txn) async {
+    final info = await txn.rawQuery('PRAGMA table_info($tablaCitas)');
+    final tieneSyncStatus = info.any((c) => c['name'] == colSyncStatus);
+
+    if (!tieneSyncStatus) {
+      await txn.execute(
+        'ALTER TABLE $tablaCitas ADD COLUMN $colSyncStatus TEXT NOT NULL DEFAULT \'pending\'',
+      );
+    }
+
+    // Indice para filtrar rapidamente las citas pendientes de subir.
+    await txn.execute(
+      'CREATE INDEX IF NOT EXISTS idx_citas_sync_status '
+      'ON $tablaCitas ($colSyncStatus)',
+    );
   }
 
   Future<void> cerrar() async {

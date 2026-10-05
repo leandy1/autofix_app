@@ -1,3 +1,5 @@
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -5,11 +7,20 @@ import 'package:flutter/services.dart';
 import 'package:autofix/app/conectividad_app.dart';
 import 'package:autofix/core/database/database_helper.dart';
 import 'package:autofix/features/auth/screens/login_screen.dart';
+import 'package:autofix/firebase_options.dart';
 
 Future<void> main() async {
   // Sin esto, `getDatabasesPath()` y los plugins de plataforma no pueden
   // usarse todavia: el binding de Flutter todavia no inicializo.
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Inicializa Firebase (usa el archivo generado por FlutterFire CLI).
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  // Autenticacion anonima silenciosa: el usuario entra sin credenciales.
+  // El UID generado se usa como `eliminado_por` en el borrado logico y como
+  // propietario de los documentos en Firestore.
+  await FirebaseAuth.instance.signInAnonymously();
 
   // Banner con fondo: el `headerNavy` de la paleta necesita status bar
   // transparente o queda una franja blanca fea arriba.

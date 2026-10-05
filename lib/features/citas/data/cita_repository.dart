@@ -584,6 +584,38 @@ class CitaRepository implements BaseRepository<Cita> {
     }
   }
 
+  /// Citas locales pendientes de subir a Firestore (sync_status = 'pending').
+  ///
+  /// [SyncService] usa esto para saber que subir. El `LIMIT` evita saturar la
+  /// base si un dispositivo lleva meses sin sincronizar.
+  Future<List<Cita>> obtenerPendientesDeSync({int limite = 50}) async {
+    final db = await _helper.base;
+    final filas = await db.query(
+      tabla,
+      where: "${DatabaseHelper.colSyncStatus} = 'pending' "
+          "AND ${DatabaseHelper.colEliminadoEn} IS NULL",
+      orderBy: '${DatabaseHelper.colActualizadoEn} ASC',
+      limit: limite,
+    );
+    return filas.map(Cita.fromMap).toList();
+  }
+
+  /// Marca una cita como sincronizada (sync_status = 'synced').
+  ///
+  /// Lo llama [SyncService] tras un push exitoso. No toca `actualizado_en`
+  /// porque no es una edicion del usuario, solo un cambio de estado interno.
+  Future<int> marcarSincronizada(String id) async {
+    final db = await _helper.base;
+    return db.update(
+      tabla,
+      <String, Object?>{
+        DatabaseHelper.colSyncStatus: 'synced',
+      },
+      where: '${DatabaseHelper.colId} = ?',
+      whereArgs: <Object?>[id],
+    );
+  }
+
   /// Los dos limites ISO del dia, como `[desde, hasta)`: desde la medianoche del
   /// dia hasta la medianoche del dia siguiente, sin incluirla.
   ///

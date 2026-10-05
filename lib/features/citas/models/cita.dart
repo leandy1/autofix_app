@@ -80,6 +80,7 @@ class Cita implements EntidadPersistida {
     this.creadoEn,
     this.actualizadoEn,
     this.total = 0,
+    this.syncStatus = 'pending',
     this.trazabilidad = Trazabilidad.vacia,
   });
 
@@ -103,6 +104,7 @@ class Cita implements EntidadPersistida {
   static const String _kCreadoEn = 'creado_en';
   static const String _kActualizadoEn = 'actualizado_en';
   static const String _kTotal = 'total';
+  static const String _kSyncStatus = 'sync_status';
 
   /// Id (UUID v4) o `null` si la cita todavia no se ha guardado.
   ///
@@ -169,6 +171,14 @@ class Cita implements EntidadPersistida {
   final DateTime? actualizadoEn;
   final int total;
 
+  /// Estado de sincronizacion con Firestore (Fase 2).
+  ///
+  /// 'pending' = recien creada/modificada localmente, falta subir.
+  /// 'synced' = coincide con la nube.
+  /// Se escribe SIEMPRE en el mapa (no es opcional) porque la columna tiene
+  // NOT NULL DEFAULT 'pending' en la tabla.
+  final String syncStatus;
+
   /// Borrado logico. Antes `eliminar()` hacia un `DELETE` fisico, que con varios
   /// dispositivos resucitaba la cita en cuanto el otro la rebia de la nube.
   final Trazabilidad trazabilidad;
@@ -224,13 +234,14 @@ class Cita implements EntidadPersistida {
     DateTime? creadoEn,
     DateTime? actualizadoEn,
     int? total,
+    String? syncStatus,
     Trazabilidad? trazabilidad,
   }) {
-    return Cita(
+return Cita(
       id: id ?? this.id,
       codigoVisible: codigoVisible ?? this.codigoVisible,
       cliente: cliente ?? this.cliente,
-      telefono: telefono ?? this.telefono,
+      telefono: telefono ?? this.cliente,
       vehiculo: vehiculo ?? this.vehiculo,
       marca: marca ?? this.marca,
       modelo: modelo ?? this.modelo,
@@ -245,6 +256,7 @@ class Cita implements EntidadPersistida {
       creadoEn: creadoEn ?? this.creadoEn,
       actualizadoEn: actualizadoEn ?? this.actualizadoEn,
       total: total ?? this.total,
+      syncStatus: syncStatus ?? this.syncStatus,
       trazabilidad: trazabilidad ?? this.trazabilidad,
     );
   }
@@ -321,6 +333,10 @@ class Cita implements EntidadPersistida {
       // el valor que venga, asi un UPDATE cuenta como modificacion real.
       _kActualizadoEn: ahoraIso(),
       _kTotal: total,
+      // Estado de sincronizacion (Fase 2). Se escribe SIEMPRE porque la
+      // columna tiene NOT NULL DEFAULT 'pending'. El repositorio actualiza
+      // a 'synced' tras push exitoso; aqui siempre emitimos el valor actual.
+      _kSyncStatus: syncStatus,
       ...mapaDeTrazabilidad(trazabilidad),
     };
   }
@@ -345,6 +361,7 @@ class Cita implements EntidadPersistida {
       creadoEn: desdeIso(map[_kCreadoEn]),
       actualizadoEn: desdeIso(map[_kActualizadoEn]),
       total: (map[_kTotal] as num?)?.toInt() ?? 0,
+      syncStatus: (map[_kSyncStatus] as String?) ?? 'pending',
       trazabilidad: Trazabilidad(
         eliminadoEn: desdeIso(map['eliminado_en']),
         eliminadoPor: map['eliminado_por'] as String?,
