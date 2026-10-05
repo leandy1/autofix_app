@@ -587,12 +587,28 @@ class CitaAdminCard extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
             child: Row(
               children: [
-                Text(
-                  '#${cita.id}',
-                  style: const TextStyle(
-                    color: AppColors.headerNavy,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
+                // Indicador de sincronizacion (Fase 3): nube con reloj/check
+                if (cita.syncStatus != null) ...[
+                  Icon(
+                    cita.syncStatus == 'synced'
+                        ? Icons.cloud_done
+                        : Icons.cloud_queue,
+                    size: 14,
+                    color: cita.syncStatus == 'synced'
+                        ? AppColors.greenAccent
+                        : AppColors.orangePrimary,
+                  ),
+                  const SizedBox(width: 4),
+                ],
+                Flexible(
+                  child: Text(
+                    '#${cita.id}',
+                    style: const TextStyle(
+                      color: AppColors.headerNavy,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 const Spacer(),
@@ -676,6 +692,7 @@ class CitaAdminCard extends StatelessWidget {
                             tallerId: cita.tallerId,
                             creadoEn: cita.creadoEn,
                             actualizadoEn: cita.actualizadoEn,
+                            syncStatus: cita.syncStatus,
                           ),
                         );
                       },
@@ -1237,6 +1254,7 @@ class _EditarCitaDialogState extends State<_EditarCitaDialog> {
                     descripcion: _descripcionController.text.trim(),
                     tecnico: _tecnicoSeleccionado,
                     total: widget.cita.total,
+                    syncStatus: widget.cita.syncStatus,
                   );
                   widget.onSaved(citaActualizada);
                   Navigator.of(context).pop();
@@ -1504,6 +1522,7 @@ class _CitasScreenState extends State<CitasScreen> {
       tallerId: cita.tallerId,
       creadoEn: cita.creadoEn,
       actualizadoEn: cita.actualizadoEn,
+      syncStatus: cita.syncStatus,
     );
   }
 

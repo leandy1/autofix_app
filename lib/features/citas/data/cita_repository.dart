@@ -592,7 +592,8 @@ class CitaRepository implements BaseRepository<Cita> {
     final db = await _helper.base;
     final filas = await db.query(
       tabla,
-      where: "${DatabaseHelper.colSyncStatus} = 'pending' "
+      where:
+          "${DatabaseHelper.colSyncStatus} = 'pending' "
           "AND ${DatabaseHelper.colEliminadoEn} IS NULL",
       orderBy: '${DatabaseHelper.colActualizadoEn} ASC',
       limit: limite,
@@ -608,9 +609,7 @@ class CitaRepository implements BaseRepository<Cita> {
     final db = await _helper.base;
     return db.update(
       tabla,
-      <String, Object?>{
-        DatabaseHelper.colSyncStatus: 'synced',
-      },
+      <String, Object?>{DatabaseHelper.colSyncStatus: 'synced'},
       where: '${DatabaseHelper.colId} = ?',
       whereArgs: <Object?>[id],
     );

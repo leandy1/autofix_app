@@ -1,8 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:autofix/core/connectivity/connectivity_service.dart';
 import 'package:autofix/core/utils/borrado_logico.dart';
 import 'package:autofix/features/citas/data/cita_repository.dart';
 import 'package:autofix/features/citas/models/cita.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+
 import 'dart:async';
 
 /// Servicio de sincronizacion bidireccional entre SQLite local y Firestore.
@@ -29,13 +32,16 @@ class SyncService {
 
   final CitaRepository _repo = CitaRepository.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final ConnectivityService _connectivity = ConnectivityService();
 
-  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _snapshotSubscription;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
+  _snapshotSubscription;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   bool _isPushing = false;
-  bool _isOnline = false;
 
-  /// Inicia el listener `onSnapshot` global. Debe llamarse una sola vez
-  /// tras arrancar la app (ej. en `main.dart` despues del login anonimo).
+  /// Inicia el listener `onSnapshot` global y la escucha de conectividad.
+  /// Debe llamarse una sola vez tras arrancar la app (ej. en `main.dart`
+  /// despues del login anonimo).
   Future<void> start() async {
     if (_snapshotSubscription != null) return;
 
@@ -43,8 +49,24 @@ class SyncService {
         .collection('citas')
         .where('ownerUid', isEqualTo: _currentUid())
         .snapshots(includeMetadataChanges: true)
-        .listen(_onSnapshot, onError: (e) {
-      print('[SyncService] Error en onSnapshot: $e');
+        .listen(
+          _onSnapshot,
+          onError: (e) {
+            print('[SyncService] Error en onSnapshot: $e');
+          },
+        );
+
+    // Escuchar cambios de conectividad: al reconectar, disparar pushPending()
+    _connectivitySubscription = _connectivity.onConnectivityChanged.listen((
+      resultados,
+    ) {
+      final hayConexion =
+          resultados.isNotEmpty &&
+          !resultados.contains(ConnectivityResult.none);
+      if (hayConexion) {
+        print('[SyncService] Conectividad restaurada -> pushPending()');
+        pushPending();
+      }
     });
 
     // Primer push inmediato si hay conectividad.
@@ -54,7 +76,9 @@ class SyncService {
   /// Detiene el listener (ej. al cerrar sesion).
   Future<void> stop() async {
     await _snapshotSubscription?.cancel();
+    await _connectivitySubscription?.cancel();
     _snapshotSubscription = null;
+    _connectivitySubscription = null;
   }
 
   /// Sube todas las citas locales con `sync_status = 'pending'`.
@@ -63,7 +87,7 @@ class SyncService {
   /// (solo actualizacion), luego las que tienen 'PENDIENTE' (transaccion
   /// para obtener numero secuencial).
   Future<void> pushPending() async {
-    if (_isPushing || !_isOnline) return;
+    if (_isPushing) return;
     _isPushing = true;
 
     try {
@@ -85,7 +109,10 @@ class SyncService {
   /// Sube una cita que YA tiene codigo_visible (solo update/merge).
   Future<void> _pushSimple(Cita cita) async {
     final data = _citaToMap(cita);
-    await _db.collection('citas').doc(cita.id).set(data, SetOptions(merge: true));
+    await _db
+        .collection('citas')
+        .doc(cita.id)
+        .set(data, SetOptions(merge: true));
     await _repo.marcarSincronizada(cita.id!);
   }
 
@@ -124,13 +151,13 @@ class SyncService {
     for (final change in snap.docChanges) {
       final doc = change.doc;
       final data = doc.data();
-    if (data == null) continue;
+      if (data == null) continue;
 
-    // Ignora documentos de otros usuarios.
-    final ownerUid = data['ownerUid'] as String?;
-    if (ownerUid != _currentUid()) continue;
+      // Ignora documentos de otros usuarios.
+      final ownerUid = data['ownerUid'] as String?;
+      if (ownerUid != _currentUid()) continue;
 
-    final cita = _mapToCita(doc.id, data);
+      final cita = _mapToCita(doc.id, data);
 
       if (change.type == DocumentChangeType.removed) {
         // Firestore no suele borrar (soft delete en app), pero por si acaso:
@@ -142,7 +169,8 @@ class SyncService {
       final local = await _repo.obtenerPorId(doc.id);
       if (local != null) {
         final localTime = local.actualizadoEn?.millisecondsSinceEpoch ?? 0;
-        final remoteTime = (data['actualizado_en'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
+        final remoteTime =
+            (data['actualizado_en'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
         if (localTime > remoteTime) {
           // Local mas reciente: re-subira en el proximo push.
           continue;
@@ -183,7 +211,9 @@ class SyncService {
       servicios: List<String>.from(data['servicios'] as List? ?? []),
       tecnico: data['tecnico'] as String? ?? '',
       descripcion: data['descripcion'] as String? ?? '',
-      fechaCita: (data['fecha_cita'] as Timestamp?)?.toDate().toUtc() ?? DateTime.now().toUtc(),
+      fechaCita:
+          (data['fecha_cita'] as Timestamp?)?.toDate().toUtc() ??
+          DateTime.now().toUtc(),
       estado: _estadoFromString(data['estado'] as String? ?? 'pendiente'),
       tallerId: data['taller_id'] as String?,
       creadoEn: (data['creado_en'] as Timestamp?)?.toDate().toUtc(),

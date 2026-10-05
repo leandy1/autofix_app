@@ -27,6 +27,7 @@ class CitaAdmin {
     this.tallerId,
     this.creadoEn,
     this.actualizadoEn,
+    this.syncStatus,
   });
 
   /// UUID v4 de la cita, o `null` si todavia no se guardo.
@@ -70,4 +71,11 @@ class CitaAdmin {
 
   /// Ultima modificacion. Se refresca en cada escritura.
   final DateTime? actualizadoEn;
+
+  /// Estado de sincronizacion con la nube (Fase 2).
+  ///
+  /// 'pending' = recien creado/modificado local, falta subir a Firestore.
+  /// 'synced' = coincide con la nube.
+  /// `null` = no aplica (vista de cliente, etc.).
+  final String? syncStatus;
 }

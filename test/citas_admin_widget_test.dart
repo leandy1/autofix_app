@@ -29,6 +29,7 @@ void main() {
       descripcion: 'Revisión general',
       tecnico: 'Carlos',
       total: 7500,
+      syncStatus: 'synced',
     );
 
     await tester.pumpWidget(
@@ -97,6 +98,7 @@ void main() {
       descripcion: 'Alineación',
       tecnico: 'Técnico 1',
       total: 2500,
+      syncStatus: 'pending',
     );
 
     var editado = false;

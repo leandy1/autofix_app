@@ -237,7 +237,7 @@ class Cita implements EntidadPersistida {
     String? syncStatus,
     Trazabilidad? trazabilidad,
   }) {
-return Cita(
+    return Cita(
       id: id ?? this.id,
       codigoVisible: codigoVisible ?? this.codigoVisible,
       cliente: cliente ?? this.cliente,
