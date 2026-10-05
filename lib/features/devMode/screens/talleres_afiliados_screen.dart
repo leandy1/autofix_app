@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:autofix/features/devMode/controllers/dev_mode_controller.dart';
 import 'package:autofix/features/talleres/models/taller.dart';
 import 'package:autofix/shared/theme/app_colors.dart';
+import 'package:autofix/features/devMode/screens/cuentas_admin_screen.dart';
+
 
 class TalleresAfiliadosScreen extends StatefulWidget {
   const TalleresAfiliadosScreen({super.key});
@@ -54,6 +56,15 @@ class _TalleresAfiliadosScreenState extends State<TalleresAfiliadosScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Cuentas Admin',
+            icon: const Icon(Icons.manage_accounts),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const CuentasAdminScreen()),
+              );
+            },
+          ),
           IconButton(
             tooltip: 'Cerrar sesión',
             onPressed: () => Navigator.of(context).pop(),
