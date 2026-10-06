@@ -218,9 +218,7 @@ void main() {
       reason: 'ya no es hoy: el mensaje no puede seguir diciendo hoy',
     );
     expect(
-      find.text(
-        'No hay citas del ${dia(2).day} ${meses[dia(2).month - 1]}.',
-      ),
+      find.text('No hay citas del ${dia(2).day} ${meses[dia(2).month - 1]}.'),
       findsOneWidget,
     );
     expect(find.text('0 citas'), findsOneWidget);

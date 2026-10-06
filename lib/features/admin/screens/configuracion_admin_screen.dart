@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:autofix/core/database/semilla_inicial.dart';
 import 'package:autofix/features/configuracion/presentation/configuracion_controller.dart';
 import 'package:autofix/shared/models/demo_admin_data.dart';
 import 'package:autofix/shared/theme/app_colors.dart';
@@ -10,7 +11,14 @@ import 'citas_admin_screen.dart';
 import 'package:autofix/features/auth/screens/login_screen.dart';
 
 class ConfiguracionScreen extends StatefulWidget {
-  const ConfiguracionScreen({super.key});
+  /// ID del taller al que pertenece el administrador.
+  ///
+  /// Se inyecta desde la navegación (viene del LoginController/perfil de admin).
+  /// En la rama actual (sin login real) se usa el primer taller de la semilla
+  /// como valor por defecto temporal.
+  final String? tallerId;
+
+  const ConfiguracionScreen({super.key, this.tallerId});
 
   @override
   State<ConfiguracionScreen> createState() => _ConfiguracionScreenState();
@@ -21,7 +29,10 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
   // Tecnicos, Tipos de Servicio y Estados se leen y se escriben por aca; Marcas y
   // Grupos siguen leyendo `demo_admin_data.dart` (ver la nota de PAUSADO mas
   // abajo). La pantalla no toca un repositorio nunca.
-  final ConfiguracionController _cfg = ConfiguracionController();
+
+  late final ConfiguracionController _cfg = ConfiguracionController(
+    tallerId: widget.tallerId ?? SemillaInicial.talleres.first.id,
+  );
 
   // Controladores solo para los campos de texto. Los de Tecnico, Tipo de
   // Servicio y Estado ya tienen boton conectado; los de Marca y Grupo todavia no.

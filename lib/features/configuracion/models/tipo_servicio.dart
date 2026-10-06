@@ -24,6 +24,7 @@ class TipoServicio implements EntidadPersistida {
     this.activo = true,
     this.creadoEn,
     this.actualizadoEn,
+    this.tallerId,
   });
 
   static const String _kId = 'id';
@@ -32,6 +33,7 @@ class TipoServicio implements EntidadPersistida {
   static const String _kActivo = 'activo';
   static const String _kCreadoEn = 'creado_en';
   static const String _kActualizadoEn = 'actualizado_en';
+  static const String _kTallerId = 'taller_id';
 
   @override
   final String? id;
@@ -47,6 +49,9 @@ class TipoServicio implements EntidadPersistida {
 
   @override
   final DateTime? actualizadoEn;
+
+  /// ID del taller al que pertenece este catalogo (v9)
+  final String? tallerId;
 
   int get precioEnCentavos => precio * 100;
 
@@ -105,6 +110,7 @@ class TipoServicio implements EntidadPersistida {
     bool? activo,
     DateTime? creadoEn,
     DateTime? actualizadoEn,
+    String? tallerId,
   }) {
     return TipoServicio(
       id: id ?? this.id,
@@ -113,6 +119,7 @@ class TipoServicio implements EntidadPersistida {
       activo: activo ?? this.activo,
       creadoEn: creadoEn ?? this.creadoEn,
       actualizadoEn: actualizadoEn ?? this.actualizadoEn,
+      tallerId: tallerId ?? this.tallerId,
     );
   }
 
@@ -126,6 +133,7 @@ class TipoServicio implements EntidadPersistida {
       if (creadoEn != null) _kCreadoEn: aIsoUtc(creadoEn!),
       // `actualizadoEn ?? reloj` y no el reloj a secas. Ver `Tecnico.toMap`.
       _kActualizadoEn: aIsoUtc(actualizadoEn ?? Reloj.instancia.ahora()),
+      if (tallerId != null) _kTallerId: tallerId,
     };
   }
 
@@ -137,6 +145,7 @@ class TipoServicio implements EntidadPersistida {
       activo: ((map[_kActivo] as int?) ?? 1) != 0,
       creadoEn: desdeIso(map[_kCreadoEn]),
       actualizadoEn: desdeIso(map[_kActualizadoEn]),
+      tallerId: map[_kTallerId]?.toString(),
     );
   }
 }

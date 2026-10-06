@@ -53,6 +53,44 @@ class TecnicoRepository implements BaseRepository<Tecnico> {
 
   // ------------------------------- READ -------------------------------
 
+  Future<List<Tecnico>> obtenerTodasPorTaller(String tallerId) async {
+    final db = await _helper.base;
+    final filas = await db.query(
+      tabla,
+      where: '${DatabaseHelper.colTallerId} = ?',
+      whereArgs: <Object?>[tallerId],
+      orderBy: '${DatabaseHelper.colNombre} COLLATE NOCASE ASC',
+    );
+    return filas.map(Tecnico.fromMap).toList();
+  }
+
+  Future<List<Tecnico>> obtenerActivosPorTaller(String tallerId) async {
+    final db = await _helper.base;
+    final filas = await db.query(
+      tabla,
+      where:
+          '${DatabaseHelper.colTallerId} = ? AND ${DatabaseHelper.colActivo} = ?',
+      whereArgs: <Object?>[tallerId, 1],
+      orderBy: '${DatabaseHelper.colNombre} COLLATE NOCASE ASC',
+    );
+    return filas.map(Tecnico.fromMap).toList();
+  }
+
+  Future<Tecnico?> obtenerPorNombreYTaller(
+    String nombre,
+    String tallerId,
+  ) async {
+    final db = await _helper.base;
+    final filas = await db.query(
+      tabla,
+      where:
+          '${DatabaseHelper.colNombre} = ? COLLATE NOCASE AND ${DatabaseHelper.colTallerId} = ?',
+      whereArgs: <Object?>[nombre.trim(), tallerId],
+      limit: 1,
+    );
+    return filas.isEmpty ? null : Tecnico.fromMap(filas.first);
+  }
+
   @override
   Future<List<Tecnico>> obtenerTodas() async {
     final db = await _helper.base;

@@ -24,6 +24,7 @@ class Tecnico implements EntidadPersistida {
     this.activo = true,
     this.creadoEn,
     this.actualizadoEn,
+    this.tallerId,
   });
 
   static const String _kId = 'id';
@@ -31,6 +32,7 @@ class Tecnico implements EntidadPersistida {
   static const String _kActivo = 'activo';
   static const String _kCreadoEn = 'creado_en';
   static const String _kActualizadoEn = 'actualizado_en';
+  static const String _kTallerId = 'taller_id';
 
   @override
   final String? id;
@@ -45,12 +47,16 @@ class Tecnico implements EntidadPersistida {
   @override
   final DateTime? actualizadoEn;
 
+  /// ID del taller al que pertenece este catalogo (v9)
+  final String? tallerId;
+
   Tecnico copyWith({
     String? id,
     String? nombre,
     bool? activo,
     DateTime? creadoEn,
     DateTime? actualizadoEn,
+    String? tallerId,
   }) {
     return Tecnico(
       id: id ?? this.id,
@@ -58,6 +64,7 @@ class Tecnico implements EntidadPersistida {
       activo: activo ?? this.activo,
       creadoEn: creadoEn ?? this.creadoEn,
       actualizadoEn: actualizadoEn ?? this.actualizadoEn,
+      tallerId: tallerId ?? this.tallerId,
     );
   }
 
@@ -78,6 +85,7 @@ class Tecnico implements EntidadPersistida {
       // dispositivo que lo descargue lo registre como una edicion local, y los
       // dos pelearian por la misma fila para siempre.
       _kActualizadoEn: aIsoUtc(actualizadoEn ?? Reloj.instancia.ahora()),
+      if (tallerId != null) _kTallerId: tallerId,
     };
   }
 
@@ -88,6 +96,7 @@ class Tecnico implements EntidadPersistida {
       activo: ((map[_kActivo] as int?) ?? 1) != 0,
       creadoEn: desdeIso(map[_kCreadoEn]),
       actualizadoEn: desdeIso(map[_kActualizadoEn]),
+      tallerId: map[_kTallerId]?.toString(),
     );
   }
 }
