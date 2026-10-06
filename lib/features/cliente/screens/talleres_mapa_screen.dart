@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:autofix/core/connectivity/connectivity_scope.dart';
 import 'package:autofix/core/mapa/estilos_mapa.dart';
 import 'package:autofix/core/mapa/etiqueta_distancia.dart';
 import 'package:autofix/core/ubicacion/ubicacion_service.dart';
@@ -176,24 +177,132 @@ class _TalleresMapaScreenState extends State<TalleresMapaScreen> {
   String _error = '';
   EstadoUbicacion _estadoError = EstadoUbicacion.errorDesconocido;
 
+  /// El estilo remoto (CartoDB) ya cargo, asi que se puede pintar encima.
+  ///
+  /// Sin esto no hay forma de saber si los circulos van a ser visibles: el
+  /// `addCircles` sobre un estilo que nunca llego no truena, se traga el error
+  /// en el lado nativo y el mapa queda limpio y vacio.
+  bool _estiloCargado = false;
+
+  /// Se decidio dejar de esperar el estilo (sin red, o el host no respondio).
+  bool _estiloAbandonado = false;
+
+  /// Llave de la vista de plataforma del mapa. Cada incremento la reconstruye
+  /// desde cero, que es la unica forma de que MapLibre pida el estilo otra vez
+  /// despues de un fallo. Ver [_reintentar].
+  int _intentoDeEstilo = 0;
+
+  /// Cuanto se espera el estilo remoto antes de mostrar el aviso.
+  ///
+  /// 12 segundos y no menos: en una red movil lenta el estilo de CartoDB tarda
+  /// entre 3 y 8, y cortarlo a 3 le pone "sin conexion" a alguien que solo
+  /// tenia dos barras. Con mas de 12 el usuario ya perdio la paciencia.
+  static const Duration _esperaEstilo = Duration(seconds: 12);
+
+  Timer? _temporizadorEstilo;
+
   @override
   void initState() {
     super.initState();
+    _armarEsperaDeEstilo();
     _ubicar();
     _cargarTalleres();
   }
 
+  @override
+  void dispose() {
+    _temporizadorEstilo?.cancel();
+    super.dispose();
+  }
+
+  /// Arranca (o reinicia) el reloj del estilo.
+  ///
+  /// El caso que cubre es el de "estoy conectado pero el servidor de mapas no
+  /// responde" (DNS caido, portal cautivo, firewall): la red esta, el estilo no
+  /// llega, y `onStyleLoadedCallback` nunca se dispara. Sin este timer la
+  /// pantalla se queda en mapa en blanco para siempre sin decir nada.
+  void _armarEsperaDeEstilo() {
+    _temporizadorEstilo?.cancel();
+    _temporizadorEstilo = Timer(_esperaEstilo, () {
+      if (!mounted || _estiloCargado) return;
+      setState(() => _estiloAbandonado = true);
+    });
+  }
+
   /// Lee los afiliados. La baja lógica se respeta: `obtenerActivos()` excluye
   /// los dados de baja, que no deben aparecer en el mapa.
+  ///
+  /// Es una lectura local, pero igual va en try/catch: una base corrupta o un
+  /// disco lleno no deberian dejar la pantalla en blanco sin decir por que. El
+  /// error queda en [_error], que es el banner que ya existe de la pantalla.
   Future<void> _cargarTalleres() async {
-    final talleres = await TallerRepository.instance.obtenerActivos();
-    if (!mounted) return;
-
-    setState(() => _talleres = talleres);
+    try {
+      final talleres = await TallerRepository.instance.obtenerActivos();
+      if (!mounted) return;
+      // Sin tocar `_error`: si el `_ubicar()` que corre en paralelo acaba de
+      // dejar un aviso de permiso de ubicacion, limpiarlo aqui lo borraria sin
+      // que el usuario lo haya visto.
+      setState(() => _talleres = talleres);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'No pudimos leer los talleres guardados en este dispositivo.';
+      });
+      debugPrint('TalleresMapa: no se pudieron leer los talleres ($e)');
+      return;
+    }
 
     // Los talleres pueden terminar de cargarse después de que el estilo del mapa
     // esté listo. Sin esto, el mapa saldría sin puntos.
     if (_mapa != null) unawaited(_pintarSobreElMapa());
+  }
+
+  /// Reintenta TODO lo que depende de afuera: ubicacion, talleres y estilo.
+  ///
+  /// El bump de [_intentoDeEstilo] es la parte que importa. MapLibre no vuelve
+  /// a pedir el estilo remoto solo despues de un fallo, y el `onStyleLoaded`
+  /// de una carga fallida no se dispara nunca: sin recrear el widget (llave
+  /// nueva) el mapa se queda en blanco aunque la red vuelva. Con la llave
+  /// distinta se construye otra vista de plataforma, que arranca de cero.
+  Future<void> _reintentar() async {
+    await _ubicar();
+    if (!mounted) return;
+    await _cargarTalleres();
+    if (!mounted || _estiloCargado) return;
+    // La vista de plataforma nueva no tiene NADA de la vieja: si quedaran los
+    // ids de los circulos anteriores, el siguiente `_pintarSobreElMapa`
+    // empezaria por `removeCircles` con ids que ya no existen y abortaria el
+    // pintado completo (el `try` que lo envuelve se traga ese error).
+    _mapa = null;
+    _circulosPintados = const <Circle>[];
+    _simbolosPintados = const <Symbol>[];
+    setState(() => _intentoDeEstilo++);
+    _armarEsperaDeEstilo();
+  }
+
+  /// `true` cuando el mapa no puede pintarse y hay que decirlo en pantalla.
+  ///
+  /// Tres caminos para llegar a `true`, y el orden importa:
+  ///
+  /// 1. El estilo ya cargo -> `false`, pase lo que pase despues. Es el unico
+  ///    caso en que el mapa SI esta utilizable.
+  /// 2. Sin red desde el principio -> `true` YA, sin esperar los 12 segundos
+  ///    del timer: la app lo sabe por [ConnectivityScope] y hacer esperar a
+  ///    alguien que acaba de apagar el wifi solo para confirmar lo obvio es
+  ///    mala educacion.
+  /// 3. Hay red pero no llega nada -> `true` recien cuando vence el timer,
+  ///    que es el caso donde hace falta la evidencia antes de acusar.
+  ///
+  /// `dependOnInheritedWidgetOfExactType` y no `ConnectivityScope.of(context)`
+  /// a proposito: `.of` tiene un `assert` que revienta cuando no hay scope en
+  /// el arbol, que es exactamente lo que pasa en los tests que montan esta
+  /// pantalla suelta. Esta llamada devuelve `null` y ya.
+  bool _estiloNoDisponible(BuildContext context) {
+    if (_estiloCargado) return false;
+    if (_estiloAbandonado) return true;
+    final scope = context
+        .dependOnInheritedWidgetOfExactType<ConnectivityScope>();
+    return scope?.notifier?.desconectado ?? false;
   }
 
   Future<void> _ubicar() async {
@@ -253,6 +362,16 @@ class _TalleresMapaScreenState extends State<TalleresMapaScreen> {
   /// el flag no distingue, y terminaría bloqueando el redibujado. La idempotencia
   /// la garantiza `_pintarSobreElMapa`, que borra lo anterior antes de pintar.
   void _alCargarEstilo() {
+    _temporizadorEstilo?.cancel();
+    _estiloCargado = true;
+    // El callback llega desde el lado nativo y puede hacerlo con la pantalla
+    // ya desmontada (rotacion a mitad de carga): sin el `mounted`, el
+    // `setState` de abajo truena con "setState called after dispose".
+    if (!mounted) return;
+    // El estilo llego: el aviso de "sin mapa" deja de ser cierto. Sin este
+    // setState, el timeout de los 12 segundos seguira mostrando el cartel
+    // aunque el estilo se haya cargado tarde.
+    if (_estiloAbandonado) setState(() => _estiloAbandonado = false);
     unawaited(_pintarSobreElMapa());
   }
 
@@ -274,56 +393,65 @@ class _TalleresMapaScreenState extends State<TalleresMapaScreen> {
   /// sobre un mapa beige se pierde en el borde de una carretera.
   Future<void> _pintarSobreElMapa() async {
     final mapa = _mapa;
-    if (mapa == null || _talleres.isEmpty) return;
+    if (mapa == null || !_estiloCargado || _talleres.isEmpty) return;
 
-    if (_circulosPintados.isNotEmpty) {
-      await mapa.removeCircles(_circulosPintados);
-      _circulosPintados = const <Circle>[];
+    // El `try` cubre el caso de estilo a medias (o estilo que se recarga a
+    // mitad de un repaint): `addCircles`/`addSymbols` corren en el lado
+    // nativo y su `PlatformException` llegaria como error de runtime no
+    // atrapado, tumbando la pantalla en caliente. Pintar es lo primero que se
+    // puede perder en una situacion asi, nunca el mapa entero.
+    try {
+      if (_circulosPintados.isNotEmpty) {
+        await mapa.removeCircles(_circulosPintados);
+        _circulosPintados = const <Circle>[];
+      }
+      if (_simbolosPintados.isNotEmpty) {
+        await mapa.removeSymbols(_simbolosPintados);
+        _simbolosPintados = const <Symbol>[];
+      }
+
+      _circulosPintados = await mapa.addCircles(
+        [
+          for (final t in _talleres)
+            CircleOptions(
+              geometry: LatLng(t.latitud, t.longitud),
+              circleRadius: 9,
+              circleColor: AppColors.orangePrimary.aCss,
+              circleStrokeWidth: 2,
+              circleStrokeColor: AppColors.cardWhite.aCss,
+            ),
+        ],
+        [
+          for (final t in _talleres) <String, dynamic>{'tallerId': t.id},
+        ],
+      );
+
+      // El circulo tiene 9 px de radio mas 2 de borde: la etiqueta arranca un
+      // poco mas abajo de eso para no quedar encima del pin. `textOffset` se mide
+      // en lineas de texto, no en pixeles, asi que el 1.3 de abajo es "un poco mas
+      // de una linea hacia abajo" y se lee igual a cualquier tamano de fuente.
+      _simbolosPintados = await mapa.addSymbols(
+        [
+          for (final t in _talleres)
+            SymbolOptions(
+              geometry: LatLng(t.latitud, t.longitud),
+              textField: t.nombre,
+              textSize: 11,
+              textColor: AppColors.labelDark.aCss,
+              textHaloColor: AppColors.cardWhite.aCss,
+              textHaloWidth: 1.8,
+              textAnchor: 'top',
+              textOffset: const Offset(0, 1.3),
+              textJustify: 'center',
+            ),
+        ],
+        [
+          for (final t in _talleres) <String, dynamic>{'tallerId': t.id},
+        ],
+      );
+    } catch (e) {
+      debugPrint('TalleresMapa: no se pudieron pintar los talleres ($e)');
     }
-    if (_simbolosPintados.isNotEmpty) {
-      await mapa.removeSymbols(_simbolosPintados);
-      _simbolosPintados = const <Symbol>[];
-    }
-
-    _circulosPintados = await mapa.addCircles(
-      [
-        for (final t in _talleres)
-          CircleOptions(
-            geometry: LatLng(t.latitud, t.longitud),
-            circleRadius: 9,
-            circleColor: AppColors.orangePrimary.aCss,
-            circleStrokeWidth: 2,
-            circleStrokeColor: AppColors.cardWhite.aCss,
-          ),
-      ],
-      [
-        for (final t in _talleres) <String, dynamic>{'tallerId': t.id},
-      ],
-    );
-
-    // El circulo tiene 9 px de radio mas 2 de borde: la etiqueta arranca un
-    // poco mas abajo de eso para no quedar encima del pin. `textOffset` se mide
-    // en lineas de texto, no en pixeles, asi que el 1.3 de abajo es "un poco mas
-    // de una linea hacia abajo" y se lee igual a cualquier tamano de fuente.
-    _simbolosPintados = await mapa.addSymbols(
-      [
-        for (final t in _talleres)
-          SymbolOptions(
-            geometry: LatLng(t.latitud, t.longitud),
-            textField: t.nombre,
-            textSize: 11,
-            textColor: AppColors.labelDark.aCss,
-            textHaloColor: AppColors.cardWhite.aCss,
-            textHaloWidth: 1.8,
-            textAnchor: 'top',
-            textOffset: const Offset(0, 1.3),
-            textJustify: 'center',
-          ),
-      ],
-      [
-        for (final t in _talleres) <String, dynamic>{'tallerId': t.id},
-      ],
-    );
   }
 
   /// Centro y ficha, en ese orden, para las TRES entradas al taller.
@@ -484,13 +612,23 @@ class _TalleresMapaScreenState extends State<TalleresMapaScreen> {
     // maneje el intent. Pasa cuando el telefono no tiene ninguna app de mapas y
     // el navegador no acepta `geo:`. Sin este chequeo el boton queda como si
     // no respondiera y el usuario lo repite varias veces.
-    final abierto = await launchUrl(
-      uriDeRuta(taller),
-      mode: LaunchMode.externalApplication,
-    );
+    //
+    // El `try` va aparte porque el lanzamiento si tira excepcion en otros dos
+    // casos: `PlatformException` cuando el sistema rechaza el intent y
+    // `ArgumentError` con un URI mal formado. Ninguno tiene que ver con la red,
+    // pero los tres dejarian el `await` sin atrapar.
+    try {
+      final abierto = await launchUrl(
+        uriDeRuta(taller),
+        mode: LaunchMode.externalApplication,
+      );
 
-    if (!abierto) {
-      _aviso('No encontramos una app de mapas en este teléfono.');
+      if (!abierto) {
+        _aviso('No encontramos una app de mapas en este teléfono.');
+      }
+    } catch (e) {
+      debugPrint('TalleresMapa: no se pudo abrir la ruta ($e)');
+      _aviso('No pudimos abrir la ruta en tu app de mapas.');
     }
   }
 
@@ -632,7 +770,7 @@ class _TalleresMapaScreenState extends State<TalleresMapaScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final mapa = _cuerpo();
+    final mapa = _cuerpo(context);
 
     if (widget.embeddido) return mapa;
 
@@ -646,7 +784,7 @@ class _TalleresMapaScreenState extends State<TalleresMapaScreen> {
     );
   }
 
-  Widget _cuerpo() {
+  Widget _cuerpo(BuildContext context) {
     // El mapa se dibuja siempre. Si no hay ubicación se abre en República
     // Dominicana y el problema de permisos aparece como aviso encima, no
     // reemplazando el mapa: el mapa es la función principal de la pantalla.
@@ -654,9 +792,14 @@ class _TalleresMapaScreenState extends State<TalleresMapaScreen> {
         ? kCentroRepublicaDominicana
         : LatLng(_posicion!.latitude, _posicion!.longitude);
 
+    final sinEstilo = _estiloNoDisponible(context);
+
     return Stack(
       children: [
         MapLibreMap(
+          // Llave que cambia al reintentar: ver `_reintentar`.
+          key: ValueKey('mapa-estilo-$_intentoDeEstilo'),
+
           styleString: EstilosMapa.porDefecto,
 
           initialCameraPosition: CameraPosition(
@@ -708,7 +851,30 @@ class _TalleresMapaScreenState extends State<TalleresMapaScreen> {
             child: _AvisoUbicacion(
               mensaje: _error,
               estado: _estadoError,
-              onReintentar: _ubicar,
+              onReintentar: _reintentar,
+            ),
+          ),
+
+        // Aviso de "el mapa no se pudo dibujar". El requisito de la unidad es
+        // que la desconexion no tire excepciones NI deje pantallas mudas: sin
+        // esto, sin internet el usuario ve un cuadro gris y no sabe si la app
+        // se colgo o si no hay datos.
+        //
+        // Va con `Positioned.fill` + `Align` para quedar centrada sobre el
+        // area del mapa sin desplazar el FAB (que sigue arriba en el Stack y
+        // sigue recibiendo los toques: un `Container` sin color no captura
+        // hits).
+        if (sinEstilo && !_cargando)
+          Positioned.fill(
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 84),
+                child: _AvisoMapaSinEstilo(
+                  onVerLista: _mostrarListaDeTalleres,
+                  onReintentar: _reintentar,
+                ),
+              ),
             ),
           ),
 
@@ -740,7 +906,10 @@ class _TalleresMapaScreenState extends State<TalleresMapaScreen> {
             ),
           ),
 
-        if (!_cargando) const Positioned(top: 12, right: 12, child: _Leyenda()),
+        // Sin estilo no hay capa de ubicacion ni circulos, asi que la leyenda
+        // "Tu / Afiliados" describiria cosas que no se estan viendo.
+        if (!_cargando && !sinEstilo)
+          const Positioned(top: 12, right: 12, child: _Leyenda()),
       ],
     );
   }
@@ -990,6 +1159,99 @@ class _BotonSecundario extends StatelessWidget {
         side: const BorderSide(color: AppColors.orangePrimary, width: 1.4),
         padding: const EdgeInsets.symmetric(vertical: 13),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
+}
+
+/// Aviso de que el mapa remoto no se pudo dibujar, con salida hacia la lista.
+///
+/// No es un error de la app: es la consecuencia esperada de estar sin internet
+/// en una pantalla cuyo fondo es un tile server remoto. Por eso el texto
+/// arranca diciendo lo que SI funciona (la lista, las citas) en vez de solo
+/// anunciar el problema.
+class _AvisoMapaSinEstilo extends StatelessWidget {
+  const _AvisoMapaSinEstilo({
+    required this.onVerLista,
+    required this.onReintentar,
+  });
+
+  final VoidCallback onVerLista;
+  final VoidCallback onReintentar;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      elevation: 6,
+      borderRadius: BorderRadius.circular(12),
+      color: AppColors.cardWhite,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 12, 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.cloud_off_outlined,
+                  size: 22,
+                  color: AppColors.orangePrimary,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'El mapa necesita conexión para dibujarse',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.labelDark,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        'La lista de talleres y tus citas siguen funcionando '
+                        'sin conexión.',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textGray.withValues(alpha: 0.95),
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: onReintentar,
+                  child: const Text(
+                    'Reintentar',
+                    style: TextStyle(color: AppColors.textGray),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                TextButton(
+                  onPressed: onVerLista,
+                  child: const Text(
+                    'Ver lista de talleres',
+                    style: TextStyle(
+                      color: AppColors.orangePrimary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

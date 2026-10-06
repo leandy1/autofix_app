@@ -49,6 +49,11 @@ dependencies:
   geolocator: 14.1.1
   url_launcher: 6.2.5
 
+  # Sesion persistente (Modo "Recuerdame"): UID, correo y taller_id del admin
+  # quedan en disco para entrar al Dashboard sin internet.
+  # Ver lib/core/auth/sesion_cache.dart.
+  shared_preferences: ^2.5.0
+
   # Firebase (Fase 2): Core, Auth anonima y Firestore para sincronizacion.
   firebase_core: ^3.15.2
   firebase_auth: ^5.7.0
@@ -72,6 +77,11 @@ dev_dependencies:
   # poder empujar cambios de estado reales en los tests. Sin esto el banner
   # solo se puede probar "montado", nunca "reaccionando".
   connectivity_plus_platform_interface: ^2.1.0
+
+  # Sesion persistente: la interfaz de plataforma de las prefs, para poder
+  # instalar en los tests un store que falle y comprobar que SesionCache nunca
+  # tira la excepcion al llamador (login no se rompe si el disco esta roto).
+  shared_preferences_platform_interface: ^2.4.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

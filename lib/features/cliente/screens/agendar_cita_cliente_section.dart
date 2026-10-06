@@ -8,6 +8,7 @@ import 'package:autofix/features/citas/data/cita_repository.dart';
 import 'package:autofix/features/citas/models/cita.dart';
 import 'package:autofix/features/configuracion/data/tipo_servicio_repository.dart';
 import 'package:autofix/features/configuracion/models/tipo_servicio.dart';
+import 'package:autofix/features/sync/sync_service.dart';
 import 'package:autofix/features/talleres/data/taller_repository.dart';
 import 'package:autofix/features/talleres/models/taller.dart';
 import 'package:autofix/shared/theme/app_colors.dart';
@@ -350,6 +351,13 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
       _mostrarAviso('No pudimos guardar tu cita. Intenta de nuevo.');
       return;
     }
+
+    // Sube a Firebase en segundo plano. Sin este llamado la cita se quedaria en
+    // `sync_status = 'pending'` hasta el proximo arranque de la app: la cola la
+    // drena [SyncService], nadie la drena solo. Si no hay red no pasa nada --
+    // `pushPending` traga su propio error -- y la cita sale en "Mis citas" con
+    // el badge de "en cola" hasta que vuelva la conexion.
+    unawaited(SyncService.instance.pushPending());
 
     if (!mounted) return;
     _resetearFormulario();

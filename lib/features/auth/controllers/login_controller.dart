@@ -82,7 +82,11 @@ class LoginController extends ChangeNotifier {
                 taller?.nombre ??
                 doc.data()?['tallerNombre'] as String? ??
                 'Taller';
-            SesionAdmin.instance.iniciar(
+            // `await` y no fire-and-forget: la sesion tiene que estar EN DISCO
+            // antes de que la pantalla navegue al Dashboard. Sin esto, cerrar la
+            // app en el instante siguiente al login arrancaria la proxima vez en
+            // el login, que es exactamente el caso offline que estamos cerrando.
+            await SesionAdmin.instance.iniciar(
               tallerId: tallerId,
               adminUid: uid,
               tallerNombre: tallerNombre,
@@ -102,7 +106,9 @@ class LoginController extends ChangeNotifier {
         }
       }
     } on FirebaseAuthException catch (e) {
-      if (e.code == 'user-not-found' ||
+      if (e.code == 'network-request-failed') {
+        _error = _mensajeSinRed();
+      } else if (e.code == 'user-not-found' ||
           e.code == 'wrong-password' ||
           e.code == 'invalid-credential') {
         _error = 'Correo o contraseña incorrectos.';
@@ -110,11 +116,41 @@ class LoginController extends ChangeNotifier {
         _error = 'Error de autenticación: ${e.message}';
       }
     } catch (e) {
-      _error = 'Error desconocido: $e';
+      // Firestore (la consulta del doc `admins`) y el resto de los SDKs de
+      // Firebase tiran `FirebaseException` con codigo 'unavailable' cuando no
+      // hay red. Sin este filtro el usuario ve "Error desconocido:
+      // [firebase_core/network-error]" en vez de una frase que pueda actuar.
+      _error = _esFallaDeRed(e) ? _mensajeSinRed() : 'Error desconocido: $e';
     }
 
     _cargando = false;
     notifyListeners();
     return false;
   }
+
+  /// `true` cuando el fallo vino de la falta de red y no de las credenciales.
+  ///
+  /// Se revisa por codigo y, en ultima instancia, por texto: los tres SDKs
+  /// (Auth, Firestore) usan codigos distintos ('network-request-failed',
+  /// 'unavailable') para el mismo problema, y un `contains` sobre el mensaje
+  /// es la red de seguridad para el dia que aparezca uno nuevo.
+  static bool _esFallaDeRed(Object e) {
+    if (e is FirebaseAuthException) return e.code == 'network-request-failed';
+    if (e is FirebaseException) {
+      return e.code == 'unavailable' || e.code.contains('network');
+    }
+    final texto = e.toString().toLowerCase();
+    return texto.contains('network') ||
+        texto.contains('socket') ||
+        texto.contains('unavailable');
+  }
+
+  /// Lo que se le dice al usuario cuando no hay red para validar la cuenta.
+  ///
+  /// La segunda frase no es cortesia: es la instrucción que impide que alguien
+  /// con la sesion ya guardada crea que su cuenta desaparecio porque la app no
+  /// lo dejo entrar con internet.
+  static String _mensajeSinRed() =>
+      'Sin conexión a internet. Revisa tu red e intenta de nuevo; '
+      'si ya iniciaste sesión antes, tu sesión guardada te dejará entrar.';
 }

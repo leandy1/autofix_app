@@ -1815,7 +1815,10 @@ class _CitasScreenState extends State<CitasScreen> {
               padding: const EdgeInsets.symmetric(vertical: 20),
               child: TextButton.icon(
                 onPressed: () async {
-                  SesionAdmin.instance.cerrar();
+                  // `await` porque cerrar sesion ahora tambien borra la caché
+                  // local de sesion: sin este orden el proximo arranque entraria
+                  // solo al Dashboard y pareceria que el logout no sirvio.
+                  await SesionAdmin.instance.cerrar();
                   await SyncService.instance.stop();
                   try {
                     await FirebaseAuth.instance.signOut();
