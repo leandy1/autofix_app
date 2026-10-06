@@ -156,6 +156,15 @@ class TallerRepository implements BaseRepository<Taller> {
     return actualizar(taller.copyWith(activo: false));
   }
 
+  /// Reactiva un taller dado de baja. Es el inverso de [darDeBaja].
+  Future<int> reactivar(String id) async {
+    final taller = await obtenerPorId(id);
+    if (taller == null) {
+      throw ArgumentError('No existe el taller $id.');
+    }
+    return actualizar(taller.copyWith(activo: true));
+  }
+
   // ------------------------------ DELETE ------------------------------
 
   /// Borrado FISICO, y sigue siendolo a proposito.

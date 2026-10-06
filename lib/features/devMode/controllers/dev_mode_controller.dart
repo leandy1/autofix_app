@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart' show DatabaseException;
 
+import 'package:autofix/features/devMode/sync/devmode_sync_service.dart';
 import 'package:autofix/features/talleres/data/taller_repository.dart';
 import 'package:autofix/features/talleres/models/taller.dart';
 
@@ -55,6 +56,22 @@ class DevModeController extends ChangeNotifier {
     }
   }
 
+  Future<void> start() async {
+    await DevModeSyncService.instance.start();
+  }
+
+  Future<void> stop() async {
+    await DevModeSyncService.instance.stop();
+  }
+
+  /// Fuerza una sincronizacion completa: reinicia el sync service
+  /// (push inicial de talleres a Firebase + listeners) y recarga local.
+  Future<void> sincronizar() async {
+    await DevModeSyncService.instance.stop();
+    await DevModeSyncService.instance.start();
+    await cargarTalleres();
+  }
+
   Future<void> _sincronizarConFirebase(String id) async {
     try {
       final guardado = await _talleresRepository.obtenerPorId(id);
@@ -62,14 +79,30 @@ class DevModeController extends ChangeNotifier {
         await FirebaseFirestore.instance
             .collection('talleres')
             .doc(id)
-            .set(guardado.toMap(), SetOptions(merge: true))
-            .timeout(const Duration(seconds: 2));
+            .set(_tallerAFirebaseMap(guardado), SetOptions(merge: true));
       }
     } catch (e) {
       debugPrint(
         '[DevModeController] Error sincronizando taller $id a Firebase: $e',
       );
     }
+  }
+
+  /// [Taller.toMap] guarda `activo` como 0/1 para SQLite; en Firestore debe ir
+  /// como `bool`, porque el listener de sync lo lee como `bool?`.
+  static Map<String, Object?> _tallerAFirebaseMap(Taller t) {
+    return <String, Object?>{
+      'nombre': t.nombre,
+      'direccion': t.direccion,
+      'telefono': t.telefono,
+      'latitud': t.latitud,
+      'longitud': t.longitud,
+      'activo': t.activo,
+      'creado_en': t.creadoEn?.toUtc().toIso8601String(),
+      'actualizado_en':
+          t.actualizadoEn?.toUtc().toIso8601String() ??
+          DateTime.now().toUtc().toIso8601String(),
+    };
   }
 
   Future<bool> guardarTaller(Taller taller) async {
@@ -136,6 +169,20 @@ class DevModeController extends ChangeNotifier {
     try {
       await _talleresRepository.darDeBaja(id);
 
+      await _sincronizarConFirebase(id);
+
+      _talleres = await _talleresRepository.obtenerTodas();
+      _error = null;
+      notifyListeners();
+      return true;
+    } on Exception catch (error) {
+      return _fallar(_mensajeDe(error));
+    }
+  }
+
+  Future<bool> reactivarTaller(String id) async {
+    try {
+      await _talleresRepository.reactivar(id);
       await _sincronizarConFirebase(id);
 
       _talleres = await _talleresRepository.obtenerTodas();
