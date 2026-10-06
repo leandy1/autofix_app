@@ -1257,6 +1257,9 @@ class _EditarCitaDialogState extends State<_EditarCitaDialog> {
                     descripcion: _descripcionController.text.trim(),
                     tecnico: _tecnicoSeleccionado,
                     total: widget.cita.total,
+                    tallerId: widget.cita.tallerId,
+                    creadoEn: widget.cita.creadoEn,
+                    actualizadoEn: widget.cita.actualizadoEn,
                     syncStatus: widget.cita.syncStatus,
                   );
                   widget.onSaved(citaActualizada);
