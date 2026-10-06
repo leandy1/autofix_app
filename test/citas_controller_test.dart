@@ -10,6 +10,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 /// desde que salio del repositorio, que no debe saber de etiquetas de UI.
 void main() {
   setUpAll(() {
+    TestWidgetsFlutterBinding.ensureInitialized();
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
     // Base propia: este archivo corre en paralelo con los otros que usan SQLite
@@ -138,9 +139,9 @@ void main() {
       expect(mapa['ATRASADAS']!.length, 0);
     });
 
-    test('una cita de hoy que ya paso la hora cae en ATRASADAS', () async {
+    test('una cita pendiente de dias anteriores cae en ATRASADAS al consultar hoy', () async {
       final controller = nuevoController();
-      await controller.guardar(nueva());
+      await controller.guardar(nueva().copyWith(fechaCita: DateTime(2026, 9, 30, 9, 30)));
 
       final mapa = controller.agruparPorEstado(
         DateTime(2026, 10, 1),
@@ -151,7 +152,7 @@ void main() {
       expect(mapa['Pendiente']!.length, 0);
     });
 
-    test('filtra por dia: lo de otro dia no aparece', () async {
+    test('filtra por dia: lo de otro dia no aparece al consultar fecha distinta a hoy', () async {
       final controller = nuevoController();
       await controller.guardar(
         nueva().copyWith(fechaCita: DateTime(2026, 10, 1, 9, 30)),
@@ -162,20 +163,47 @@ void main() {
 
       final mapa = controller.agruparPorEstado(
         DateTime(2026, 10, 1),
-        ahora: DateTime(2026, 10, 1, 8),
+        ahora: DateTime(2026, 10, 2, 8),
       );
 
       expect(mapa.values.expand((l) => l).length, 1);
     });
+
+    test(
+      'una cita de la noche se agrupa en su dia local, no en el dia UTC',
+      () async {
+        final controller = nuevoController();
+        await controller.guardar(
+          nueva().copyWith(fechaCita: DateTime(2026, 10, 1, 23, 30)),
+        );
+
+        final hoy = controller.agruparPorEstado(
+          DateTime(2026, 10, 1),
+          ahora: DateTime(2026, 10, 1, 8),
+        );
+        final manana = controller.agruparPorEstado(
+          DateTime(2026, 10, 2),
+          ahora: DateTime(2026, 10, 2, 8),
+        );
+
+        // La cita es del 01 a las 23:30 LOCAL. Aunque la base la
+        // guarde en UTC (que ya es 02/03/04 del otro dia segun el
+        // huso), al leerla tiene que caer en el 01, no en el 02.
+        expect(hoy['Pendiente']!.length, 1);
+        expect(manana['Pendiente']!.length, 0);
+        // Vista desde el 02, la pendiente de ayer es atrasada.
+        expect(manana['ATRASADAS']!.length, 1);
+      },
+    );
 
     test('el mismo instante da el mismo grupo en cualquier dispositivo', () {
       // El determinismo es la razon de que `esAtrasada` reciba `ahora`: dos
       // dispositivos con el mismo reloj tienen que clasificar igual, siempre.
       final cita = nueva().copyWith(fechaCita: DateTime(2026, 10, 1, 9, 30));
 
-      expect(cita.esAtrasada(DateTime(2026, 10, 1, 10)), isTrue);
+      expect(cita.esAtrasada(DateTime(2026, 10, 2, 0)), isTrue);
       expect(cita.esAtrasada(DateTime(2026, 10, 1, 9)), isFalse);
-      expect(cita.etiquetaUI(DateTime(2026, 10, 1, 10)), 'ATRASADAS');
+      expect(cita.etiquetaUI(DateTime(2026, 10, 2, 0)), 'ATRASADAS');
       expect(cita.etiquetaUI(DateTime(2026, 10, 1, 9)), 'Pendiente');
       expect(CitasController.etiquetas.length, 5);
     });

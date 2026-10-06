@@ -376,7 +376,6 @@ class DatabaseHelper {
 
     await _crearCatalogos(db);
     await _sembrarCatalogos(db);
-    await _sembrarTalleres(db);
   }
 
   /// Crea la tabla de talleres afiliados.
@@ -433,9 +432,11 @@ class DatabaseHelper {
   /// instalacion, la red de afiliados se multiplicaria por el numero de
   /// instalaciones. La unica forma de tener las dos cosas es un UUID por fila,
   /// generado en la instalacion: unico en el mundo, y replicado desde la nube al
-  /// resto de dispositivos.
-  Future<void> _sembrarTalleres(DatabaseExecutor db) async {
-    final existentes = await db.query(
+  /// Siembra los talleres iniciales definidos en [SemillaInicial.talleres].
+  /// No se ejecuta automáticamente para permitir que los talleres se gestionen dinámicamente.
+  Future<void> sembrarTalleres([DatabaseExecutor? db]) async {
+    final executor = db ?? await base;
+    final existentes = await executor.query(
       tablaTalleres,
       columns: <String>[colId],
       limit: 1,
@@ -444,12 +445,9 @@ class DatabaseHelper {
 
     final ahora = DateTime.now().toUtc().toIso8601String();
 
-    // v7: los IDs vienen predefinidos en SemillaInicial.talleres (UUIDs estaticos).
-    // Antes se generaban con Uuid.instancia.generar() aqui, lo que creaba talleres
-    // con ids distintos en cada instalacion y rompia la sincronizacion.
     for (int i = 0; i < SemillaInicial.talleres.length; i++) {
       final t = SemillaInicial.talleres[i];
-      await db.insert(tablaTalleres, <String, Object?>{
+      await executor.insert(tablaTalleres, <String, Object?>{
         colId: t.id,
         colNombre: t.nombre,
         colDireccion: t.direccion,
@@ -764,10 +762,6 @@ class DatabaseHelper {
           'CREATE INDEX IF NOT EXISTS idx_citas_taller_id '
           'ON $tablaCitas ($colTallerId)',
         );
-        // Un dispositivo que ya venia usando la app entra por aca y recibe la
-        // red de afiliados: si no, su mapa abriria en blanco y pareceria que el
-        // mapa esta roto.
-        await _sembrarTalleres(txn);
       }
 
       if (versionAnterior < 5) {

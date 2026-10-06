@@ -28,39 +28,141 @@ class _CuentasAdminScreenState extends State<CuentasAdminScreen> {
   }
 
   void _onControllerChange() {
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   void _mostrarCrearAdmin() {
     if (_controller.talleres.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No hay talleres disponibles para asociar.')),
+        const SnackBar(content: Text('No hay talleres disponibles.')),
       );
       return;
     }
-
     showDialog<void>(
       context: context,
-      builder: (context) => _CrearAdminDialog(
+      builder: (ctx) => _CrearAdminDialog(
         talleres: _controller.talleres,
         onGuardar: (email, password, tallerId) async {
           final ok = await _controller.crearCuentaAdmin(
-            email: email,
-            password: password,
-            tallerId: tallerId,
+            email: email, password: password, tallerId: tallerId,
           );
-          if (!context.mounted) return;
+          if (!ctx.mounted) return;
           if (ok) {
-            Navigator.of(context).pop();
+            Navigator.of(ctx).pop();
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Cuenta de admin creada correctamente.')),
+              const SnackBar(content: Text('Cuenta creada correctamente.')),
             );
           } else {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(_controller.error ?? 'Error desconocido')),
+              SnackBar(content: Text(_controller.error ?? 'Error')),
             );
           }
         },
+      ),
+    );
+  }
+
+  void _editarAdmin(Map<String, dynamic> admin) {
+    if (_controller.talleres.isEmpty) return;
+    final uid = admin['uid'] as String;
+    String? tallerActual = admin['tallerId'] as String?;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        String? seleccionado = tallerActual;
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            title: const Text('Editar Admin'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Email: ${admin['email']}',
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  decoration: const InputDecoration(
+                    labelText: 'Taller asignado',
+                    border: OutlineInputBorder(),
+                  ),
+                  value: _controller.talleres.any((t) => t.id == seleccionado)
+                      ? seleccionado
+                      : null,
+                  items: _controller.talleres
+                      .map((t) => DropdownMenuItem(
+                          value: t.id, child: Text(t.nombre)))
+                      .toList(),
+                  onChanged: (v) => setDialogState(() => seleccionado = v),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.orangePrimary),
+                onPressed: seleccionado == null
+                    ? null
+                    : () async {
+                        final ok = await _controller.editarAdmin(
+                            uid, seleccionado!);
+                        if (!ctx.mounted) return;
+                        Navigator.of(ctx).pop();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(ok
+                                ? 'Taller actualizado.'
+                                : _controller.error ?? 'Error'),
+                          ),
+                        );
+                      },
+                child: const Text('Guardar',
+                    style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _eliminarAdmin(Map<String, dynamic> admin) {
+    final uid = admin['uid'] as String;
+    final email = admin['email'] as String? ?? uid;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Eliminar Admin'),
+        content: Text('¿Eliminar la cuenta de $email?\n\n'
+            'Se eliminará del sistema, pero el usuario '
+            'seguirá existiendo en Firebase Auth.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () async {
+              final ok = await _controller.eliminarAdmin(uid);
+              if (!ctx.mounted) return;
+              Navigator.of(ctx).pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                      ok ? 'Admin eliminado.' : _controller.error ?? 'Error'),
+                ),
+              );
+            },
+            child: const Text('Eliminar',
+                style: TextStyle(color: Colors.white)),
+          ),
+        ],
       ),
     );
   }
@@ -72,7 +174,8 @@ class _CuentasAdminScreenState extends State<CuentasAdminScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.headerNavy,
         foregroundColor: Colors.white,
-        title: const Text('Cuentas Administrador', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+        title: const Text('Cuentas Administrador',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
         actions: [
           IconButton(
             icon: const Icon(Icons.add),
@@ -83,33 +186,59 @@ class _CuentasAdminScreenState extends State<CuentasAdminScreen> {
       ),
       body: _controller.cargando && _controller.admins.isEmpty
           ? const Center(child: CircularProgressIndicator())
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: _controller.admins.length,
-              itemBuilder: (context, index) {
-                final admin = _controller.admins[index];
-                final tallerAsociado = _controller.talleres.where((t) => t.id == admin['tallerId']).firstOrNull;
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  child: ListTile(
-                    leading: const CircleAvatar(
-                      backgroundColor: AppColors.orangePrimary,
-                      child: Icon(Icons.person, color: Colors.white),
-                    ),
-                    title: Text(admin['email'] ?? 'Sin email', style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text('Taller: ${tallerAsociado?.nombre ?? 'Desconocido (${admin['tallerId']})'}'),
-                    trailing: Text(admin['uid']?.toString().substring(0, 6) ?? '', style: const TextStyle(color: Colors.grey)),
-                  ),
-                );
-              },
-            ),
+          : _controller.admins.isEmpty
+              ? const Center(
+                  child: Text('No hay cuentas de admin.',
+                      style: TextStyle(color: AppColors.textGray)))
+              : ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: _controller.admins.length,
+                  itemBuilder: (context, index) {
+                    final admin = _controller.admins[index];
+                    final taller = _controller.talleres
+                        .where((t) => t.id == admin['tallerId'])
+                        .firstOrNull;
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      child: ListTile(
+                        leading: const CircleAvatar(
+                          backgroundColor: AppColors.orangePrimary,
+                          child: Icon(Icons.person, color: Colors.white),
+                        ),
+                        title: Text(admin['email'] ?? 'Sin email',
+                            style:
+                                const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Text(
+                            'Taller: ${taller?.nombre ?? 'Sin asignar'}'),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.edit,
+                                  color: AppColors.orangePrimary, size: 20),
+                              tooltip: 'Editar',
+                              onPressed: () => _editarAdmin(admin),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete,
+                                  color: Colors.red, size: 20),
+                              tooltip: 'Eliminar',
+                              onPressed: () => _eliminarAdmin(admin),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
     );
   }
 }
 
 class _CrearAdminDialog extends StatefulWidget {
   final List<Taller> talleres;
-  final Future<void> Function(String email, String password, String tallerId) onGuardar;
+  final Future<void> Function(String email, String password, String tallerId)
+      onGuardar;
 
   const _CrearAdminDialog({required this.talleres, required this.onGuardar});
 
@@ -135,36 +264,56 @@ class _CrearAdminDialogState extends State<_CrearAdminDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('Nueva Cuenta Admin', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const Text('Nueva Cuenta Admin',
+                  style: TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 20),
               TextFormField(
                 controller: _email,
-                decoration: const InputDecoration(labelText: 'Correo electrnico', border: OutlineInputBorder()),
+                decoration: const InputDecoration(
+                    labelText: 'Correo electrónico',
+                    border: OutlineInputBorder()),
                 keyboardType: TextInputType.emailAddress,
-                validator: (v) => v == null || v.isEmpty || !v.contains('@') ? 'Correo invǭlido' : null,
+                validator: (v) =>
+                    v == null || v.isEmpty || !v.contains('@')
+                        ? 'Correo inválido'
+                        : null,
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _password,
-                decoration: const InputDecoration(labelText: 'Contrasea', border: OutlineInputBorder()),
+                decoration: const InputDecoration(
+                    labelText: 'Contraseña',
+                    border: OutlineInputBorder()),
                 obscureText: true,
-                validator: (v) => v == null || v.length < 6 ? 'Mnimo 6 caracteres' : null,
+                validator: (v) => v == null || v.length < 6
+                    ? 'Mínimo 6 caracteres'
+                    : null,
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                decoration: const InputDecoration(labelText: 'Asociar a taller', border: OutlineInputBorder()),
+                decoration: const InputDecoration(
+                    labelText: 'Asociar a taller',
+                    border: OutlineInputBorder()),
                 value: _tallerId,
-                items: widget.talleres.map((t) => DropdownMenuItem(value: t.id, child: Text(t.nombre))).toList(),
+                items: widget.talleres
+                    .map((t) => DropdownMenuItem(
+                        value: t.id, child: Text(t.nombre)))
+                    .toList(),
                 onChanged: (v) => setState(() => _tallerId = v),
-                validator: (v) => v == null ? 'Seleccione un taller' : null,
+                validator: (v) =>
+                    v == null ? 'Seleccione un taller' : null,
               ),
               const SizedBox(height: 24),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
-                    onPressed: _guardando ? null : () => Navigator.of(context).pop(),
-                    child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+                    onPressed: _guardando
+                        ? null
+                        : () => Navigator.of(context).pop(),
+                    child: const Text('Cancelar',
+                        style: TextStyle(color: Colors.grey)),
                   ),
                   ElevatedButton(
                     onPressed: _guardando
@@ -172,16 +321,25 @@ class _CrearAdminDialogState extends State<_CrearAdminDialog> {
                         : () async {
                             if (!_formKey.currentState!.validate()) return;
                             setState(() => _guardando = true);
-                            await widget.onGuardar(_email.text.trim(), _password.text, _tallerId!);
+                            await widget.onGuardar(
+                                _email.text.trim(),
+                                _password.text,
+                                _tallerId!);
                             if (mounted) setState(() => _guardando = false);
                           },
-                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.orangePrimary),
-                    child: _guardando 
-                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                        : const Text('Guardar', style: TextStyle(color: Colors.white)),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.orangePrimary),
+                    child: _guardando
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                                color: Colors.white, strokeWidth: 2))
+                        : const Text('Guardar',
+                            style: TextStyle(color: Colors.white)),
                   ),
                 ],
-              )
+              ),
             ],
           ),
         ),
@@ -189,4 +347,3 @@ class _CrearAdminDialogState extends State<_CrearAdminDialog> {
     );
   }
 }
-

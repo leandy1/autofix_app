@@ -177,16 +177,25 @@ class CitaRepository implements BaseRepository<Cita> {
   ///
   /// Sin filas de otros dias: los limites son ISO en UTC y el rango es
   /// `[desde, hasta)`. Ver [_rangoDelDia].
-  Future<List<Cita>> obtenerDelDia(DateTime fecha) async {
+  Future<List<Cita>> obtenerDelDia(DateTime fecha, {String? tallerId}) async {
     final db = await _helper.base;
     final rango = _rangoDelDia(fecha);
+    final condiciones = <String>[
+      '${DatabaseHelper.colFechaCita} >= ?',
+      '${DatabaseHelper.colFechaCita} < ?',
+      '${DatabaseHelper.colEliminadoEn} IS NULL',
+    ];
+    final argumentos = <Object?>[rango.desde, rango.hasta];
+
+    if (tallerId != null) {
+      condiciones.add('${DatabaseHelper.colTallerId} = ?');
+      argumentos.add(tallerId);
+    }
+
     final filas = await db.query(
       tabla,
-      where:
-          '${DatabaseHelper.colFechaCita} >= ? '
-          'AND ${DatabaseHelper.colFechaCita} < ? '
-          'AND ${DatabaseHelper.colEliminadoEn} IS NULL',
-      whereArgs: <Object?>[rango.desde, rango.hasta],
+      where: condiciones.join(' AND '),
+      whereArgs: argumentos,
       orderBy: '${DatabaseHelper.colFechaCita} ASC',
     );
     return filas.map(Cita.fromMap).toList();
@@ -224,12 +233,17 @@ class CitaRepository implements BaseRepository<Cita> {
   /// Sin argumentos resume TODO el historial: es lo que necesitan las tarjetas de
   /// "vehiculos en el taller" y "ordenes abiertas", que son del taller, no del
   /// dia. Con [fecha] el resumen se limita a ese dia, que es lo que necesitan
-  /// "completadas" e "ingresos del dia".
+  /// "completadas" e "ingresos del dia". Con [tallerId] filtra exclusivamente
+  /// por el taller especificado.
   ///
   /// [ahora] va por parametro, con la misma razon que en `Cita.esAtrasada`: leer
   /// el reloj adentro hace que dos dispositivos clasifiquen la misma cita
   /// distinto. El que arma la pasada lo fija una sola vez.
-  Future<ResumenCitas> resumir({DateTime? fecha, DateTime? ahora}) async {
+  Future<ResumenCitas> resumir({
+    DateTime? fecha,
+    DateTime? ahora,
+    String? tallerId,
+  }) async {
     final momento = (ahora ?? DateTime.now()).toUtc();
     final db = await _helper.base;
 
@@ -239,6 +253,7 @@ class CitaRepository implements BaseRepository<Cita> {
     // 3) `fecha_cita < ?`   -> el instante que define "ya paso"
     // 4) `fecha_cita >= ?`  -> el rango del dia, si se pidio uno
     // 5) `fecha_cita < ?`   -> el mismo rango, por el otro extremo
+    // 6) `taller_id = ?`    -> el filtro por taller, si se pidio
     //
     // 'completado' viaja como argumento y no pegado en el SQL, para que el dia
     // que se anada un estado no haya que cazarlo en un string.
@@ -263,6 +278,10 @@ class CitaRepository implements BaseRepository<Cita> {
       condiciones.add('${DatabaseHelper.colFechaCita} >= ?');
       condiciones.add('${DatabaseHelper.colFechaCita} < ?');
       argumentos.addAll(_rangoDelDia(fecha).argumentos);
+    }
+    if (tallerId != null) {
+      condiciones.add('${DatabaseHelper.colTallerId} = ?');
+      argumentos.add(tallerId);
     }
 
     final filas = await db.rawQuery('''
@@ -308,6 +327,7 @@ class CitaRepository implements BaseRepository<Cita> {
   Future<int> sumarIngresosCompletadas({
     DateTime? desde,
     DateTime? hasta,
+    String? tallerId,
   }) async {
     final db = await _helper.base;
 
@@ -328,6 +348,10 @@ class CitaRepository implements BaseRepository<Cita> {
       // citas del lunes, y eso siempre sorprende.
       condiciones.add('${DatabaseHelper.colFechaCita} <= ?');
       argumentos.add(aIsoUtc(hasta));
+    }
+    if (tallerId != null) {
+      condiciones.add('${DatabaseHelper.colTallerId} = ?');
+      argumentos.add(tallerId);
     }
 
     final filas = await db.rawQuery(

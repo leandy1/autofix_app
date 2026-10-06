@@ -62,7 +62,8 @@ class DevModeController extends ChangeNotifier {
         await FirebaseFirestore.instance
             .collection('talleres')
             .doc(id)
-            .set(guardado.toMap(), SetOptions(merge: true));
+            .set(guardado.toMap(), SetOptions(merge: true))
+            .timeout(const Duration(seconds: 2));
       }
     } catch (e) {
       debugPrint('[DevModeController] Error sincronizando taller $id a Firebase: $e');

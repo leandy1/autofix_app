@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 
+import 'package:autofix/core/auth/sesion_admin.dart';
 import 'package:autofix/features/citas/data/cita_repository.dart';
 import 'package:autofix/features/citas/models/cita.dart';
 import 'package:autofix/features/sync/sync_service.dart';
@@ -13,10 +14,14 @@ import 'package:autofix/features/sync/sync_service.dart';
 /// No expone `Color` ni `Widget`: devuelve entidades y texto ya formateado.
 /// El mapeo etiqueta -> color es del diseño, no del dominio.
 class CitasController extends ChangeNotifier {
-  CitasController({CitaRepository? repositorio})
-    : _repo = repositorio ?? CitaRepository.instance;
+  CitasController({CitaRepository? repositorio, String? tallerId})
+    : _repo = repositorio ?? CitaRepository.instance,
+      _tallerId = tallerId;
 
   final CitaRepository _repo;
+  final String? _tallerId;
+
+  String? get _idTallerEfectivo => _tallerId ?? SesionAdmin.instance.tallerId;
 
   static final DateFormat _fechaHora = DateFormat('dd/MM/yyyy HH:mm');
 
@@ -41,12 +46,21 @@ class CitasController extends ChangeNotifier {
 
   static String formatearFechaHora(DateTime fecha) => _fechaHora.format(fecha);
 
+  /// Consulta citas filtradas por taller si hay sesión de admin activa o taller asignado.
+  Future<List<Cita>> _obtenerCitas() {
+    final tallerId = _idTallerEfectivo;
+    if (tallerId != null) {
+      return _repo.obtenerPorTaller(tallerId);
+    }
+    return _repo.obtenerTodas();
+  }
+
   Future<void> cargar() async {
     _cargando = true;
     _error = null;
     notifyListeners();
 
-    final resultado = await _intentar(() => _repo.obtenerTodas());
+    final resultado = await _intentar(() => _obtenerCitas());
     if (resultado != null) _citas = resultado;
     _cargando = false;
     notifyListeners();
@@ -59,13 +73,18 @@ class CitasController extends ChangeNotifier {
   /// de `obtenerTodas` es por fecha y una insercion al principio lo dejaria
   /// desalineado con lo que ve el usuario.
   Future<bool> guardar(Cita cita) async {
+    // Si hay taller efectivo y la cita no tiene taller, asignarlo.
+    final taller = _idTallerEfectivo;
+    final citaConTaller = (cita.tallerId == null && taller != null)
+        ? cita.copyWith(tallerId: taller)
+        : cita;
     final ok = await _intentar(() async {
-      if (cita.id == null) {
-        await _repo.crear(cita);
+      if (citaConTaller.id == null) {
+        await _repo.crear(citaConTaller);
       } else {
-        await _repo.actualizar(cita);
+        await _repo.actualizar(citaConTaller);
       }
-      return _repo.obtenerTodas();
+      return _obtenerCitas();
     });
 
     if (ok == null) return false;
@@ -80,7 +99,7 @@ class CitasController extends ChangeNotifier {
   Future<bool> cambiarEstado(String id, EstadoCita estado) async {
     final ok = await _intentar(() async {
       await _repo.cambiarEstado(id, estado);
-      return _repo.obtenerTodas();
+      return _obtenerCitas();
     });
 
     if (ok == null) return false;
@@ -100,7 +119,7 @@ class CitasController extends ChangeNotifier {
   Future<bool> eliminar(String id) async {
     final ok = await _intentar(() async {
       await _repo.eliminar(id);
-      return _repo.obtenerTodas();
+      return _obtenerCitas();
     });
 
     if (ok == null) return false;
@@ -132,7 +151,7 @@ class CitasController extends ChangeNotifier {
         mapa[Cita.etiquetaAtrasadas]!.add(cita);
         continue;
       }
-      if (_claveDia(cita.fechaCita) != dia) continue;
+      if (_claveDia(cita.fechaCita.toLocal()) != dia) continue;
       mapa[cita.etiquetaUI(momento)]!.add(cita);
     }
     return mapa;

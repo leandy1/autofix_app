@@ -1,5 +1,10 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+
+import 'package:autofix/core/auth/sesion_admin.dart';
+import 'package:autofix/features/sync/sync_service.dart';
+import 'package:autofix/features/talleres/data/taller_repository.dart';
 
 enum LoginRole { admin, cliente }
 
@@ -9,6 +14,8 @@ class LoginController extends ChangeNotifier {
 
   LoginRole _selectedRole = LoginRole.admin;
   User? _currentUser;
+  bool _cargando = false;
+  String? _error;
 
   LoginController() {
     try {
@@ -23,6 +30,8 @@ class LoginController extends ChangeNotifier {
   }
 
   LoginRole get selectedRole => _selectedRole;
+  bool get cargando => _cargando;
+  String? get error => _error;
 
   /// UID del usuario autenticado (anonimo o real). `null` si no hay sesion.
   String? get currentUid => _currentUser?.uid;
@@ -42,4 +51,60 @@ class LoginController extends ChangeNotifier {
       usuario.trim() == usuarioDev && contrasena != contrasenaDev;
 
   LoginRole submit() => _selectedRole;
+
+  Future<bool> loginAdmin(String email, String password) async {
+    _cargando = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final creds = await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
+      final uid = creds.user?.uid;
+      if (uid != null) {
+        final doc = await FirebaseFirestore.instance.collection('admins').doc(uid).get();
+        if (doc.exists) {
+          final tallerId = doc.data()?['tallerId'] as String?;
+          if (tallerId == null) {
+            _error = 'La cuenta no tiene un taller asignado.';
+            await FirebaseAuth.instance.signOut();
+            await FirebaseAuth.instance.signInAnonymously();
+          } else {
+            final taller = await TallerRepository.instance.obtenerPorId(tallerId);
+            final tallerNombre = taller?.nombre ?? doc.data()?['tallerNombre'] as String? ?? 'Taller';
+            SesionAdmin.instance.iniciar(
+              tallerId: tallerId,
+              adminUid: uid,
+              tallerNombre: tallerNombre,
+              adminEmail: email.trim(),
+            );
+            // Reiniciar SyncService con el nuevo UID de admin.
+            await SyncService.instance.stop();
+            await SyncService.instance.start();
+            _cargando = false;
+            notifyListeners();
+            return true;
+          }
+        } else {
+          _error = 'El usuario no tiene permisos de administrador.';
+          await FirebaseAuth.instance.signOut();
+          await FirebaseAuth.instance.signInAnonymously();
+        }
+      }
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'user-not-found' || e.code == 'wrong-password' || e.code == 'invalid-credential') {
+        _error = 'Correo o contraseña incorrectos.';
+      } else {
+        _error = 'Error de autenticación: ${e.message}';
+      }
+    } catch (e) {
+      _error = 'Error desconocido: $e';
+    }
+
+    _cargando = false;
+    notifyListeners();
+    return false;
+  }
 }
