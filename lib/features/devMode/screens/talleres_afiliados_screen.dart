@@ -21,11 +21,13 @@ class _TalleresAfiliadosScreenState extends State<TalleresAfiliadosScreen> {
   @override
   void initState() {
     super.initState();
+    _controller.start();
     _controller.cargarTalleres();
   }
 
   @override
   void dispose() {
+    _controller.stop();
     _controller.dispose();
     _buscarController.dispose();
     super.dispose();
@@ -55,7 +57,12 @@ class _TalleresAfiliadosScreenState extends State<TalleresAfiliadosScreen> {
             ),
           ],
         ),
-        actions: [
+         actions: [
+          IconButton(
+            tooltip: 'Sincronizar',
+            icon: const Icon(Icons.sync),
+            onPressed: _operacionEnCurso ? null : _sincronizar,
+          ),
           IconButton(
             tooltip: 'Cuentas Admin',
             icon: const Icon(Icons.manage_accounts),
@@ -77,13 +84,13 @@ class _TalleresAfiliadosScreenState extends State<TalleresAfiliadosScreen> {
         builder: (context, _) {
           final query = _buscarController.text.trim().toLowerCase();
           final talleres = _controller.talleres.where((taller) {
-            return taller.activo &&
-                (taller.nombre.toLowerCase().contains(query) ||
-                    taller.direccion.toLowerCase().contains(query));
+            return (taller.nombre.toLowerCase().contains(query) ||
+                taller.direccion.toLowerCase().contains(query));
           }).toList();
-          final activos = _controller.talleres
-              .where((taller) => taller.activo)
-              .length;
+                     final activos = _controller.talleres
+                       .where((taller) => taller.activo)
+                       .length;
+                     final inactivos = _controller.talleres.length - activos;
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(20),
@@ -162,6 +169,14 @@ class _TalleresAfiliadosScreenState extends State<TalleresAfiliadosScreen> {
                             valor: '$activos',
                           ),
                         ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _resumen(
+                            titulo: 'Inactivos',
+                            valor: '$inactivos',
+                            color: AppColors.textGray,
+                          ),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 20),
@@ -176,7 +191,11 @@ class _TalleresAfiliadosScreenState extends State<TalleresAfiliadosScreen> {
     );
   }
 
-  Widget _resumen({required String titulo, required String valor}) {
+  Widget _resumen({
+    required String titulo,
+    required String valor,
+    Color? color,
+  }) {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -189,13 +208,16 @@ class _TalleresAfiliadosScreenState extends State<TalleresAfiliadosScreen> {
         children: [
           Text(
             titulo,
-            style: const TextStyle(fontSize: 12, color: AppColors.textGray),
+            style: TextStyle(
+              fontSize: 12,
+              color: color ?? AppColors.textGray,
+            ),
           ),
           const SizedBox(height: 6),
           Text(
             valor,
-            style: const TextStyle(
-              color: AppColors.headerNavy,
+            style: TextStyle(
+              color: color ?? AppColors.headerNavy,
               fontSize: 23,
               fontWeight: FontWeight.w800,
             ),
@@ -371,6 +393,13 @@ class _TalleresAfiliadosScreenState extends State<TalleresAfiliadosScreen> {
                   onPressed: () => _confirmarDarDeBaja(taller),
                   icon: const Icon(Icons.delete_outline),
                   color: Colors.redAccent,
+                )
+              else
+                IconButton(
+                  tooltip: 'Reactivar taller',
+                  onPressed: () => _confirmarReactivarTaller(taller),
+                  icon: const Icon(Icons.refresh),
+                  color: const Color(0xFF008B68),
                 ),
             ],
           ),
@@ -426,6 +455,85 @@ class _TalleresAfiliadosScreenState extends State<TalleresAfiliadosScreen> {
                 ? 'El taller se dio de baja correctamente.'
                 : _controller.error ?? 'No se pudo dar de baja el taller.',
           ),
+        ),
+      );
+    } finally {
+      _operacionEnCurso = false;
+    }
+  }
+
+  Future<void> _confirmarReactivarTaller(Taller taller) async {
+    if (_operacionEnCurso) return;
+    _operacionEnCurso = true;
+    try {
+      final confirmado = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Reactivar taller'),
+          content: Text(
+            '¿Deseas reactivar a ${taller.nombre}? Volverá a aparecer en el mapa '
+            'y en el selector de citas.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF008B68),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Reactivar'),
+            ),
+          ],
+        ),
+      );
+      if (confirmado != true || !mounted) return;
+
+      final id = taller.id;
+      if (id == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo identificar el taller.')),
+        );
+        return;
+      }
+
+      final ok = await _controller.reactivarTaller(id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ok
+                ? 'El taller se reactivado correctamente.'
+                : _controller.error ?? 'No se pudo reactivar el taller.',
+          ),
+          backgroundColor: ok ? null : Colors.red.shade700,
+        ),
+      );
+    } finally {
+      _operacionEnCurso = false;
+    }
+  }
+
+  Future<void> _sincronizar() async {
+    _operacionEnCurso = true;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Sincronizando con Firebase...')),
+    );
+    try {
+      await _controller.sincronizar();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _controller.error == null
+                ? 'Sincronización completa.'
+                : _controller.error!,
+          ),
+          backgroundColor:
+              _controller.error == null ? Colors.green.shade800 : Colors.red.shade700,
         ),
       );
     } finally {
