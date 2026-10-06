@@ -19,6 +19,7 @@ void main() {
 
   setUp(() async {
     await DatabaseHelper.resetParaPruebas();
+    await DatabaseHelper.instance.sembrarTalleres();
   });
 
   testWidgets('permite editar y guardar los datos de un taller', (

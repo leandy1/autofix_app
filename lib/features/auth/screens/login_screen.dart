@@ -28,7 +28,7 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _handleLogin() {
+  Future<void> _handleLogin() async {
     final usuario = _userController.text;
     final contrasena = _passwordController.text;
     if (_loginController.esAccesoDev(usuario, contrasena)) {
@@ -47,12 +47,34 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     final role = _loginController.submit();
+
+    if (role == LoginRole.admin) {
+      if (usuario.trim().isEmpty || contrasena.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Ingresa correo y contraseña.')),
+        );
+        return;
+      }
+      final ok = await _loginController.loginAdmin(usuario, contrasena);
+      if (!mounted) return;
+      if (ok) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const DashboardScreen()),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_loginController.error ?? 'Error al iniciar sesión.'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+      }
+      return;
+    }
+
+    // Cliente: acceso directo (sin autenticación por ahora).
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (_) => role == LoginRole.admin
-            ? const DashboardScreen()
-            : const DashboardClienteScreen(),
-      ),
+      MaterialPageRoute(builder: (_) => const DashboardClienteScreen()),
     );
   }
 

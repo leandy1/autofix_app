@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart' show DatabaseException;
 
@@ -54,6 +55,21 @@ class DevModeController extends ChangeNotifier {
     }
   }
 
+  Future<void> _sincronizarConFirebase(String id) async {
+    try {
+      final guardado = await _talleresRepository.obtenerPorId(id);
+      if (guardado != null) {
+        await FirebaseFirestore.instance
+            .collection('talleres')
+            .doc(id)
+            .set(guardado.toMap(), SetOptions(merge: true))
+            .timeout(const Duration(seconds: 2));
+      }
+    } catch (e) {
+      debugPrint('[DevModeController] Error sincronizando taller $id a Firebase: $e');
+    }
+  }
+
   Future<bool> guardarTaller(Taller taller) async {
     final nombre = taller.nombre.trim();
     if (nombre.isEmpty) {
@@ -77,28 +93,33 @@ class DevModeController extends ChangeNotifier {
     );
 
     try {
+      String idTaller;
       if (tallerLimpio.id == null) {
         final existente = await _talleresRepository.obtenerPorNombre(nombre);
         if (existente != null) {
           if (existente.activo) {
             return _fallar('Ya existe un taller con ese nombre.');
           }
-          await _talleresRepository.actualizar(
-            existente.copyWith(
-              nombre: nombre,
-              direccion: tallerLimpio.direccion,
-              telefono: tallerLimpio.telefono,
-              latitud: tallerLimpio.latitud,
-              longitud: tallerLimpio.longitud,
-              activo: true,
-            ),
+          final actualizarTaller = existente.copyWith(
+            nombre: nombre,
+            direccion: tallerLimpio.direccion,
+            telefono: tallerLimpio.telefono,
+            latitud: tallerLimpio.latitud,
+            longitud: tallerLimpio.longitud,
+            activo: true,
           );
+          await _talleresRepository.actualizar(actualizarTaller);
+          idTaller = actualizarTaller.id!;
         } else {
-          await _talleresRepository.crear(tallerLimpio);
+          idTaller = await _talleresRepository.crear(tallerLimpio);
         }
       } else {
         await _talleresRepository.actualizar(tallerLimpio);
+        idTaller = tallerLimpio.id!;
       }
+
+      await _sincronizarConFirebase(idTaller);
+
       _talleres = await _talleresRepository.obtenerTodas();
       _error = null;
       notifyListeners();
@@ -112,6 +133,9 @@ class DevModeController extends ChangeNotifier {
   Future<bool> darDeBajaTaller(String id) async {
     try {
       await _talleresRepository.darDeBaja(id);
+      
+      await _sincronizarConFirebase(id);
+
       _talleres = await _talleresRepository.obtenerTodas();
       _error = null;
       notifyListeners();

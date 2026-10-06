@@ -202,6 +202,9 @@ void main() {
     test(
       'las citas quedan asociadas a talleres que existen de verdad',
       () async {
+        // La siembra de talleres es manual desde que `onCreate`
+        // no la corre sola: este test la pide explicitamente.
+        await DatabaseHelper.instance.sembrarTalleres();
         await DatabaseHelper.sembrarCitasDemo(referencia: referencia);
 
         final db = await DatabaseHelper.instance.base;

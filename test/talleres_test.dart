@@ -91,8 +91,7 @@ void main() {
     test(
       'las coordenadas conservan los decimales al hacer round-trip',
       () async {
-        // Con un INTEGER truncado, este test daria 18.0 y pasaria igual. Por eso se
-        // compara contra el valor exacto de la semilla.
+        await DatabaseHelper.instance.sembrarTalleres();
         final refriauto = SemillaInicial.talleres.firstWhere(
           (t) => t.nombre == 'Global Refriauto',
         );
@@ -130,7 +129,13 @@ void main() {
   });
 
   group('semilla de afiliados', () {
-    test('una base nueva nace con los 3 talleres de la semilla', () async {
+    test('una base nueva nace vacía sin talleres por defecto', () async {
+      final talleres = await TallerRepository.instance.obtenerTodas();
+      expect(talleres, isEmpty);
+    });
+
+    test('sembrarTalleres() siembra los talleres de la semilla', () async {
+      await DatabaseHelper.instance.sembrarTalleres();
       final talleres = await TallerRepository.instance.obtenerTodas();
 
       expect(talleres.length, SemillaInicial.talleres.length);
@@ -141,6 +146,7 @@ void main() {
     });
 
     test('incluye Global Refriauto, el taller destacado', () async {
+      await DatabaseHelper.instance.sembrarTalleres();
       final refriauto = await TallerRepository.instance.obtenerPorNombre(
         'Global Refriauto',
       );
@@ -149,16 +155,15 @@ void main() {
       expect(refriauto.telefono, isNotEmpty);
     });
 
-    test('los 3 nacen activos', () async {
+    test('los 3 nacen activos al sembrar', () async {
+      await DatabaseHelper.instance.sembrarTalleres();
       final activos = await TallerRepository.instance.obtenerActivos();
       expect(activos.length, SemillaInicial.talleres.length);
       expect(activos.every((t) => t.activo), isTrue);
     });
 
     test('las coordenadas son de Republica Dominicana', () async {
-      // RD esta entre los paralelos 17.5 y 19.9, y las longitudes entre -72 y
-      // -68. Un punto fuera de esa caja significa un taller en otro pais, que
-      // es exactamente el bug de invertir [lat, lng] por [lng, lat].
+      await DatabaseHelper.instance.sembrarTalleres();
       for (final t in await TallerRepository.instance.obtenerTodas()) {
         expect(
           t.latitud,
@@ -173,10 +178,9 @@ void main() {
       }
     });
 
-    test('abrir la app de nuevo NO duplica la semilla', () async {
-      await DatabaseHelper.instance.cerrar();
-      await TallerRepository.instance.obtenerTodas();
-      await DatabaseHelper.instance.cerrar();
+    test('llamar sembrarTalleres de nuevo NO duplica la semilla', () async {
+      await DatabaseHelper.instance.sembrarTalleres();
+      await DatabaseHelper.instance.sembrarTalleres();
 
       expect(
         (await TallerRepository.instance.obtenerTodas()).length,
@@ -185,11 +189,9 @@ void main() {
     });
 
     test(
-      '"AutoFix Central" esta sembrado, que es lo que evita el crash',
+      '"AutoFix Central" puede sembrarse desde SemillaInicial',
       () async {
-        // `dashboard_cliente_screen.dart` trae `_selectedWorkshop = 'AutoFix
-        // Central'` hardcodeado y `agendar_cita_cliente_section.dart` la busca con
-        // `firstWhere`. Sin esta fila, esa pantalla revienta al abrirla.
+        await DatabaseHelper.instance.sembrarTalleres();
         expect(
           await TallerRepository.instance.obtenerPorNombre('AutoFix Central'),
           isNotNull,
@@ -423,6 +425,7 @@ void main() {
     });
 
     test('ordenar por cercanía funciona con la lista de la base', () async {
+      await DatabaseHelper.instance.sembrarTalleres();
       final activos = await TallerRepository.instance.obtenerActivos();
       // El cliente esta en Santiago, asi que AutoFix Central (que esta ahi) debe
       // quedar primero.
@@ -445,6 +448,7 @@ void main() {
     );
 
     test('la cita guarda el id del taller y lo devuelve', () async {
+      await DatabaseHelper.instance.sembrarTalleres();
       final id = (await TallerRepository.instance.obtenerPorNombre(
         'Global Refriauto',
       ))!.id!;
@@ -467,6 +471,7 @@ void main() {
     });
 
     test('obtenerPorTaller devuelve solo las de ese taller', () async {
+      await DatabaseHelper.instance.sembrarTalleres();
       final refriauto = (await TallerRepository.instance.obtenerPorNombre(
         'Global Refriauto',
       ))!.id!;
@@ -494,6 +499,7 @@ void main() {
       // Esta es la trampa de la columna TEXT: si `taller_id` fuera TEXT, el id 1
       // se guardaria como '1' y este `WHERE taller_id = 1` no encontraria nada.
       // El sintoma seria "el historial del taller siempre sale vacio".
+      await DatabaseHelper.instance.sembrarTalleres();
       final id = (await TallerRepository.instance.obtenerPorNombre(
         'Global Refriauto',
       ))!.id!;
@@ -505,6 +511,7 @@ void main() {
     });
 
     test('update de la cita conserva el taller', () async {
+      await DatabaseHelper.instance.sembrarTalleres();
       final tallerId = (await TallerRepository.instance.obtenerPorNombre(
         'Global Refriauto',
       ))!.id!;
@@ -604,10 +611,10 @@ void main() {
       final citas = await CitaRepository.instance.obtenerTodas();
       expect(citas, isEmpty, reason: 'la v7 reinicia el esquema a proposito');
 
-      // Lo que si importa: la tabla de talleres y los catalogos quedan creados y sembrados.
+      // Lo que si importa: los catalogos quedan creados y sembrados.
       expect(
-        (await TallerRepository.instance.obtenerTodas()).length,
-        SemillaInicial.talleres.length,
+        (await TallerRepository.instance.obtenerTodas()),
+        isEmpty,
       );
       expect(
         (await TecnicoRepository.instance.obtenerTodas()).length,
@@ -628,10 +635,8 @@ void main() {
     });
 
     test('tras migrar a v7 se puede agendar con taller', () async {
-      // v7: este test se reescribio. Antes asumia que la cita vieja sobrevivio
-      // (`expect(...).length, 2`). Con la v7 la cita vieja desaparece, asi que
-      // solo queda la nueva.
       await sembrarBaseV3(qr: 'VIEJO-AGENDAR');
+      await DatabaseHelper.instance.sembrarTalleres();
 
       final tallerId = (await TallerRepository.instance.obtenerPorNombre(
         'Global Refriauto',
@@ -690,8 +695,6 @@ void main() {
       expect(citas, isEmpty);
       // Y los catalogos quedan creados y sembrados.
 
-      // v7: los estados ya no existen. El test comprueba que el salto de v1->v7
-      // no deja la base a medias: los catalogos del punto 6 estan presentes.
       expect(
         (await TecnicoRepository.instance.obtenerTodas()).length,
         SemillaInicial.tecnicos.length,
@@ -705,16 +708,16 @@ void main() {
         SemillaInicial.marcas.length,
       );
       expect(
-        (await TallerRepository.instance.obtenerTodas()).length,
-        SemillaInicial.talleres.length,
+        (await TallerRepository.instance.obtenerTodas()),
+        isEmpty,
       );
     });
 
-    test('migrar dos veces no duplica los talleres', () async {
+    test('migrar dos veces no crea errores y permite sembrarTalleres', () async {
       await sembrarBaseV3(qr: 'VIEJO-DOS');
       await TallerRepository.instance.obtenerTodas();
       await DatabaseHelper.instance.cerrar();
-      await TallerRepository.instance.obtenerTodas();
+      await DatabaseHelper.instance.sembrarTalleres();
 
       expect(
         (await TallerRepository.instance.obtenerTodas()).length,
