@@ -87,15 +87,15 @@ class _LoginScreenState extends State<LoginScreen> {
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('¡Cuenta creada exitosamente! Bienvenido, $nombre.'),
+              content: Text(
+                '¡Cuenta creada exitosamente! Bienvenido, $nombre.',
+              ),
               behavior: SnackBarBehavior.floating,
               backgroundColor: AppColors.headerNavy,
             ),
           );
           Navigator.of(context).pushReplacement(
-            MaterialPageRoute(
-              builder: (_) => const DashboardClienteScreen(),
-            ),
+            MaterialPageRoute(builder: (_) => const DashboardClienteScreen()),
           );
         },
       ),
@@ -371,8 +371,7 @@ class _CrearCuentaClienteDialog extends StatefulWidget {
       _CrearCuentaClienteDialogState();
 }
 
-class _CrearCuentaClienteDialogState
-    extends State<_CrearCuentaClienteDialog> {
+class _CrearCuentaClienteDialogState extends State<_CrearCuentaClienteDialog> {
   late final TextEditingController _nombreController;
   late final TextEditingController _correoController;
   late final TextEditingController _telefonoController;
@@ -452,9 +451,7 @@ class _CrearCuentaClienteDialogState
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 420, maxHeight: 680),
         child: Column(
@@ -483,10 +480,7 @@ class _CrearCuentaClienteDialogState
                       ),
                       Text(
                         'Registro de nuevo cliente',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 11,
-                        ),
+                        style: TextStyle(color: Colors.white70, fontSize: 11),
                       ),
                     ],
                   ),
@@ -512,7 +506,8 @@ class _CrearCuentaClienteDialogState
                         validator: (valor) {
                           final v = valor?.trim() ?? '';
                           if (v.isEmpty) return 'Ingresa tu nombre completo.';
-                          if (v.length < 3) return 'El nombre debe tener al menos 3 caracteres.';
+                          if (v.length < 3)
+                            return 'El nombre debe tener al menos 3 caracteres.';
                           return null;
                         },
                       ),
@@ -523,8 +518,10 @@ class _CrearCuentaClienteDialogState
                         decoration: _decoracionCampo('Correo electrónico'),
                         validator: (valor) {
                           final v = valor?.trim() ?? '';
-                          if (v.isEmpty) return 'Ingresa tu correo electrónico.';
-                          if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(v)) {
+                          if (v.isEmpty)
+                            return 'Ingresa tu correo electrónico.';
+                          if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
+                              .hasMatch(v)) {
                             return 'Ingresa un correo electrónico válido.';
                           }
                           return null;
@@ -537,7 +534,8 @@ class _CrearCuentaClienteDialogState
                         decoration: _decoracionCampo('Teléfono'),
                         validator: (valor) {
                           final v = valor?.trim() ?? '';
-                          if (v.isEmpty) return 'Ingresa tu número de teléfono.';
+                          if (v.isEmpty)
+                            return 'Ingresa tu número de teléfono.';
                           final digitos = v.replaceAll(RegExp(r'\D'), '');
                           if (digitos.length < 10 || digitos.length > 15) {
                             return 'Ingresa un teléfono válido (10 a 15 dígitos).';
@@ -567,7 +565,8 @@ class _CrearCuentaClienteDialogState
                         validator: (valor) {
                           final v = valor ?? '';
                           if (v.isEmpty) return 'Ingresa una contraseña.';
-                          if (v.length < 6) return 'La contraseña debe tener al menos 6 caracteres.';
+                          if (v.length < 6)
+                            return 'La contraseña debe tener al menos 6 caracteres.';
                           return null;
                         },
                       ),

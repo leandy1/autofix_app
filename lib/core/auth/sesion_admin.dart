@@ -47,4 +47,3 @@ class SesionAdmin {
     _adminEmail = null;
   }
 }
-

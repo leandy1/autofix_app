@@ -53,6 +53,32 @@ class GrupoServicioRepository implements BaseRepository<GrupoServicio> {
 
   // ------------------------------- READ -------------------------------
 
+  Future<List<GrupoServicio>> obtenerTodasPorTaller(String tallerId) async {
+    final db = await _helper.base;
+    final filas = await db.query(
+      tabla,
+      where: '${DatabaseHelper.colTallerId} = ?',
+      whereArgs: <Object?>[tallerId],
+      orderBy: '${DatabaseHelper.colNombre} COLLATE NOCASE ASC',
+    );
+    return filas.map(GrupoServicio.fromMap).toList();
+  }
+
+  Future<GrupoServicio?> obtenerPorNombreYTaller(
+    String nombre,
+    String tallerId,
+  ) async {
+    final db = await _helper.base;
+    final filas = await db.query(
+      tabla,
+      where:
+          '${DatabaseHelper.colNombre} = ? COLLATE NOCASE AND ${DatabaseHelper.colTallerId} = ?',
+      whereArgs: <Object?>[nombre.trim(), tallerId],
+      limit: 1,
+    );
+    return filas.isEmpty ? null : GrupoServicio.fromMap(filas.first);
+  }
+
   @override
   Future<List<GrupoServicio>> obtenerTodas() async {
     final db = await _helper.base;

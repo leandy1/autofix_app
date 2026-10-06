@@ -42,6 +42,7 @@ class Marca implements EntidadPersistida {
     this.activo = true,
     this.creadoEn,
     this.actualizadoEn,
+    this.tallerId,
   });
 
   static const String _kId = 'id';
@@ -49,6 +50,7 @@ class Marca implements EntidadPersistida {
   static const String _kActivo = 'activo';
   static const String _kCreadoEn = 'creado_en';
   static const String _kActualizadoEn = 'actualizado_en';
+  static const String _kTallerId = 'taller_id';
 
   /// UUID v4 de la fila, o `null` si todavia no se guardo.
   ///
@@ -68,12 +70,16 @@ class Marca implements EntidadPersistida {
   @override
   final DateTime? actualizadoEn;
 
+  /// ID del taller al que pertenece este catalogo (v9)
+  final String? tallerId;
+
   Marca copyWith({
     String? id,
     String? nombre,
     bool? activo,
     DateTime? creadoEn,
     DateTime? actualizadoEn,
+    String? tallerId,
   }) {
     return Marca(
       id: id ?? this.id,
@@ -81,6 +87,7 @@ class Marca implements EntidadPersistida {
       activo: activo ?? this.activo,
       creadoEn: creadoEn ?? this.creadoEn,
       actualizadoEn: actualizadoEn ?? this.actualizadoEn,
+      tallerId: tallerId ?? this.tallerId,
     );
   }
 
@@ -102,6 +109,7 @@ class Marca implements EntidadPersistida {
       // pareciera una edicion de ESTE dispositivo, y el servicio de sincronizacion
       // la volveria a subir. El reloj se usa solo cuando no hay marca previa.
       _kActualizadoEn: aIsoUtc(actualizadoEn ?? Reloj.instancia.ahora()),
+      if (tallerId != null) _kTallerId: tallerId,
     };
   }
 
@@ -113,6 +121,7 @@ class Marca implements EntidadPersistida {
       activo: ((map[_kActivo] as int?) ?? 1) != 0,
       creadoEn: desdeIso(map[_kCreadoEn]),
       actualizadoEn: desdeIso(map[_kActualizadoEn]),
+      tallerId: map[_kTallerId]?.toString(),
     );
   }
 }

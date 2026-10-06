@@ -46,6 +46,32 @@ class TipoServicioRepository implements BaseRepository<TipoServicio> {
 
   // ------------------------------- READ -------------------------------
 
+  Future<List<TipoServicio>> obtenerTodasPorTaller(String tallerId) async {
+    final db = await _helper.base;
+    final filas = await db.query(
+      tabla,
+      where: '${DatabaseHelper.colTallerId} = ?',
+      whereArgs: <Object?>[tallerId],
+      orderBy: '${DatabaseHelper.colNombre} COLLATE NOCASE ASC',
+    );
+    return filas.map(TipoServicio.fromMap).toList();
+  }
+
+  Future<TipoServicio?> obtenerPorNombreYTaller(
+    String nombre,
+    String tallerId,
+  ) async {
+    final db = await _helper.base;
+    final filas = await db.query(
+      tabla,
+      where:
+          '${DatabaseHelper.colNombre} = ? COLLATE NOCASE AND ${DatabaseHelper.colTallerId} = ?',
+      whereArgs: <Object?>[nombre.trim(), tallerId],
+      limit: 1,
+    );
+    return filas.isEmpty ? null : TipoServicio.fromMap(filas.first);
+  }
+
   @override
   Future<List<TipoServicio>> obtenerTodas() async {
     final db = await _helper.base;

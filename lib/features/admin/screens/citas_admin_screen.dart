@@ -1481,7 +1481,8 @@ class _CitasScreenState extends State<CitasScreen> {
         final descripcion = cita.descripcion.toLowerCase();
         final servicios = cita.servicios.join(' ').toLowerCase();
 
-        final coincide = cliente.contains(query) ||
+        final coincide =
+            cliente.contains(query) ||
             telefono.contains(query) ||
             vehiculo.contains(query) ||
             marca.contains(query) ||
@@ -1667,8 +1668,8 @@ class _CitasScreenState extends State<CitasScreen> {
                             onTap: () => setState(() {
                               _categoriaExpandida =
                                   _categoriaExpandida == categoria
-                                      ? null
-                                      : categoria;
+                                  ? null
+                                  : categoria;
                             }),
                           ),
                         ),
@@ -1779,7 +1780,10 @@ class _CitasScreenState extends State<CitasScreen> {
                         email,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Colors.white60, fontSize: 11),
+                        style: const TextStyle(
+                          color: Colors.white60,
+                          fontSize: 11,
+                        ),
                       ),
                   ],
                 ),
@@ -2015,7 +2019,8 @@ class _CitasScreenState extends State<CitasScreen> {
   }
 
   Widget _buildFiltrosAvanzados() {
-    final hayFiltrosActivos = _busquedaController.text.isNotEmpty ||
+    final hayFiltrosActivos =
+        _busquedaController.text.isNotEmpty ||
         (_tecnicoFiltro != null && _tecnicoFiltro != 'Todos') ||
         _buscarEnTodasLasFechas;
 
@@ -2075,7 +2080,10 @@ class _CitasScreenState extends State<CitasScreen> {
                         });
                       },
                       child: const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         child: Text(
                           'Limpiar',
                           style: TextStyle(
@@ -2136,8 +2144,9 @@ class _CitasScreenState extends State<CitasScreen> {
                       contentPadding: const EdgeInsets.symmetric(vertical: 10),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
-                        borderSide:
-                            const BorderSide(color: AppColors.inputBorder),
+                        borderSide: const BorderSide(
+                          color: AppColors.inputBorder,
+                        ),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -2166,8 +2175,9 @@ class _CitasScreenState extends State<CitasScreen> {
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
-                        borderSide:
-                            const BorderSide(color: AppColors.inputBorder),
+                        borderSide: const BorderSide(
+                          color: AppColors.inputBorder,
+                        ),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -2191,10 +2201,7 @@ class _CitasScreenState extends State<CitasScreen> {
                       ...demoTecnicosAdmin.map(
                         (t) => DropdownMenuItem(
                           value: t,
-                          child: Text(
-                            t,
-                            style: const TextStyle(fontSize: 13),
-                          ),
+                          child: Text(t, style: const TextStyle(fontSize: 13)),
                         ),
                       ),
                     ],
@@ -2514,14 +2521,9 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
         _hora != null && fechaCita.isBefore(hoy) && !fechaAnterior;
 
     return Dialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(
-          maxWidth: 460,
-          maxHeight: 680,
-        ),
+        constraints: const BoxConstraints(maxWidth: 460, maxHeight: 680),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -2530,9 +2532,7 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
               padding: const EdgeInsets.all(18),
               decoration: const BoxDecoration(
                 color: AppColors.headerNavy,
-                borderRadius: BorderRadius.vertical(
-                  top: Radius.circular(14),
-                ),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -2568,9 +2568,8 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                         TextFormField(
                           controller: _clienteController,
                           textCapitalization: TextCapitalization.words,
-                          decoration: _decoracionCampo(
-                            'Nombre completo',
-                          ).copyWith(hintText: 'Nombre del cliente'),
+                          decoration: _decoracionCampo('Nombre completo')
+                              .copyWith(hintText: 'Nombre del cliente'),
                           validator: (valor) {
                             final nombre = valor?.trim() ?? '';
                             if (nombre.isEmpty) {
@@ -2596,16 +2595,14 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                             if (telefono.isEmpty) {
                               return 'Ingresa el teléfono del cliente.';
                             }
-                            if (!RegExp(r'^[+\d\s().-]+$')
-                                .hasMatch(telefono)) {
+                            if (!RegExp(r'^[+\d\s().-]+$').hasMatch(telefono)) {
                               return 'El teléfono contiene caracteres no válidos.';
                             }
                             final digitos = telefono.replaceAll(
                               RegExp(r'\D'),
                               '',
                             );
-                            if (digitos.length < 10 ||
-                                digitos.length > 15) {
+                            if (digitos.length < 10 || digitos.length > 15) {
                               return 'Ingresa un teléfono válido (10 a 15 dígitos).';
                             }
                             return null;
@@ -2632,24 +2629,20 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                                         value: m,
                                         child: Text(
                                           m,
-                                          style: const TextStyle(
-                                            fontSize: 13,
-                                          ),
+                                          style: const TextStyle(fontSize: 13),
                                         ),
                                       ),
                                     )
                                     .toList(),
-                                onChanged: (valor) => setState(
-                                  () => _marcaSeleccionada = valor,
-                                ),
+                                onChanged: (valor) =>
+                                    setState(() => _marcaSeleccionada = valor),
                               ),
                             ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: TextFormField(
                                 controller: _modeloController,
-                                textCapitalization:
-                                    TextCapitalization.words,
+                                textCapitalization: TextCapitalization.words,
                                 decoration: _decoracionCampo('Modelo')
                                     .copyWith(hintText: 'Ej: Corolla'),
                                 validator: (valor) {
@@ -2675,13 +2668,11 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                                   final anio = int.tryParse(
                                     valor?.trim() ?? '',
                                   );
-                                  final anioActual =
-                                      DateTime.now().year;
+                                  final anioActual = DateTime.now().year;
                                   if (anio == null) {
                                     return 'Ingresa un año válido.';
                                   }
-                                  if (anio < 1900 ||
-                                      anio > anioActual + 1) {
+                                  if (anio < 1900 || anio > anioActual + 1) {
                                     return 'El año debe estar entre 1900 y ${anioActual + 1}.';
                                   }
                                   return null;
@@ -2724,9 +2715,7 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                         Container(
                           key: const ValueKey('servicios-cita'),
                           decoration: BoxDecoration(
-                            border: Border.all(
-                              color: AppColors.inputBorder,
-                            ),
+                            border: Border.all(color: AppColors.inputBorder),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Column(
@@ -2758,9 +2747,7 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                                   onChanged: (checked) {
                                     setState(() {
                                       if (checked == true) {
-                                        _serviciosMarcados.add(
-                                          servicio.nombre,
-                                        );
+                                        _serviciosMarcados.add(servicio.nombre);
                                       } else {
                                         _serviciosMarcados.remove(
                                           servicio.nombre,
@@ -2770,17 +2757,14 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                                   },
                                   title: Text(
                                     '${servicio.nombre} · ${servicio.precio}',
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                    ),
+                                    style: const TextStyle(fontSize: 13),
                                   ),
                                 ),
                               ),
                             ],
                           ),
                         ),
-                        if (_intentoGuardar &&
-                            _serviciosMarcados.isEmpty) ...[
+                        if (_intentoGuardar && _serviciosMarcados.isEmpty) ...[
                           const SizedBox(height: 6),
                           const Text(
                             'Selecciona al menos un servicio.',
@@ -2795,9 +2779,8 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                         DropdownButtonFormField<String>(
                           initialValue: _tecnicoSeleccionado,
                           decoration: _decoracionCampo('Técnico'),
-                          validator: (valor) => valor == null
-                              ? 'Selecciona un técnico.'
-                              : null,
+                          validator: (valor) =>
+                              valor == null ? 'Selecciona un técnico.' : null,
                           hint: const Text(
                             'Seleccionar técnico',
                             style: TextStyle(fontSize: 13),
@@ -2808,16 +2791,13 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                                   value: t,
                                   child: Text(
                                     t,
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                    ),
+                                    style: const TextStyle(fontSize: 13),
                                   ),
                                 ),
                               )
                               .toList(),
-                          onChanged: (valor) => setState(
-                            () => _tecnicoSeleccionado = valor,
-                          ),
+                          onChanged: (valor) =>
+                              setState(() => _tecnicoSeleccionado = valor),
                         ),
                         const SizedBox(height: 10),
                         Row(
@@ -2825,29 +2805,25 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                             Expanded(
                               child: InkWell(
                                 onTap: () async {
-                                  final nuevaFecha =
-                                      await showDatePicker(
-                                        context: context,
-                                        initialDate: _fecha,
-                                        firstDate: DateTime(
-                                          hoy.year,
-                                          hoy.month,
-                                          hoy.day,
-                                        ),
-                                        lastDate: DateTime(2100),
-                                      );
+                                  final nuevaFecha = await showDatePicker(
+                                    context: context,
+                                    initialDate: _fecha,
+                                    firstDate: DateTime(
+                                      hoy.year,
+                                      hoy.month,
+                                      hoy.day,
+                                    ),
+                                    lastDate: DateTime(2100),
+                                  );
                                   if (nuevaFecha != null) {
-                                    setState(
-                                      () => _fecha = nuevaFecha,
-                                    );
+                                    setState(() => _fecha = nuevaFecha);
                                   }
                                 },
                                 child: InputDecorator(
                                   decoration: _decoracionCampo('Fecha')
                                       .copyWith(
                                         errorText:
-                                            _intentoGuardar &&
-                                                fechaAnterior
+                                            _intentoGuardar && fechaAnterior
                                             ? 'La fecha no puede ser anterior a hoy.'
                                             : null,
                                       ),
@@ -2857,9 +2833,7 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                                     children: [
                                       Text(
                                         _formatearFechaCorta(_fecha),
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                        ),
+                                        style: const TextStyle(fontSize: 13),
                                       ),
                                       const Icon(
                                         Icons.calendar_today_outlined,
@@ -2875,29 +2849,24 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                             Expanded(
                               child: InkWell(
                                 onTap: () async {
-                                  final nuevaHora =
-                                      await showTimePicker(
-                                        context: context,
-                                        initialTime:
-                                            _hora ?? TimeOfDay.now(),
-                                      );
+                                  final nuevaHora = await showTimePicker(
+                                    context: context,
+                                    initialTime: _hora ?? TimeOfDay.now(),
+                                  );
                                   if (nuevaHora != null) {
-                                    setState(
-                                      () => _hora = nuevaHora,
-                                    );
+                                    setState(() => _hora = nuevaHora);
                                   }
                                 },
                                 child: InputDecorator(
-                                  decoration: _decoracionCampo('Hora')
-                                      .copyWith(
-                                        errorText: _intentoGuardar
-                                            ? _hora == null
-                                                  ? 'Selecciona la hora.'
-                                                  : horaAnterior
-                                                  ? 'La hora debe ser futura.'
-                                                  : null
-                                            : null,
-                                      ),
+                                  decoration: _decoracionCampo('Hora').copyWith(
+                                    errorText: _intentoGuardar
+                                        ? _hora == null
+                                              ? 'Selecciona la hora.'
+                                              : horaAnterior
+                                              ? 'La hora debe ser futura.'
+                                              : null
+                                        : null,
+                                  ),
                                   child: Row(
                                     mainAxisAlignment:
                                         MainAxisAlignment.spaceBetween,
@@ -2906,9 +2875,7 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                                         _hora == null
                                             ? '--:--'
                                             : _hora!.format(context),
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                        ),
+                                        style: const TextStyle(fontSize: 13),
                                       ),
                                       const Icon(
                                         Icons.access_time,
@@ -2932,9 +2899,7 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                                   value: e,
                                   child: Text(
                                     e,
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                    ),
+                                    style: const TextStyle(fontSize: 13),
                                   ),
                                 ),
                               )
@@ -2948,10 +2913,9 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                         TextFormField(
                           controller: _descripcionController,
                           maxLines: 3,
-                          decoration: _decoracionCampo('Descripción')
-                              .copyWith(
-                                hintText: 'Notas adicionales sobre la cita...',
-                              ),
+                          decoration: _decoracionCampo('Descripción').copyWith(
+                            hintText: 'Notas adicionales sobre la cita...',
+                          ),
                         ),
                       ],
                     ),
@@ -2972,8 +2936,7 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                         : () async {
                             setState(() => _intentoGuardar = true);
                             final formularioValido =
-                                _formKey.currentState?.validate() ??
-                                false;
+                                _formKey.currentState?.validate() ?? false;
                             final fechaValida =
                                 !fechaAnterior &&
                                 _hora != null &&
@@ -2989,10 +2952,8 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                             final estado = switch (_estadoSeleccionado) {
                               'Esperando Pieza' =>
                                 cita_data.EstadoCita.esperandoPieza,
-                              'En proceso' =>
-                                cita_data.EstadoCita.enProceso,
-                              'Completado' =>
-                                cita_data.EstadoCita.completado,
+                              'En proceso' => cita_data.EstadoCita.enProceso,
+                              'Completado' => cita_data.EstadoCita.completado,
                               _ => cita_data.EstadoCita.pendiente,
                             };
                             final anio = _anioController.text.trim();
@@ -3018,8 +2979,7 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                                 _hora!.minute,
                               ),
                               estado: estado,
-                              descripcion: _descripcionController.text
-                                  .trim(),
+                              descripcion: _descripcionController.text.trim(),
                               tecnico: _tecnicoSeleccionado ?? '',
                               total: 0,
                             );
@@ -3051,9 +3011,7 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                           )
                         : const Text(
                             'Guardar Cita',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                            ),
+                            style: TextStyle(fontWeight: FontWeight.w700),
                           ),
                   ),
                 ),

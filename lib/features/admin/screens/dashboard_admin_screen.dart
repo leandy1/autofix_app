@@ -536,7 +536,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         email,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Colors.white60, fontSize: 11),
+                        style: const TextStyle(
+                          color: Colors.white60,
+                          fontSize: 11,
+                        ),
                       ),
                   ],
                 ),

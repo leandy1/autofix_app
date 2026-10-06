@@ -61,8 +61,12 @@ import 'package:autofix/features/configuracion/models/tipo_servicio.dart';
 class ConfiguracionController extends ChangeNotifier {
   /// Los cuatro repositorios son inyectables para que un test pueda pasar un
   /// doble sin tocar la base. Todos son opcionales y por defecto caen al
-  /// singleton, asi que la vista hace `ConfiguracionController()` y listo.
+  /// singleton.
+  ///
+  /// [tallerId] es obligatorio: el controlador filtra todos los catalogos por
+  /// este ID. Se inyecta desde la vista (ej. LoginController -> AdminProfile).
   ConfiguracionController({
+    required this.tallerId,
     TecnicoRepository? tecnicos,
     TipoServicioRepository? servicios,
     MarcaRepository? marcas,
@@ -71,6 +75,8 @@ class ConfiguracionController extends ChangeNotifier {
        _repoServicios = servicios ?? TipoServicioRepository.instance,
        _repoMarcas = marcas ?? MarcaRepository.instance,
        _repoGrupos = grupos ?? GrupoServicioRepository.instance;
+
+  final String tallerId;
 
   final TecnicoRepository _repoTecnicos;
   final TipoServicioRepository _repoServicios;
@@ -147,20 +153,12 @@ class ConfiguracionController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Las cuatro se piden juntas: son de la misma base y del mismo tamano de
-      // dato. Pedirlas en paralelo evita los cuatro viajes de ida y vuelta, y con
-      // `sqflite` el viaje no es gratis: cada uno reabre el statement.
-      //
-      // El orden de los resultados es el orden de esta lista, y por eso se
-      // castean por posicion y NO por nombre. Con cuatro castings a `List<...>`
-      // un desordene aca asigna la lista de marcas a la de grupos y no da ningun
-      // error: los dos son `List<dynamic>` en la firma de `Future.wait` y el
-      // casteo pasa igual. Ver el doc de [Future.wait] sobre el tipo de la lista.
+      // Las cuatro se piden juntas filtradas por tallerId
       final resultados = await Future.wait(<Future<Object?>>[
-        _repoTecnicos.obtenerTodas(),
-        _repoServicios.obtenerTodas(),
-        _repoMarcas.obtenerTodas(),
-        _repoGrupos.obtenerTodas(),
+        _repoTecnicos.obtenerTodasPorTaller(tallerId),
+        _repoServicios.obtenerTodasPorTaller(tallerId),
+        _repoMarcas.obtenerTodasPorTaller(tallerId),
+        _repoGrupos.obtenerTodasPorTaller(tallerId),
       ]);
 
       _tecnicos = resultados[0] as List<Tecnico>;
@@ -189,13 +187,10 @@ class ConfiguracionController extends ChangeNotifier {
   Future<bool> guardarTecnico(String nombre) async {
     final limpio = _validarNombre(nombre);
     if (limpio == null) return false;
-    // `Future<String>` y no `Future<int>`: desde la v7 `crear` devuelve el UUID
-    // generado. `_escribir` no usa el valor devuelto (despues relee la lista
-    // entera), asi que el tipo solo tiene que ser compatible.
     return _escribir(
-      () => _repoTecnicos.crear(Tecnico(nombre: limpio)),
+      () => _repoTecnicos.crear(Tecnico(nombre: limpio, tallerId: tallerId)),
       () async {
-        _tecnicos = await _repoTecnicos.obtenerTodas();
+        _tecnicos = await _repoTecnicos.obtenerTodasPorTaller(tallerId);
       },
     );
   }
@@ -212,8 +207,11 @@ class ConfiguracionController extends ChangeNotifier {
     }
 
     return _escribir(
-      () => _repoServicios.crear(TipoServicio(nombre: limpio, precio: precio)),
-      () async => _tiposServicio = await _repoServicios.obtenerTodas(),
+      () => _repoServicios.crear(
+        TipoServicio(nombre: limpio, precio: precio, tallerId: tallerId),
+      ),
+      () async =>
+          _tiposServicio = await _repoServicios.obtenerTodasPorTaller(tallerId),
     );
   }
 
@@ -223,8 +221,8 @@ class ConfiguracionController extends ChangeNotifier {
     final limpio = _validarNombre(nombre);
     if (limpio == null) return false;
     return _escribir(
-      () => _repoMarcas.crear(Marca(nombre: limpio)),
-      () async => _marcas = await _repoMarcas.obtenerTodas(),
+      () => _repoMarcas.crear(Marca(nombre: limpio, tallerId: tallerId)),
+      () async => _marcas = await _repoMarcas.obtenerTodasPorTaller(tallerId),
     );
   }
 
@@ -233,8 +231,10 @@ class ConfiguracionController extends ChangeNotifier {
     final limpio = _validarNombre(nombre);
     if (limpio == null) return false;
     return _escribir(
-      () => _repoGrupos.crear(GrupoServicio(nombre: limpio)),
-      () async => _gruposServicio = await _repoGrupos.obtenerTodas(),
+      () =>
+          _repoGrupos.crear(GrupoServicio(nombre: limpio, tallerId: tallerId)),
+      () async =>
+          _gruposServicio = await _repoGrupos.obtenerTodasPorTaller(tallerId),
     );
   }
 

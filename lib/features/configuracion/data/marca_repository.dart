@@ -65,6 +65,41 @@ class MarcaRepository implements BaseRepository<Marca> {
 
   /// TODAS las marcas, activas y dadas de baja: para la pantalla de
   /// administracion, que tambien necesita ver las de baja para reactivarlas.
+  Future<List<Marca>> obtenerTodasPorTaller(String tallerId) async {
+    final db = await _helper.base;
+    final filas = await db.query(
+      tabla,
+      where: '${DatabaseHelper.colTallerId} = ?',
+      whereArgs: <Object?>[tallerId],
+      orderBy: '${DatabaseHelper.colNombre} COLLATE NOCASE ASC',
+    );
+    return filas.map(Marca.fromMap).toList();
+  }
+
+  Future<List<Marca>> obtenerActivasPorTaller(String tallerId) async {
+    final db = await _helper.base;
+    final filas = await db.query(
+      tabla,
+      where:
+          '${DatabaseHelper.colTallerId} = ? AND ${DatabaseHelper.colActivo} = ?',
+      whereArgs: <Object?>[tallerId, 1],
+      orderBy: '${DatabaseHelper.colNombre} COLLATE NOCASE ASC',
+    );
+    return filas.map(Marca.fromMap).toList();
+  }
+
+  Future<Marca?> obtenerPorNombreYTaller(String nombre, String tallerId) async {
+    final db = await _helper.base;
+    final filas = await db.query(
+      tabla,
+      where:
+          '${DatabaseHelper.colNombre} = ? COLLATE NOCASE AND ${DatabaseHelper.colTallerId} = ?',
+      whereArgs: <Object?>[nombre.trim(), tallerId],
+      limit: 1,
+    );
+    return filas.isEmpty ? null : Marca.fromMap(filas.first);
+  }
+
   @override
   Future<List<Marca>> obtenerTodas() async {
     final db = await _helper.base;

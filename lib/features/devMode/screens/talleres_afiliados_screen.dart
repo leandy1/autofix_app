@@ -4,7 +4,6 @@ import 'package:autofix/features/talleres/models/taller.dart';
 import 'package:autofix/shared/theme/app_colors.dart';
 import 'package:autofix/features/devMode/screens/cuentas_admin_screen.dart';
 
-
 class TalleresAfiliadosScreen extends StatefulWidget {
   const TalleresAfiliadosScreen({super.key});
 

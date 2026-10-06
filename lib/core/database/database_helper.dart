@@ -75,12 +75,15 @@ class DatabaseHelper {
   /// v8 = SINCRONIZACION (Fase 2): agrega columna `sync_status` a `citas`
   ///      para rastrear el estado de sincronizacion con Firestore ('pending' /
   ///      'synced'). No dropea tablas: solo `ALTER TABLE ADD COLUMN`.
+  /// v9 = AISLAMIENTO POR TALLER: agrega columna `taller_id` a los 4 catalogos
+  ///      (tecnicos, tipos_servicio, marcas, grupos_servicio) para filtrar
+  ///      por taller. Usa `ALTER TABLE ADD COLUMN` para conservar datos.
   ///
   /// OJO: subir la version NO borra la base por si sola, dispara `onUpgrade`, que
   /// es lo que permite a un dispositivo que ya instalo la v1 seguir funcionando.
   /// En la v7 el `onUpgrade` hace `DROP TABLE`, asi que en ESTE caso si borra los
   /// datos, y es intencional (ver [_migrar]).
-  static const int _versionBase = 8;
+  static const int _versionBase = 9;
 
   /// Nombre del indice de [tablaCitas] por fecha.
   ///
@@ -503,6 +506,8 @@ class DatabaseHelper {
       _pkUuid,
       ..._columnasCatalogo.entries.map((e) => '${e.key} ${e.value}'),
       ...columnasExtra,
+      // v9: taller_id para aislar catalogos por taller
+      '$colTallerId TEXT',
     ];
 
     await db.execute(
@@ -516,6 +521,11 @@ class DatabaseHelper {
     await db.execute(
       'CREATE UNIQUE INDEX IF NOT EXISTS idx_${tabla}_nombre '
       'ON $tabla ($colNombre COLLATE NOCASE)',
+    );
+    // v9: indice para filtrar por taller
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_${tabla}_taller_id '
+      'ON $tabla ($colTallerId)',
     );
   }
 
@@ -558,16 +568,26 @@ class DatabaseHelper {
       }
     }
 
+    // v9: asignar taller_id a las semillas (asignar al primer taller por defecto para demo)
+    final tallerIdSemilla = SemillaInicial.talleres.isNotEmpty
+        ? SemillaInicial.talleres.first.id
+        : null;
     await sembrar(
       tablaTecnicos,
       SemillaInicial.tecnicos,
       SemillaInicial.tecnicosIds,
+      extra: <String, Object?>{
+        if (tallerIdSemilla != null) colTallerId: tallerIdSemilla,
+      },
     );
     await sembrar(
       tablaTiposServicio,
       SemillaInicial.tiposServicio,
       SemillaInicial.tiposServicioIds,
-      extra: <String, Object?>{colPrecio: SemillaInicial.precioInicial},
+      extra: <String, Object?>{
+        colPrecio: SemillaInicial.precioInicial,
+        if (tallerIdSemilla != null) colTallerId: tallerIdSemilla,
+      },
     );
 
     // v7. Las marcas y los grupos que antes eran `const` de demostracion ahora son
@@ -577,11 +597,21 @@ class DatabaseHelper {
     //
     // Y se siembran con el MISMO texto que tenian las listas de demo, para que la
     // pantalla no cambie de aspecto al pasar de `demoMarcasVehiculo` a la tabla.
-    await sembrar(tablaMarcas, SemillaInicial.marcas, SemillaInicial.marcasIds);
+    await sembrar(
+      tablaMarcas,
+      SemillaInicial.marcas,
+      SemillaInicial.marcasIds,
+      extra: <String, Object?>{
+        if (tallerIdSemilla != null) colTallerId: tallerIdSemilla,
+      },
+    );
     await sembrar(
       tablaGruposServicio,
       SemillaInicial.gruposServicio,
       SemillaInicial.gruposServicioIds,
+      extra: <String, Object?>{
+        if (tallerIdSemilla != null) colTallerId: tallerIdSemilla,
+      },
     );
   }
 
@@ -846,6 +876,10 @@ class DatabaseHelper {
       if (versionAnterior < 8) {
         await _migrarAV8(txn);
       }
+
+      if (versionAnterior < 9) {
+        await _migrarAV9(txn);
+      }
     });
   }
 
@@ -929,6 +963,62 @@ class DatabaseHelper {
     await txn.execute(
       'CREATE INDEX IF NOT EXISTS idx_citas_sync_status '
       'ON $tablaCitas ($colSyncStatus)',
+    );
+  }
+
+  /// Paso 8 -> 9: Aislamiento por taller (v9).
+  ///
+  /// Agrega columna `taller_id` a las 4 tablas de catalogo SOLO si no existe.
+  /// Usa `ALTER TABLE ADD COLUMN` como se solicito (Opcion A).
+  Future<void> _migrarAV9(DatabaseExecutor txn) async {
+    // tecnicos
+    final infoTecnicos = await txn.rawQuery(
+      'PRAGMA table_info($tablaTecnicos)',
+    );
+    if (!infoTecnicos.any((c) => c['name'] == colTallerId)) {
+      await txn.execute(
+        'ALTER TABLE $tablaTecnicos ADD COLUMN $colTallerId TEXT',
+      );
+    }
+    await txn.execute(
+      'CREATE INDEX IF NOT EXISTS idx_${tablaTecnicos}_taller_id ON $tablaTecnicos ($colTallerId)',
+    );
+
+    // tipos_servicio
+    final infoTipos = await txn.rawQuery(
+      'PRAGMA table_info($tablaTiposServicio)',
+    );
+    if (!infoTipos.any((c) => c['name'] == colTallerId)) {
+      await txn.execute(
+        'ALTER TABLE $tablaTiposServicio ADD COLUMN $colTallerId TEXT',
+      );
+    }
+    await txn.execute(
+      'CREATE INDEX IF NOT EXISTS idx_${tablaTiposServicio}_taller_id ON $tablaTiposServicio ($colTallerId)',
+    );
+
+    // marcas
+    final infoMarcas = await txn.rawQuery('PRAGMA table_info($tablaMarcas)');
+    if (!infoMarcas.any((c) => c['name'] == colTallerId)) {
+      await txn.execute(
+        'ALTER TABLE $tablaMarcas ADD COLUMN $colTallerId TEXT',
+      );
+    }
+    await txn.execute(
+      'CREATE INDEX IF NOT EXISTS idx_${tablaMarcas}_taller_id ON $tablaMarcas ($colTallerId)',
+    );
+
+    // grupos_servicio
+    final infoGrupos = await txn.rawQuery(
+      'PRAGMA table_info($tablaGruposServicio)',
+    );
+    if (!infoGrupos.any((c) => c['name'] == colTallerId)) {
+      await txn.execute(
+        'ALTER TABLE $tablaGruposServicio ADD COLUMN $colTallerId TEXT',
+      );
+    }
+    await txn.execute(
+      'CREATE INDEX IF NOT EXISTS idx_${tablaGruposServicio}_taller_id ON $tablaGruposServicio ($colTallerId)',
     );
   }
 
