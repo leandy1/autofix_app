@@ -8,7 +8,12 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 void main() {
   setUpAll(() {
     sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
+    // `databaseFactoryFfiNoIsolate` y NO `databaseFactoryFfi`: la version normal
+    // manda el SQL a un isolate de fondo que `FakeAsync` (dentro de
+    // `testWidgets`) congela, y el primer `pumpAndSettle` se queda esperando
+    // una respuesta que nunca llega. Mismo criterio que
+    // dashboard_admin_screen_test.dart:25.
+    databaseFactory = databaseFactoryFfiNoIsolate;
     DatabaseHelper.nombreBaseParaPruebas = 'autofix_talleres_screen_test.db';
   });
 
@@ -19,6 +24,8 @@ void main() {
 
   setUp(() async {
     await DatabaseHelper.resetParaPruebas();
+    // ABRIR la base aqui, fuera del `FakeAsync` de `testWidgets`. Si la primera
+    // apertura ocurre adentro del test, cuelga en vez de fallar.
     await DatabaseHelper.instance.sembrarTalleres();
   });
 
@@ -50,6 +57,11 @@ void main() {
     );
     await tester.enterText(find.byType(TextFormField).at(4), '18,5');
     await tester.enterText(find.byType(TextFormField).at(5), '-69,5');
+    // El dialogo es alto y su contenido va en SingleChildScrollView
+    // (talleres_afiliados_screen.dart:491): sin esto el boton queda fuera del
+    // viewport de 800x600, el tap pega en el fondo y el guardar no corre.
+    await tester.ensureVisible(find.text('Guardar cambios'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Guardar cambios'));
     await tester.pumpAndSettle();
 

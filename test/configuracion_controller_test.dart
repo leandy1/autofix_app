@@ -1,4 +1,5 @@
 import 'package:autofix/core/database/database_helper.dart';
+import 'package:autofix/core/database/semilla_inicial.dart';
 import 'package:autofix/features/configuracion/presentation/configuracion_controller.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -24,7 +25,11 @@ void main() {
     await DatabaseHelper.resetParaPruebas();
   });
 
-  ConfiguracionController nuevo() => ConfiguracionController();
+  // tallerId obligatorio desde el aislamiento por taller: los catalogos de la
+  // semilla se siembran con el id del primer taller de SemillaInicial, asi que
+  // hay que pedirlos con ese mismo id para que `cargar()` los encuentre.
+  ConfiguracionController nuevo() =>
+      ConfiguracionController(tallerId: SemillaInicial.talleres.first.id);
 
   group('cargar', () {
     test('arranca con los catalogos de la semilla y sin error', () async {

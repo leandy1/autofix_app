@@ -263,6 +263,8 @@ void main() {
     test('READ: la semilla se encuentra por nombre', () async {
       // El caso de uso real: el formulario busca el taller que el cliente eligio
       // por nombre, y ese texto viene de la base, no de una constante.
+      // La siembra no es automatica desde v7: hay que pedirla.
+      await DatabaseHelper.instance.sembrarTalleres();
       expect(
         (await TallerRepository.instance.obtenerPorNombre(
           '  global refriauto ',
@@ -355,6 +357,8 @@ void main() {
     test('no se puede dar de alta dos veces un taller de la semilla', () async {
       // 'Global Refriauto' ya esta sembrado: un alta repetida tiene que fallar, no
       // crear un segundo afiliado en la misma direccion.
+      // La siembra no es automatica desde v7: hay que pedirla.
+      await DatabaseHelper.instance.sembrarTalleres();
       expect(
         () => TallerRepository.instance.crear(
           const Taller(

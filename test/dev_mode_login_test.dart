@@ -8,7 +8,12 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 void main() {
   setUpAll(() {
     sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
+    // `databaseFactoryFfiNoIsolate` y NO `databaseFactoryFfi`: al aceptar dev/1234
+    // la app navega a TalleresAfiliadosScreen, que consulta SQLite en su
+    // initState; con la version normal ese SQL corre en un isolate que FakeAsync
+    // congela, el spinner gira sin parar y `pumpAndSettle` muere por timeout.
+    // Mismo criterio que dashboard_admin_screen_test.dart:25.
+    databaseFactory = databaseFactoryFfiNoIsolate;
     DatabaseHelper.nombreBaseParaPruebas = 'autofix_dev_mode_login_test.db';
   });
 
@@ -19,6 +24,9 @@ void main() {
 
   setUp(() async {
     await DatabaseHelper.resetParaPruebas();
+    // ABRIR la base aqui, fuera del `FakeAsync` de `testWidgets`: la primera
+    // apertura adentro del test cuelga en vez de fallar.
+    await DatabaseHelper.instance.base;
   });
 
   testWidgets('dev/1234 abre el administrador de talleres', (tester) async {

@@ -505,6 +505,12 @@ class CitaRepository implements BaseRepository<Cita> {
         DatabaseHelper.colEliminadoPor: null,
         DatabaseHelper.colRestauradoEn: aIsoUtc(ahora),
         DatabaseHelper.colActualizadoEn: aIsoUtc(ahora),
+        // C1: sin este sello la restauracion era LOCAL. `obtenerPendientesDeSync`
+        // solo mira `sync_status = 'pending'`, asi que la cita resurrecta nunca
+        // subia: la nube seguia con `eliminado_en`, y el proximo onSnapshot
+        // volvia a borrarla en este dispositivo (y el otro dispositivo nunca la
+        // recia). Es el mismo sello que pone `eliminar`.
+        DatabaseHelper.colSyncStatus: 'pending',
       },
       where:
           '${DatabaseHelper.colId} = ? '

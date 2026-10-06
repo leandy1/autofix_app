@@ -285,9 +285,43 @@ class DatabaseHelper {
     '$colRestauradoEn TEXT',
   ];
 
-  Database? _base;
+  /// La carrera de la PRIMERA apertura, no la conexion resuelta.
+  ///
+  /// Con la version vieja (`_base ??= await _abrir()`) dos primeras lecturas
+  /// simultaneas evaluaban la expresion a la vez, ambas veian `_base == null` y
+  /// las dos llamaban `_abrir()`: el archivo se abria dos veces, quedaban dos
+  /// conexiones compitiendo (riesgo de "database is locked") y una referencia
+  /// huérfana que nadie cerraba. Memoizar la Future de la apertura garantiza
+  /// una sola apertura compartida por todos los llamadores.
+  ///
+  /// OJO: la futura memoizada solo se expone mientras esta EN VUELO. Ya
+  /// resuelta, [base] devuelve `Future.value(_base)` creada en la zona del
+  /// llamador, igual que el getter viejo. Devolver la futura cacheada (creada
+  /// en la zona de quien abrio, p. ej. el `setUp` raiz) rompe los tests de
+  /// widgets: esperarla desde el `FakeAsync` de `testWidgets` deja la zona
+  /// invalida y el siguiente `tester.pump()` se cuelga para siempre.
+  Future<Database>? _aperturaEnCurso;
 
-  Future<Database> get base async => _base ??= await _abrir();
+  Future<Database> get base async {
+    final resuelta = _base;
+    if (resuelta != null) return resuelta;
+    return _aperturaEnCurso ??= _abrir().then(
+      (db) {
+        _aperturaEnCurso = null;
+        _base = db;
+        return db;
+      },
+      onError: (Object e, StackTrace s) {
+        // Una apertura fallida no se cachea: si se guardara el error, todos los
+        // accesos siguientes reutilizarian esa Future muerta y la app quedaria
+        // sin base hasta reiniciar. Se descarta y el proximo reintenta.
+        _aperturaEnCurso = null;
+        Error.throwWithStackTrace(e, s);
+      },
+    );
+  }
+
+  Database? _base;
 
   Future<Database> _abrir() async {
     // El archivo vive en el almacenamiento INTERNO de la app, no en externo:
@@ -1023,7 +1057,21 @@ class DatabaseHelper {
   }
 
   Future<void> cerrar() async {
-    await _base?.close();
+    final apertura = _aperturaEnCurso;
+    _aperturaEnCurso = null;
+    try {
+      if (apertura != null) {
+        // Habia una apertura en vuelo: esperarla y cerrar la conexion que
+        // llegue, para que no quede un archivo abierto huérfano.
+        final db = await apertura;
+        await db.close();
+      } else if (_base != null) {
+        await _base!.close();
+      }
+    } catch (_) {
+      // Si la apertura fallo (o nunca llego a completarse) no hay conexion
+      // que cerrar; el cache ya quedo limpio arriba.
+    }
     _base = null;
   }
 

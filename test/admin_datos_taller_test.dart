@@ -35,8 +35,11 @@ void main() {
   final repoCitas = CitaRepository.instance;
   final repoTalleres = TallerRepository.instance;
 
+  // Dia fijo y explicito, no `DateTime.now()`: el controller arranca en "hoy",
+  // asi que sin `seleccionarFecha(hoy)` los resumenes de dia mirarian otro dia
+  // y los contadores darian 0 (ya paso: el test estaba escrito para el 5 de
+  // octubre y al correr despues de medianoche fallo solo por la fecha).
   final hoy = DateTime(2026, 10, 5);
-  final ahora = DateTime(2026, 10, 5, 14, 0);
 
   test('Los dashboards y citas de distintos administradores son totalmente independientes', () async {
     // 1. Creamos 2 talleres distintos
@@ -149,6 +152,7 @@ void main() {
 
     final ctrlNorte = DashboardAdminController();
     await ctrlNorte.cargar();
+    await ctrlNorte.seleccionarFecha(hoy);
 
     expect(ctrlNorte.totalCitas, 4);
     expect(ctrlNorte.completadas, 2);
@@ -192,6 +196,7 @@ void main() {
 
     final ctrlSur = DashboardAdminController();
     await ctrlSur.cargar();
+    await ctrlSur.seleccionarFecha(hoy);
 
     expect(ctrlSur.totalCitas, 3);
     expect(ctrlSur.completadas, 1);

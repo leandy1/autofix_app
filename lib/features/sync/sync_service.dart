@@ -119,12 +119,28 @@ class SyncService {
 
   /// Sube una cita que YA tiene codigo_visible (solo update/merge).
   Future<void> _pushSimple(Cita cita) async {
+    final ref = _db.collection('citas').doc(cita.id);
     final data = _citaToMap(cita);
-    await _db
-        .collection('citas')
-        .doc(cita.id)
-        .set(data, SetOptions(merge: true));
+    _preservarDueno(data, (await ref.get()).data());
+    await ref.set(data, SetOptions(merge: true));
     await _repo.marcarSincronizada(cita.id!);
+  }
+
+  /// S2: no pisar el `ownerUid` que el documento ya tenga en la nube.
+  ///
+  /// `_citaToMap` sella `ownerUid = _currentUid()` sin mirar nada mas. Eso es
+  /// correcto en el ALTA (el creador es el dueno), pero en un push de un
+  /// SEGUNDO dispositivo reescribia al dueno original: p. ej. si el admin
+  /// edita una cita que agendo el cliente, la cita pasaba a tener el uid del
+  /// admin, salia del filtro `where('ownerUid', ...)` con el que el cliente
+  /// consulta y desaparecia de su app. El dueno lo pone quien crea la cita y
+  /// nadie mas lo cambia; el resto de campos se actualiza con normalidad.
+  void _preservarDueno(
+    Map<String, Object?> data,
+    Map<String, dynamic>? documentoPrevio,
+  ) {
+    final duenoPrevio = documentoPrevio?['ownerUid'] as String?;
+    if (duenoPrevio != null) data['ownerUid'] = duenoPrevio;
   }
 
   /// Sube una cita con 'PENDIENTE' usando transaccion en contador.
@@ -148,8 +164,13 @@ class SyncService {
 
       tx.set(counterRef, {'nextNumber': nuevo}, SetOptions(merge: true));
 
+      final ref = _db.collection('citas').doc(cita.id);
       final data = _citaToMap(cita)..['codigo_visible'] = codigo;
-      tx.set(_db.collection('citas').doc(cita.id), data);
+      // Misma proteccion que en _pushSimple: todas las lecturas de la
+      // transaccion van ANTES de los writes, asi que aca tambien se lee
+      // primero el documento para no pisar su dueno.
+      _preservarDueno(data, (await tx.get(ref)).data());
+      tx.set(ref, data);
     });
 
     // La nube ya escribio el codigo; el onSnapshot lo bajara y actualizara
