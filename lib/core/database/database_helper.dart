@@ -79,6 +79,9 @@ class DatabaseHelper {
   ///      (tecnicos, tipos_servicio, marcas, grupos_servicio) para filtrar
   ///      por taller. Usa `ALTER TABLE ADD COLUMN` para conservar datos.
   ///
+  /// v9 = DEVMODE SYNC: agrega tabla `admins` para reflejar cuentas de admin
+  ///      creadas desde Firestore y permitir baja logica local.
+  ///
   /// OJO: subir la version NO borra la base por si sola, dispara `onUpgrade`, que
   /// es lo que permite a un dispositivo que ya instalo la v1 seguir funcionando.
   /// En la v7 el `onUpgrade` hace `DROP TABLE`, asi que en ESTE caso si borra los
@@ -195,6 +198,25 @@ class DatabaseHelper {
   static const String colLatitud = 'latitud';
   static const String colLongitud = 'longitud';
   static const String colTallerId = 'taller_id';
+
+  // ------------------------------------------------------------------
+  // Admins de Modo Desarrollador (v9)
+  // ------------------------------------------------------------------
+  static const String tablaAdmins = 'admins';
+  static const String colAdminUid = 'uid';
+  static const String colAdminEmail = 'email';
+  static const String colAdminTallerId = 'tallerId';
+  static const String colAdminTallerNombre = 'tallerNombre';
+  static const String colAdminEliminado = 'eliminado';
+
+  static const Map<String, String> _columnasAdmins = <String, String>{
+    colAdminEmail: 'TEXT NOT NULL',
+    colAdminTallerId: 'TEXT NOT NULL DEFAULT \'\'',
+    colAdminTallerNombre: 'TEXT',
+    colCreadoEn: 'TEXT NOT NULL',
+    colActualizadoEn: 'TEXT NOT NULL',
+    colAdminEliminado: 'INTEGER NOT NULL DEFAULT 0',
+  };
 
   // `colTelefono` NO se redeclara aca: ya existe arriba para `citas.telefono`, y
   // el mismo nombre de columna significa lo mismo en las dos tablas (el telefono
@@ -354,6 +376,7 @@ class DatabaseHelper {
     // `talleres` ANTES que el indice de `citas.taller_id`: una FK necesita que
     // la tabla que referencia exista.
     await _crearTalleres(db);
+    await _crearAdmins(db);
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_citas_taller_id '
       'ON $tablaCitas ($colTallerId)',
@@ -417,6 +440,22 @@ class DatabaseHelper {
     await db.execute(
       'CREATE UNIQUE INDEX IF NOT EXISTS idx_${tablaTalleres}_nombre '
       'ON $tablaTalleres ($colNombre COLLATE NOCASE)',
+    );
+  }
+
+  Future<void> _crearAdmins(DatabaseExecutor db) async {
+    final definiciones = <String>[
+      _pkUuid,
+      ..._columnasAdmins.entries.map((e) => '${e.key} ${e.value}'),
+    ];
+
+    await db.execute(
+      'CREATE TABLE IF NOT EXISTS $tablaAdmins (${definiciones.join(', ')})',
+    );
+
+    await db.execute(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_${tablaAdmins}_email '
+      'ON $tablaAdmins ($colAdminEmail COLLATE NOCASE)',
     );
   }
 
@@ -966,10 +1005,11 @@ class DatabaseHelper {
     );
   }
 
-  /// Paso 8 -> 9: Aislamiento por taller (v9).
+/// Paso 8 -> 9: Aislamiento por taller (v9) + tabla local de admins para devmode sync.
   ///
   /// Agrega columna `taller_id` a las 4 tablas de catalogo SOLO si no existe.
   /// Usa `ALTER TABLE ADD COLUMN` como se solicito (Opcion A).
+  /// También crea la tabla local de admins para devmode sync.
   Future<void> _migrarAV9(DatabaseExecutor txn) async {
     // tecnicos
     final infoTecnicos = await txn.rawQuery(
@@ -1020,6 +1060,8 @@ class DatabaseHelper {
     await txn.execute(
       'CREATE INDEX IF NOT EXISTS idx_${tablaGruposServicio}_taller_id ON $tablaGruposServicio ($colTallerId)',
     );
+
+    await _crearAdmins(txn);
   }
 
   Future<void> cerrar() async {
