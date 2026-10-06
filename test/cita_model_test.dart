@@ -21,6 +21,7 @@ void main() {
     final cita = Cita(
       id: '11111111-1111-4111-8111-111111111111',
       cliente: 'Ana Torres',
+      correoCliente: 'ana@example.com',
       vehiculo: 'Toyota Hilux',
       descripcion: 'Cambio de aceite',
       fechaCita: DateTime.utc(2026, 10, 1, 13, 30),
@@ -33,6 +34,7 @@ void main() {
 
       expect(recuperada.id, cita.id);
       expect(recuperada.cliente, cita.cliente);
+      expect(recuperada.correoCliente, cita.correoCliente);
       expect(recuperada.vehiculo, cita.vehiculo);
       expect(recuperada.descripcion, cita.descripcion);
       expect(recuperada.fechaCita, cita.fechaCita);

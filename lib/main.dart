@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:autofix/app/conectividad_app.dart';
 import 'package:autofix/app/ruta_inicial.dart';
 import 'package:autofix/core/auth/sesion_admin.dart';
+import 'package:autofix/core/auth/sesion_cliente.dart';
 import 'package:autofix/firebase_options.dart';
 
 Future<void> main() async {
@@ -29,7 +30,12 @@ Future<void> main() async {
   // Es una lectura local (SharedPreferences), no de la nube, por lo que funciona
   // exactamente igual sin internet. Sin sesion guardada devuelve false y la app
   // arranca en el login, como siempre.
+  //
+  // Las DOS sesiones: la del admin (taller) y la del cliente. Solo una puede
+  // estar activa por arranque y la ruta inicial decide; si alguien cerro
+  // sesion en la app que sea, esa quedo apagada y no interfiere.
   await SesionAdmin.instance.restaurar();
+  await SesionCliente.instance.restaurar();
 
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(

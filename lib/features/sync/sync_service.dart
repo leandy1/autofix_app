@@ -5,6 +5,7 @@ import 'package:autofix/core/connectivity/connectivity_service.dart';
 import 'package:autofix/core/utils/borrado_logico.dart';
 import 'package:autofix/features/citas/data/cita_repository.dart';
 import 'package:autofix/features/citas/models/cita.dart';
+import 'package:autofix/features/cliente/data/cambios_password_repository.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'dart:async';
@@ -113,7 +114,62 @@ class SyncService {
     } catch (e) {
       print('[SyncService] Error en pushPending: $e');
     } finally {
-      _isPushing = false;
+      // Son colas independientes: si Firestore rechazó una cita, igual hay
+      // que intentar Auth, y viceversa. El secreto de contraseña nunca pasa
+      // por Firestore.
+      try {
+        await _drenarCambiosPassword();
+      } catch (e) {
+        print('[SyncService] Error drenando cambios de contraseña: $e');
+      } finally {
+        _isPushing = false;
+      }
+    }
+  }
+
+  /// Aplica la cola de cambios de contraseña cuando Auth tiene la cuenta
+  /// correspondiente abierta.
+  ///
+  /// La contraseña nunca se manda a Firestore. Se lee del almacenamiento
+  /// seguro y se aplica mediante Firebase Auth; si no hay sesión válida, o
+  /// Auth rechaza el cambio (por ejemplo, requiere reautenticación), la fila
+  /// permanece `pending` para un próximo intento. El correo de metadata evita
+  /// tocar la cuenta de admin si el cliente usa el acceso local.
+  Future<void> _drenarCambiosPassword() async {
+    final cola = CambiosPasswordRepository.instance;
+    final pendientes = await cola.pendientes();
+    for (final cambio in pendientes) {
+      final secreto = await cola.leerContrasena(cambio);
+      if (secreto == null || secreto.isEmpty) {
+        await cola.descartar(cambio.id);
+        continue;
+      }
+
+      final usuario = FirebaseAuth.instance.currentUser;
+      final correoPendiente = cambio.correoCliente.trim().toLowerCase();
+      final correoAuth = usuario?.email?.trim().toLowerCase();
+      if (usuario == null ||
+          usuario.isAnonymous ||
+          correoPendiente.isEmpty ||
+          correoAuth != correoPendiente) {
+        // Todavía no hay una sesión del dueño de este cambio. Mantenerlo en la
+        // cola es crucial: no se puede aplicar a la cuenta Firebase activa
+        // solo porque pertenece a otro usuario.
+        return;
+      }
+
+      try {
+        await usuario.updatePassword(secreto);
+        await cola.marcarAplicada(cambio);
+      } on FirebaseAuthException catch (e) {
+        // Incluye `requires-recent-login`: el cambio sigue guardado de forma
+        // segura y se volverá a intentar al próximo push/reconexión.
+        print('[SyncService] Cambio de contraseña sigue pendiente (${e.code})');
+        return;
+      } catch (e) {
+        print('[SyncService] No se pudo aplicar cambio de contraseña: $e');
+        return;
+      }
     }
   }
 
@@ -251,6 +307,7 @@ class SyncService {
       id: id,
       codigoVisible: data['codigo_visible'] as String? ?? 'PENDIENTE',
       cliente: data['cliente'] as String? ?? '',
+      correoCliente: data['correo_cliente'] as String? ?? '',
       telefono: data['telefono'] as String? ?? '',
       vehiculo: data['vehiculo'] as String? ?? '',
       marca: data['marca'] as String? ?? '',

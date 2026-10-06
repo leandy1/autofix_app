@@ -1,0 +1,170 @@
+import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:autofix/core/auth/nombre_amigable.dart';
+
+/// Sesión y perfil del cliente, en un solo objeto.
+///
+/// ---------------------------------------------------------------
+/// POR QUE UNA CLAVE Y NO DOS
+/// ---------------------------------------------------------------
+/// El cliente no tiene autenticación real en la app (entra en "acceso directo"
+/// o desde el registro, que por ahora es local), asi que no existe un
+/// `FirebaseAuth.currentUser` del cual colgar su nombre, correo y teléfono.
+/// Sin este singleton, el saludo del AppBar ("¡Hola, Maria!"), el prellenado
+/// del formulario de citas y la pantalla de Editar Perfil no tendrian de dónde
+/// leer y cada uno inventaria su propia persistencia.
+///
+/// Guarda el PERFIL (nombre/correo/teléfono) y la bandera de SESIÓN activa en
+/// la misma tanda de claves porque se escriben juntos siempre; pero son dos
+/// cosas y [cerrar] lo demuestra: apaga la sesión y DEJA el perfil.
+///
+/// Por qué [cerrar] conserva el perfil: al cerrar sesión el cliente no borra
+/// su identidad, solo sale de la app. Si se tirara el nombre, la proxima vez
+/// que entre el formulario de citas estaria vacío, que es justo lo que el
+/// requisito de prellenado quiere evitar. Solo [olvidarTodo] borra los datos.
+///
+/// Igual que `SesionAdmin`: la memoria se llena ANTES del primer `await`
+/// (o inmediatamente despues de leer el plugin), para que una app que no puede
+/// persistir al menos funcione durante ESTA ejecucion.
+class SesionCliente {
+  SesionCliente._();
+
+  static final SesionCliente instance = SesionCliente._();
+
+  static const String _kActiva = 'sesionCliente.activa';
+  static const String _kNombre = 'sesionCliente.nombre';
+  static const String _kCorreo = 'sesionCliente.correo';
+  static const String _kTelefono = 'sesionCliente.telefono';
+
+  String? _nombre;
+  String? _correo;
+  String? _telefono;
+  bool _activa = false;
+
+  /// `true` cuando el cliente entro y no cerro sesión: es lo que la ruta
+  /// inicial mira para arrancar directo en su dashboard.
+  bool get activa => _activa;
+
+  String? get nombre => _nombre;
+  String? get correo => _correo;
+  String? get telefono => _telefono;
+
+  /// Como se le habla en el saludo y en la bienvenida.
+  ///
+  /// Usa el nombre si lo hay; si no, el correo (la mascara antes de la `@`);
+  /// y si no hay ninguno, "cliente".
+  String get nombreVisible =>
+      nombreAmigable(_nombre ?? _correo, reserva: 'cliente');
+
+  /// Abre sesión y guarda lo que ya se del cliente.
+  ///
+  /// Los parametros son `String?` y `null` significa "no se, no toques": el
+  /// acceso directo conoce el usuario que se escribio en el login pero no su
+  /// teléfono, y pisar el teléfono con `null` dejaria un perfil a medias.
+  Future<void> iniciar({
+    String? nombre,
+    String? correo,
+    String? telefono,
+  }) async {
+    _activa = true;
+    _aplicar(nombre: nombre, correo: correo, telefono: telefono);
+    await _persistir();
+  }
+
+  /// Actualiza el perfil desde la pantalla de Editar Perfil.
+  ///
+  /// Aca si se escriben los tres campos siempre (el formulario los tiene
+  /// todos), y un campo vacio BORRA: que el usuario borre su teléfono y que
+  /// quede el viejo seria mentirle sobre lo que guardo.
+  Future<void> guardarPerfil({
+    required String nombre,
+    required String correo,
+    required String telefono,
+  }) async {
+    _aplicar(nombre: nombre, correo: correo, telefono: telefono);
+    await _persistir();
+  }
+
+  /// Cierra sesión dejando el perfil intacto. Ver el por qué en la doc de la
+  /// clase.
+  Future<void> cerrar() async {
+    _activa = false;
+    await _persistir();
+  }
+
+  /// Restaura la sesión del último arranque. Devuelve `true` si había una.
+  Future<bool> restaurar() async {
+    if (_activa) return true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool(_kActiva) != true) return false;
+      _nombre = prefs.getString(_kNombre);
+      _correo = prefs.getString(_kCorreo);
+      _telefono = prefs.getString(_kTelefono);
+      _activa = true;
+      return true;
+    } catch (e) {
+      debugPrint('SesionCliente: no se pudo restaurar ($e)');
+      return false;
+    }
+  }
+
+  /// Borra sesión Y perfil, de memoria y de disco.
+  ///
+  /// Solo para pruebas y para un futuro "eliminar mi cuenta" local: [cerrar]
+  /// es el camino normal de logout.
+  Future<void> olvidarTodo() async {
+    _nombre = null;
+    _correo = null;
+    _telefono = null;
+    _activa = false;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_kActiva);
+      await prefs.remove(_kNombre);
+      await prefs.remove(_kCorreo);
+      await prefs.remove(_kTelefono);
+    } catch (e) {
+      debugPrint('SesionCliente: no se pudo olvidar todo ($e)');
+    }
+  }
+
+  void _aplicar({String? nombre, String? correo, String? telefono}) {
+    // `null` = no tocar (el que llama no sabe); `''` = borrar el dato.
+    if (nombre != null) _nombre = _normalizar(nombre);
+    if (correo != null) _correo = _normalizar(correo);
+    if (telefono != null) _telefono = _normalizar(telefono);
+  }
+
+  String? _normalizar(String valor) {
+    final limpio = valor.trim();
+    return limpio.isEmpty ? null : limpio;
+  }
+
+  Future<void> _persistir() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_kActiva, _activa);
+      await _escribirOQuitar(prefs, _kNombre, _nombre);
+      await _escribirOQuitar(prefs, _kCorreo, _correo);
+      await _escribirOQuitar(prefs, _kTelefono, _telefono);
+    } catch (e) {
+      debugPrint('SesionCliente: no se pudo persistir ($e)');
+    }
+  }
+
+  /// `setString(..., null)` no existe: un campo vacio se limpia con `remove`,
+  /// o el proximo perfil heredaria el valor del anterior.
+  Future<void> _escribirOQuitar(
+    SharedPreferences prefs,
+    String clave,
+    String? valor,
+  ) async {
+    if (valor == null) {
+      await prefs.remove(clave);
+    } else {
+      await prefs.setString(clave, valor);
+    }
+  }
+}

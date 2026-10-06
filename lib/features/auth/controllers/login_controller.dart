@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
+import 'package:autofix/core/auth/credenciales_seguras.dart';
+import 'package:autofix/core/auth/recordarme_prefs.dart';
 import 'package:autofix/core/auth/sesion_admin.dart';
 import 'package:autofix/features/sync/sync_service.dart';
 import 'package:autofix/features/talleres/data/taller_repository.dart';
@@ -51,6 +53,53 @@ class LoginController extends ChangeNotifier {
       usuario.trim() == usuarioDev && contrasena != contrasenaDev;
 
   LoginRole submit() => _selectedRole;
+
+  // ------------------------------------------------------------------
+  // "RECUÉRDAME" (credenciales cifradas)
+  //
+  // El controlador decide QUE se guarda y CUANDO; el login solo decide si el
+  // usuario lo marco. Asi el guardado no puede colgarse de un boton: se
+  // persiste una unica vez, y siempre despues de validar con exito.
+  // ------------------------------------------------------------------
+
+  /// Guarda o borra las credenciales segun la decision del switch.
+  ///
+  /// Para guardar (`activo: true`) se llama SOLO despues de validar con exito:
+  /// guardar antes dejaria en el keystore la contraseña de un intento fallido.
+  /// El borrado (`activo: false`) sí puede ocurrir inmediatamente al desmarcar
+  /// el switch, porque es una revocacion de la preferencia del usuario.
+  ///
+  /// Que "haya recordamiento" se deduce de que el keystore trae algo; no hace
+  /// falta una bandera aparte que pueda desincronizarse de lo guardado.
+  Future<void> persistirRecordamiento({
+    required String usuario,
+    required String contrasena,
+    required bool activo,
+  }) async {
+    if (activo) {
+      await CredencialesSeguras.guardar(
+        usuario: usuario.trim(),
+        contrasena: contrasena,
+      );
+    } else {
+      await CredencialesSeguras.borrar();
+    }
+  }
+
+  /// La mascara del usuario recordado (`san***`), o `null` si no hay nada.
+  ///
+  /// El login no puede leer el keystore directamente: esto mantiene la UI
+  /// hablando con el controlador y no con el almacenamiento.
+  Future<String?> usuarioRecordado() =>
+      CredencialesSeguras.usuarioEnmascarado();
+
+  /// Las credenciales reales guardadas, para entrar sin que el usuario vuelva
+  /// a teclearlas. `null` si no hay.
+  Future<CredencialesRecordadas?> credencialesRecordadas() =>
+      CredencialesSeguras.leer();
+
+  /// Con que estado ARRANCA el switch de Recuérdame (preferencia de perfil).
+  Future<bool> recordarmePorDefecto() => RecordarmePrefs.habilitadoPorDefecto();
 
   Future<bool> loginAdmin(String email, String password) async {
     _cargando = true;

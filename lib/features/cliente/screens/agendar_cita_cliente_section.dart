@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:autofix/core/auth/sesion_cliente.dart';
 import 'package:autofix/core/mapa/etiqueta_distancia.dart';
 import 'package:autofix/core/ubicacion/ubicacion_service.dart';
 import 'package:autofix/features/citas/data/cita_repository.dart';
@@ -88,6 +89,7 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
   bool _cargandoServicios = true;
 
   final TextEditingController _clienteController = TextEditingController();
+  final TextEditingController _correoController = TextEditingController();
   final TextEditingController _telefonoController = TextEditingController();
   final TextEditingController _descripcionController = TextEditingController();
   final TextEditingController _marcaController = TextEditingController();
@@ -120,9 +122,26 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
   @override
   void initState() {
     super.initState();
+    _prellenarDesdeElPerfil();
     _cargarTalleres();
     _cargarServicios();
     unawaited(_cargarPosicionSiHayPermiso());
+  }
+
+  /// Rellena nombre, correo y teléfono con lo que sabe la sesion del cliente.
+  ///
+  /// El requisito es que esos tres campos NO arranquen vacios, y la fuente es
+  /// el perfil local (`SesionCliente`): no hay llamada a la nube ni a
+  /// Firebase, asi que funciona igual sin internet.
+  ///
+  /// Es EDITABLE: se escriben los valores iniciales y despues el campo es del
+  /// usuario, que puede corregir su telefono antes de mandar.
+  void _prellenarDesdeElPerfil() {
+    final sesion = SesionCliente.instance;
+    _clienteController.text =
+        sesion.nombre ?? (sesion.correo == null ? '' : sesion.nombreVisible);
+    _correoController.text = sesion.correo ?? '';
+    _telefonoController.text = sesion.telefono ?? '';
   }
 
   /// Lee la ubicacion para poder escribir "a 2.5 km" en el selector.
@@ -179,6 +198,7 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
   @override
   void dispose() {
     _clienteController.dispose();
+    _correoController.dispose();
     _telefonoController.dispose();
     _descripcionController.dispose();
     _marcaController.dispose();
@@ -324,6 +344,7 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
 
     final cita = Cita(
       cliente: cliente,
+      correoCliente: _correoController.text.trim(),
       telefono: _telefonoController.text.trim(),
       vehiculo: _vehiculoResumen,
       marca: _marcaController.text.trim(),
@@ -366,8 +387,9 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
 
   /// Limpia lo ya enviado para que un doble toque no duplique la cita.
   void _resetearFormulario() {
-    _clienteController.clear();
-    _telefonoController.clear();
+    // Mantiene los datos de contacto para que una segunda cita también pueda
+    // usar el perfil guardado; solo se limpian los datos de esta solicitud.
+    _prellenarDesdeElPerfil();
     _descripcionController.clear();
     _marcaController.clear();
     _modeloController.clear();
@@ -408,6 +430,16 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
             'Nombre completo',
             hintText: 'Ej: María Pérez',
             prefixIcon: Icons.person_outline,
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _correoController,
+          keyboardType: TextInputType.emailAddress,
+          decoration: clienteInputDecoration(
+            'Correo electrónico',
+            hintText: 'nombre@ejemplo.com',
+            prefixIcon: Icons.email_outlined,
           ),
         ),
         const SizedBox(height: 10),
