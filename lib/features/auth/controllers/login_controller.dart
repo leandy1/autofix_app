@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:autofix/core/auth/sesion_admin.dart';
 import 'package:autofix/features/sync/sync_service.dart';
+import 'package:autofix/features/talleres/data/taller_repository.dart';
 
 enum LoginRole { admin, cliente }
 
@@ -71,7 +72,14 @@ class LoginController extends ChangeNotifier {
             await FirebaseAuth.instance.signOut();
             await FirebaseAuth.instance.signInAnonymously();
           } else {
-            SesionAdmin.instance.iniciar(tallerId: tallerId, adminUid: uid);
+            final taller = await TallerRepository.instance.obtenerPorId(tallerId);
+            final tallerNombre = taller?.nombre ?? doc.data()?['tallerNombre'] as String? ?? 'Taller';
+            SesionAdmin.instance.iniciar(
+              tallerId: tallerId,
+              adminUid: uid,
+              tallerNombre: tallerNombre,
+              adminEmail: email.trim(),
+            );
             // Reiniciar SyncService con el nuevo UID de admin.
             await SyncService.instance.stop();
             await SyncService.instance.start();

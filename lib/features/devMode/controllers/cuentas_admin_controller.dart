@@ -76,5 +76,41 @@ class CuentasAdminController extends ChangeNotifier {
       return false;
     }
   }
-}
 
+  /// Cambia el taller asignado a un admin.
+  Future<bool> editarAdmin(String uid, String nuevoTallerId) async {
+    _cargando = true;
+    _error = null;
+    notifyListeners();
+    try {
+      await _db.collection('admins').doc(uid).update({
+        'tallerId': nuevoTallerId,
+      });
+      await cargarDatos();
+      return true;
+    } catch (e) {
+      _error = 'Error al editar admin: $e';
+      _cargando = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Elimina el documento de Firestore. No borra el usuario de Auth
+  /// (requiere Admin SDK en backend), pero lo desvincula del sistema.
+  Future<bool> eliminarAdmin(String uid) async {
+    _cargando = true;
+    _error = null;
+    notifyListeners();
+    try {
+      await _db.collection('admins').doc(uid).delete();
+      await cargarDatos();
+      return true;
+    } catch (e) {
+      _error = 'Error al eliminar admin: $e';
+      _cargando = false;
+      notifyListeners();
+      return false;
+    }
+  }
+}

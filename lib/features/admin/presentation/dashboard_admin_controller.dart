@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 
+import 'package:autofix/core/auth/sesion_admin.dart';
 import 'package:autofix/features/citas/data/cita_repository.dart';
 import 'package:autofix/features/citas/models/cita.dart';
 import 'package:autofix/features/citas/models/resumen_citas.dart';
@@ -31,10 +32,22 @@ import 'package:autofix/features/citas/models/resumen_citas.dart';
 /// cambiaran de numero cada vez que el admin mira otra fecha (mentira), o los
 /// ingresos contarian todo el historial en vez de lo del dia (tambien mentira).
 class DashboardAdminController extends ChangeNotifier {
-  DashboardAdminController({CitaRepository? repositorio})
-    : _repo = repositorio ?? CitaRepository.instance;
+  DashboardAdminController({
+    CitaRepository? repositorio,
+    String? tallerId,
+  })  : _repo = repositorio ?? CitaRepository.instance,
+        _tallerId = tallerId;
 
   final CitaRepository _repo;
+  final String? _tallerId;
+
+  String? get _idTallerEfectivo => _tallerId ?? SesionAdmin.instance.tallerId;
+
+  /// Nombre del taller asignado a la sesión actual (o null si no hay sesión).
+  String? get tallerNombre => SesionAdmin.instance.tallerNombre;
+
+  /// Correo del admin logueado (o null si no hay sesión).
+  String? get adminEmail => SesionAdmin.instance.adminEmail;
 
   late final NumberFormat _dinero = NumberFormat('#,##0');
 
@@ -172,10 +185,11 @@ class DashboardAdminController extends ChangeNotifier {
     notifyListeners();
 
     try {
+      final taller = _idTallerEfectivo;
       final resultados = await Future.wait(<Future<Object?>>[
-        _repo.resumir(),
-        _repo.resumir(fecha: _fecha),
-        _repo.obtenerDelDia(_fecha),
+        _repo.resumir(tallerId: taller),
+        _repo.resumir(fecha: _fecha, tallerId: taller),
+        _repo.obtenerDelDia(_fecha, tallerId: taller),
       ]);
 
       _global = resultados[0] as ResumenCitas;
@@ -208,9 +222,10 @@ class DashboardAdminController extends ChangeNotifier {
     notifyListeners();
 
     try {
+      final taller = _idTallerEfectivo;
       final resultados = await Future.wait(<Future<Object?>>[
-        _repo.resumir(fecha: _fecha),
-        _repo.obtenerDelDia(_fecha),
+        _repo.resumir(fecha: _fecha, tallerId: taller),
+        _repo.obtenerDelDia(_fecha, tallerId: taller),
       ]);
 
       _dia = resultados[0] as ResumenCitas;

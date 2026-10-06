@@ -14,10 +14,14 @@ import 'package:autofix/features/sync/sync_service.dart';
 /// No expone `Color` ni `Widget`: devuelve entidades y texto ya formateado.
 /// El mapeo etiqueta -> color es del diseño, no del dominio.
 class CitasController extends ChangeNotifier {
-  CitasController({CitaRepository? repositorio})
-    : _repo = repositorio ?? CitaRepository.instance;
+  CitasController({CitaRepository? repositorio, String? tallerId})
+    : _repo = repositorio ?? CitaRepository.instance,
+      _tallerId = tallerId;
 
   final CitaRepository _repo;
+  final String? _tallerId;
+
+  String? get _idTallerEfectivo => _tallerId ?? SesionAdmin.instance.tallerId;
 
   static final DateFormat _fechaHora = DateFormat('dd/MM/yyyy HH:mm');
 
@@ -42,9 +46,9 @@ class CitasController extends ChangeNotifier {
 
   static String formatearFechaHora(DateTime fecha) => _fechaHora.format(fecha);
 
-  /// Consulta citas filtradas por taller si hay sesión de admin activa.
+  /// Consulta citas filtradas por taller si hay sesión de admin activa o taller asignado.
   Future<List<Cita>> _obtenerCitas() {
-    final tallerId = SesionAdmin.instance.tallerId;
+    final tallerId = _idTallerEfectivo;
     if (tallerId != null) {
       return _repo.obtenerPorTaller(tallerId);
     }
@@ -69,9 +73,10 @@ class CitasController extends ChangeNotifier {
   /// de `obtenerTodas` es por fecha y una insercion al principio lo dejaria
   /// desalineado con lo que ve el usuario.
   Future<bool> guardar(Cita cita) async {
-    // Si hay sesión de admin activa y la cita no tiene taller, asignarlo.
-    final citaConTaller = (cita.tallerId == null && SesionAdmin.instance.activa)
-        ? cita.copyWith(tallerId: SesionAdmin.instance.tallerId)
+    // Si hay taller efectivo y la cita no tiene taller, asignarlo.
+    final taller = _idTallerEfectivo;
+    final citaConTaller = (cita.tallerId == null && taller != null)
+        ? cita.copyWith(tallerId: taller)
         : cita;
     final ok = await _intentar(() async {
       if (citaConTaller.id == null) {
@@ -146,7 +151,7 @@ class CitasController extends ChangeNotifier {
         mapa[Cita.etiquetaAtrasadas]!.add(cita);
         continue;
       }
-      if (_claveDia(cita.fechaCita) != dia) continue;
+      if (_claveDia(cita.fechaCita.toLocal()) != dia) continue;
       mapa[cita.etiquetaUI(momento)]!.add(cita);
     }
     return mapa;

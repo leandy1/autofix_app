@@ -1,6 +1,9 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import 'package:autofix/core/auth/sesion_admin.dart';
 import 'package:autofix/features/configuracion/presentation/configuracion_controller.dart';
+import 'package:autofix/features/sync/sync_service.dart';
 import 'package:autofix/shared/models/demo_admin_data.dart';
 import 'package:autofix/shared/theme/app_colors.dart';
 
@@ -123,18 +126,22 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
   // ---------------------------------------------------------------------
 
   PreferredSizeWidget _buildAppBar() {
+    final taller = SesionAdmin.instance.tallerNombre ?? 'SISTEMA DE GESTIÓN';
+    final email = SesionAdmin.instance.adminEmail ?? 'Admin';
+    final inicial = email.isNotEmpty ? email[0].toUpperCase() : 'A';
+
     return AppBar(
       backgroundColor: AppColors.headerNavy,
       elevation: 0,
       iconTheme: const IconThemeData(color: Colors.white),
       titleSpacing: 0,
-      title: const Padding(
-        padding: EdgeInsets.only(left: 4),
+      title: Padding(
+        padding: const EdgeInsets.only(left: 4),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
+            const Text(
               'AutoFix',
               style: TextStyle(
                 color: Colors.white,
@@ -143,8 +150,10 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
               ),
             ),
             Text(
-              'SISTEMA DE GESTIÓN',
-              style: TextStyle(
+              taller.toUpperCase(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
                 color: Colors.white60,
                 fontSize: 10,
                 fontWeight: FontWeight.w600,
@@ -160,9 +169,9 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
           child: CircleAvatar(
             backgroundColor: AppColors.orangePrimary,
             radius: 18,
-            child: const Text(
-              'L',
-              style: TextStyle(
+            child: Text(
+              inicial,
+              style: const TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
               ),
@@ -174,19 +183,22 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
   }
 
   Widget _buildDrawer(BuildContext context) {
+    final taller = SesionAdmin.instance.tallerNombre ?? 'SISTEMA DE GESTIÓN';
+    final email = SesionAdmin.instance.adminEmail ?? '';
+
     return Drawer(
       backgroundColor: AppColors.headerNavy,
       child: SafeArea(
         child: Column(
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 20, 20, 24),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    const Text(
                       'AutoFix',
                       style: TextStyle(
                         color: Colors.white,
@@ -195,9 +207,22 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
                       ),
                     ),
                     Text(
-                      'SISTEMA DE GESTIÓN',
-                      style: TextStyle(color: Colors.white60, fontSize: 11),
+                      taller,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.orangePrimary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
+                    if (email.isNotEmpty)
+                      Text(
+                        email,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: Colors.white60, fontSize: 11),
+                      ),
                   ],
                 ),
               ),
@@ -226,11 +251,20 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 20),
               child: TextButton.icon(
-                onPressed: () {
-                  Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(builder: (_) => const LoginScreen()),
-                    (route) => false,
-                  );
+                onPressed: () async {
+                  SesionAdmin.instance.cerrar();
+                  await SyncService.instance.stop();
+                  try {
+                    await FirebaseAuth.instance.signOut();
+                    await FirebaseAuth.instance.signInAnonymously();
+                    await SyncService.instance.start();
+                  } catch (_) {}
+                  if (context.mounted) {
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(builder: (_) => const LoginScreen()),
+                      (route) => false,
+                    );
+                  }
                 },
                 icon: const Icon(
                   Icons.logout,

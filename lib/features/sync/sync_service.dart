@@ -32,8 +32,9 @@ class SyncService {
   static final SyncService instance = SyncService._();
 
   final CitaRepository _repo = CitaRepository.instance;
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
-  final ConnectivityService _connectivity = ConnectivityService();
+  FirebaseFirestore get _db => FirebaseFirestore.instance;
+  ConnectivityService? _connectivity;
+  ConnectivityService get _connectivityService => _connectivity ??= ConnectivityService();
 
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
   _snapshotSubscription;
@@ -65,7 +66,7 @@ class SyncService {
         );
 
     // Escuchar cambios de conectividad: al reconectar, disparar pushPending()
-    _connectivitySubscription = _connectivity.onConnectivityChanged.listen((
+    _connectivitySubscription = _connectivityService.onConnectivityChanged.listen((
       resultados,
     ) {
       final hayConexion =

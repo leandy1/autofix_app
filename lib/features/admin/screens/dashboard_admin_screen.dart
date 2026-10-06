@@ -1,10 +1,13 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import 'package:autofix/core/auth/sesion_admin.dart';
 import 'package:autofix/features/admin/presentation/dashboard_admin_controller.dart';
 import 'package:autofix/features/auth/screens/login_screen.dart';
 import 'package:autofix/features/citas/models/cita.dart';
+import 'package:autofix/features/sync/sync_service.dart';
 import 'package:autofix/shared/theme/app_colors.dart';
 
 import 'citas_admin_screen.dart';
@@ -437,18 +440,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   /// Barra superior: ícono de menú (abre el Drawer), título y avatar del usuario.
   PreferredSizeWidget _buildAppBar(BuildContext context) {
+    final taller = _ctrl.tallerNombre ?? 'SISTEMA DE GESTIÓN';
+    final email = _ctrl.adminEmail ?? 'Admin';
+    final inicial = email.isNotEmpty ? email[0].toUpperCase() : 'A';
+
     return AppBar(
       backgroundColor: AppColors.headerNavy,
-      iconTheme: IconThemeData(color: AppColors.background),
+      iconTheme: const IconThemeData(color: AppColors.background),
       elevation: 0,
       titleSpacing: 0,
-      title: const Padding(
-        padding: EdgeInsets.only(left: 4),
+      title: Padding(
+        padding: const EdgeInsets.only(left: 4),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
+            const Text(
               'AutoFix',
               style: TextStyle(
                 color: Colors.white,
@@ -457,8 +464,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
             ),
             Text(
-              'SISTEMA DE GESTIÓN',
-              style: TextStyle(
+              taller.toUpperCase(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
                 color: Colors.white60,
                 fontSize: 10,
                 fontWeight: FontWeight.w600,
@@ -474,9 +483,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: CircleAvatar(
             backgroundColor: AppColors.orangePrimary,
             radius: 18,
-            child: const Text(
-              'L',
-              style: TextStyle(
+            child: Text(
+              inicial,
+              style: const TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
               ),
@@ -489,19 +498,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   /// Menú lateral (Drawer) con la navegación principal de la app.
   Widget _buildDrawer(BuildContext context) {
+    final taller = _ctrl.tallerNombre ?? 'SISTEMA DE GESTIÓN';
+    final email = _ctrl.adminEmail ?? '';
+
     return Drawer(
       backgroundColor: AppColors.headerNavy,
       child: SafeArea(
         child: Column(
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 20, 20, 24),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    const Text(
                       'AutoFix',
                       style: TextStyle(
                         color: Colors.white,
@@ -510,9 +522,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     ),
                     Text(
-                      'SISTEMA DE GESTIÓN',
-                      style: TextStyle(color: Colors.white60, fontSize: 11),
+                      taller,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.orangePrimary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
+                    if (email.isNotEmpty)
+                      Text(
+                        email,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: Colors.white60, fontSize: 11),
+                      ),
                   ],
                 ),
               ),
@@ -541,12 +566,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 20),
               child: TextButton.icon(
-                onPressed: () {
-                  // Cierra sesión y regresa al Login, limpiando el historial de navegación.
-                  Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(builder: (_) => const LoginScreen()),
-                    (route) => false,
-                  );
+                onPressed: () async {
+                  SesionAdmin.instance.cerrar();
+                  await SyncService.instance.stop();
+                  try {
+                    await FirebaseAuth.instance.signOut();
+                    await FirebaseAuth.instance.signInAnonymously();
+                    await SyncService.instance.start();
+                  } catch (_) {}
+                  if (context.mounted) {
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(builder: (_) => const LoginScreen()),
+                      (route) => false,
+                    );
+                  }
                 },
                 icon: const Icon(
                   Icons.logout,
@@ -1014,8 +1047,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
               _InfoCitaEscaneada(
                 label: 'FECHA Y HORA',
+                // `fechaCita` viene en UTC de la base; se muestra
+                // en el horario local del taller.
                 value:
-                    '${_formatearFechaCorta(cita.fechaCita)} · ${DateFormat('hh:mm a').format(cita.fechaCita)}',
+                    '${_formatearFechaCorta(cita.fechaCita.toLocal())} · ${DateFormat('hh:mm a').format(cita.fechaCita.toLocal())}',
               ),
               _InfoCitaEscaneada(
                 label: 'SERVICIOS',

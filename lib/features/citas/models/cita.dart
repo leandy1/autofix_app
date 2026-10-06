@@ -205,7 +205,12 @@ class Cita implements EntidadPersistida {
   /// sincronizacion eso ya no es una discrepancia visual sino conflicto de datos.
   /// Quien arma la lista lo pasa una sola vez para toda la pasada.
   bool esAtrasada(DateTime ahora) {
-    final fechaDia = DateTime(fechaCita.year, fechaCita.month, fechaCita.day);
+    // `fechaCita` viene de la base en UTC, pero "el dia de la cita"
+    // es un concepto de horario local, igual que `ahora`. Sin el
+    // `toLocal`, una cita de hoy a la noche se lee con fecha UTC de
+    // manana y no cuadra con el dia que se esta consultando.
+    final local = fechaCita.toLocal();
+    final fechaDia = DateTime(local.year, local.month, local.day);
     final ahoraDia = DateTime(ahora.year, ahora.month, ahora.day);
     return estado != EstadoCita.completado && fechaDia.isBefore(ahoraDia);
   }
