@@ -51,22 +51,22 @@ class CuentasAdminController extends ChangeNotifier {
         options: Firebase.app().options,
       );
       final tempAuth = FirebaseAuth.instanceFor(app: tempApp);
-      
+
       final creds = await tempAuth.createUserWithEmailAndPassword(
-        email: email, 
-        password: password
+        email: email,
+        password: password,
       );
-      
+
       final uid = creds.user!.uid;
-      
+
       await _db.collection('admins').doc(uid).set({
         'email': email,
         'tallerId': tallerId,
         'creado_en': FieldValue.serverTimestamp(),
       });
-      
+
       await tempApp.delete();
-      
+
       await cargarDatos();
       return true;
     } catch (e) {

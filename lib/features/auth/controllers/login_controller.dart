@@ -64,7 +64,10 @@ class LoginController extends ChangeNotifier {
       );
       final uid = creds.user?.uid;
       if (uid != null) {
-        final doc = await FirebaseFirestore.instance.collection('admins').doc(uid).get();
+        final doc = await FirebaseFirestore.instance
+            .collection('admins')
+            .doc(uid)
+            .get();
         if (doc.exists) {
           final tallerId = doc.data()?['tallerId'] as String?;
           if (tallerId == null) {
@@ -72,8 +75,13 @@ class LoginController extends ChangeNotifier {
             await FirebaseAuth.instance.signOut();
             await FirebaseAuth.instance.signInAnonymously();
           } else {
-            final taller = await TallerRepository.instance.obtenerPorId(tallerId);
-            final tallerNombre = taller?.nombre ?? doc.data()?['tallerNombre'] as String? ?? 'Taller';
+            final taller = await TallerRepository.instance.obtenerPorId(
+              tallerId,
+            );
+            final tallerNombre =
+                taller?.nombre ??
+                doc.data()?['tallerNombre'] as String? ??
+                'Taller';
             SesionAdmin.instance.iniciar(
               tallerId: tallerId,
               adminUid: uid,
@@ -94,7 +102,9 @@ class LoginController extends ChangeNotifier {
         }
       }
     } on FirebaseAuthException catch (e) {
-      if (e.code == 'user-not-found' || e.code == 'wrong-password' || e.code == 'invalid-credential') {
+      if (e.code == 'user-not-found' ||
+          e.code == 'wrong-password' ||
+          e.code == 'invalid-credential') {
         _error = 'Correo o contraseña incorrectos.';
       } else {
         _error = 'Error de autenticación: ${e.message}';

@@ -34,7 +34,8 @@ class SyncService {
   final CitaRepository _repo = CitaRepository.instance;
   FirebaseFirestore get _db => FirebaseFirestore.instance;
   ConnectivityService? _connectivity;
-  ConnectivityService get _connectivityService => _connectivity ??= ConnectivityService();
+  ConnectivityService get _connectivityService =>
+      _connectivity ??= ConnectivityService();
 
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
   _snapshotSubscription;
@@ -53,7 +54,9 @@ class SyncService {
     if (tallerId != null) {
       query = _db.collection('citas').where('taller_id', isEqualTo: tallerId);
     } else {
-      query = _db.collection('citas').where('ownerUid', isEqualTo: _currentUid());
+      query = _db
+          .collection('citas')
+          .where('ownerUid', isEqualTo: _currentUid());
     }
 
     _snapshotSubscription = query
@@ -66,17 +69,16 @@ class SyncService {
         );
 
     // Escuchar cambios de conectividad: al reconectar, disparar pushPending()
-    _connectivitySubscription = _connectivityService.onConnectivityChanged.listen((
-      resultados,
-    ) {
-      final hayConexion =
-          resultados.isNotEmpty &&
-          !resultados.contains(ConnectivityResult.none);
-      if (hayConexion) {
-        print('[SyncService] Conectividad restaurada -> pushPending()');
-        pushPending();
-      }
-    });
+    _connectivitySubscription = _connectivityService.onConnectivityChanged
+        .listen((resultados) {
+          final hayConexion =
+              resultados.isNotEmpty &&
+              !resultados.contains(ConnectivityResult.none);
+          if (hayConexion) {
+            print('[SyncService] Conectividad restaurada -> pushPending()');
+            pushPending();
+          }
+        });
 
     // Primer push inmediato si hay conectividad.
     await pushPending();

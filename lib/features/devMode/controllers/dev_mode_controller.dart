@@ -66,7 +66,9 @@ class DevModeController extends ChangeNotifier {
             .timeout(const Duration(seconds: 2));
       }
     } catch (e) {
-      debugPrint('[DevModeController] Error sincronizando taller $id a Firebase: $e');
+      debugPrint(
+        '[DevModeController] Error sincronizando taller $id a Firebase: $e',
+      );
     }
   }
 
@@ -133,7 +135,7 @@ class DevModeController extends ChangeNotifier {
   Future<bool> darDeBajaTaller(String id) async {
     try {
       await _talleresRepository.darDeBaja(id);
-      
+
       await _sincronizarConFirebase(id);
 
       _talleres = await _talleresRepository.obtenerTodas();

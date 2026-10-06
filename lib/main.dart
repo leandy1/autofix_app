@@ -1,11 +1,9 @@
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:autofix/app/conectividad_app.dart';
 import 'package:autofix/features/auth/screens/login_screen.dart';
-import 'package:autofix/features/sync/sync_service.dart';
 import 'package:autofix/firebase_options.dart';
 
 Future<void> main() async {
@@ -17,12 +15,6 @@ Future<void> main() async {
       await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,
       );
-    }
-    try {
-      await FirebaseAuth.instance.signInAnonymously();
-      await SyncService.instance.start();
-    } catch (e) {
-      debugPrint('FirebaseAuth anonymous sign-in skipped: $e');
     }
   } catch (e) {
     debugPrint('Firebase init skipped: $e');
