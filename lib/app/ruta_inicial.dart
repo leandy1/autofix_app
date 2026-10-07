@@ -1,119 +1,51 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
-import 'package:autofix/core/auth/nombre_amigable.dart';
-import 'package:autofix/core/auth/sesion_admin.dart';
-import 'package:autofix/core/auth/sesion_cliente.dart';
-import 'package:autofix/features/admin/screens/dashboard_admin_screen.dart';
 import 'package:autofix/features/auth/screens/login_screen.dart';
-import 'package:autofix/features/cliente/screens/dashboard_cliente_screen.dart';
-import 'package:autofix/features/sync/sync_service.dart';
-import 'package:autofix/shared/theme/app_colors.dart';
 
-/// Primera pantalla de la app: decide entre Dashboard y Login.
+/// Primera pantalla de la app: SIEMPRE el Login.
 ///
 /// ---------------------------------------------------------------
-/// POR QUE EXISTE (y por que no es un FutureBuilder)
+/// POR QUE YA NO DECIDE ENTRE DASHBOARD Y LOGIN
 /// ---------------------------------------------------------------
-/// El requisito es que un usuario con sesion guardada entre DIRECTO a su
-/// dashboard aunque este sin internet. Para que eso no tenga parpadeo ni
-/// pantalla de carga, la sesion se restaura en `main()` antes del `runApp`, de
-/// modo que al llegar aca el dato ya esta en memoria y la decision es
-/// SINCRONICA: el PRIMER frame ya es la pantalla correcta.
+/// Este widget decidia por su cuenta: con la sesion que `main()` restauro desde
+/// SharedPreferences, el primer frame era directamente el Dashboard. Ese bypass
+/// es el Bug 3: el usuario con sesion guardada no veia nunca el Login, asi que
+/// nunca veia `san***` con la clave deshabilitada esperando a que pulse
+/// "Ingresar".
 ///
-/// Un `FutureBuilder` que leyera la cache adentro del `build` mostraria un
-/// frame de splash cada arranque (el estado inicial del future), y el test que
-/// afirma "la app arranca en el login" dejaria de ser deterministico.
+/// La sesion restaurada sigue existiendo y sigue siendo local (SharedPreferences,
+/// sin tocar la red), pero ahora viaja HASTA el Login en memoria y se le muestra
+/// ahi: el usuario decide si entrar. Esa decision es la que dispara la validacion
+/// (contra Firebase Auth si hay red, contra las credenciales guardadas si no).
 ///
-/// No verifica la sesion contra Firebase a proposito: esa verificacion requiere
-/// red y es exactamente lo que no debe bloquear el arranque. Si el token de
-/// Auth vencio, el `SyncService` lo resuelve cuando haya conexion; los datos
-/// que el usuario viene a ver (citas, talleres) estan en SQLite y son locales.
-class RutaInicial extends StatefulWidget {
+/// Tampoco arranca `SyncService`: sincronizar antes de que nadie se autentique
+/// significaria empujar la cola del usuario anterior con el token del nuevo. El
+/// arranque de la sincronizacion vive en cada dashboard, que es quien sabe con
+/// que sesion esta trabajando. Lo que SI se sincroniza sin sesion es el catalogo
+/// global (talleres y admins), porque no pertenece a nadie: ver
+/// `CatalogoSyncService`, que se dispara desde `main()`.
+///
+/// ---------------------------------------------------------------
+/// POR QUE NO HAY SNACKBAR DE "SESION RESTAURADA"
+/// ---------------------------------------------------------------
+/// Este widget mostraba un aviso flotante ("Sesion restaurada: Bienvenido de
+/// nuevo, {nombre}") al arranque con sesion guardada. Es redundante: el Login
+/// ya declara esa misma informacion en dos lugares mejores (el campo de usuario
+/// con la mascara `san***` y el texto de "Sesion guardada" junto al check de
+/// "Recuerdame"), que ademas estan donde el usuario esta mirando cuando decide
+/// si entra. Un SnackBar encima solo competia con el formulario y se perdia en
+/// 4 segundos. Se elimino en la fase de optimizacion de UX.
+///
+/// Al no quedar estado que observar, el widget es un `StatelessWidget`: la
+/// decision es "pintar el Login" y no cambia durante la vida de la pantalla.
+class RutaInicial extends StatelessWidget {
   const RutaInicial({super.key});
 
   @override
-  State<RutaInicial> createState() => _RutaInicialState();
-}
-
-class _RutaInicialState extends State<RutaInicial> {
-  /// El aviso de "sesion restaurada" se muestra UNA vez por arranque, y solo
-  /// si de verdad se restauro algo. Sin esta bandera, cualquier rebuild del
-  /// `home` repetiria el mensaje.
-  bool _anuncioHecho = false;
-
-  @override
-  void initState() {
-    super.initState();
-    final hayAdmin = SesionAdmin.instance.activa;
-    final hayCliente = SesionCliente.instance.activa;
-
-    if (hayAdmin) {
-      // Sin `await`: el Dashboard se pinta YA y el motor de sincronizacion
-      // arranca en paralelo. Es el MISMO arranque que hace el login tras
-      // validar credenciales, asi que una sesion fresca y una restaurada
-      // terminan con el mismo `SyncService` corriendo: subidas, contador de
-      // `CITA-XXXX` y `onSnapshot` funcionan igual vinieran de la red o no.
-      //
-      // Si Firestore no esta disponible (sin red la primera vez, o Firebase sin
-      // inicializar) el fallo se traga aca: no debe impedir entrar al Dashboard.
-      unawaited(_arrancarSyncEnSegundoPlano());
-    }
-
-    if (hayAdmin || hayCliente) {
-      // En un `addPostFrameCallback` y no aca: el `ScaffoldMessenger` vive
-      // arriba del Navigator y aun no se sabe si responde durante el
-      // `initState`. Ademas, el aviso no debe empujar el primer frame.
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _anunciarSesionRestaurada(),
-      );
-    }
-  }
-
-  Future<void> _arrancarSyncEnSegundoPlano() async {
-    try {
-      await SyncService.instance.start();
-    } catch (e) {
-      debugPrint('RutaInicial: SyncService no arranco ($e)');
-    }
-  }
-
-  /// El saludo de la bienvenida: el nombre del cliente si es su sesión, y el
-  /// correo del admin (parte antes de la `@`) si es la del taller.
-  String get _nombreDeLaSesion {
-    if (SesionAdmin.instance.activa) {
-      return nombreAmigable(SesionAdmin.instance.adminEmail, reserva: 'admin');
-    }
-    return SesionCliente.instance.nombreVisible;
-  }
-
-  void _anunciarSesionRestaurada() {
-    if (_anuncioHecho || !mounted) return;
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    if (messenger == null) return;
-    _anuncioHecho = true;
-
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          'Sesión restaurada: Bienvenido de nuevo, $_nombreDeLaSesion',
-        ),
-        duration: const Duration(seconds: 4),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: AppColors.headerNavy,
-      ),
-    );
-  }
-
-  @override
   Widget build(BuildContext context) {
-    if (SesionAdmin.instance.activa) {
-      return const DashboardScreen();
-    }
-    if (SesionCliente.instance.activa) {
-      return const DashboardClienteScreen();
-    }
+    // Sin excepciones: ni sesion de admin ni sesion de cliente saltan el
+    // formulario. El Login es quien muestra la sesion recordada y quien
+    // resuelve, con red o sin ella, si esa sesion entra.
     return const LoginScreen();
   }
 }

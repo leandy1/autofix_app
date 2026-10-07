@@ -81,12 +81,19 @@ class DatabaseHelper {
   ///
   /// v9 = DEVMODE SYNC: agrega tabla `admins` para reflejar cuentas de admin
   ///      creadas desde Firestore y permitir baja logica local.
+  /// v10/v11 = cola de cambios de contraseña (ver arriba).
+  /// v12 = PERFIL OFFLINE-FIRST: agrega la tabla `clientes`, que es la copia
+  ///      local del perfil que Editar Perfil guarda con `sync_status='pending'`
+  ///      para que suba sola cuando vuelva la red. Antes de la v12 ese perfil
+  ///      solo existia en SharedPreferences, que es un almacenamiento de
+  ///      preferencias: no tiene forma de encolarse, ni de compararse con la
+  ///      nube, ni siquiera de decir "esto cambio despues de la ultima sync".
   ///
   /// OJO: subir la version NO borra la base por si sola, dispara `onUpgrade`, que
   /// es lo que permite a un dispositivo que ya instalo la v1 seguir funcionando.
   /// En la v7 el `onUpgrade` hace `DROP TABLE`, asi que en ESTE caso si borra los
   /// datos, y es intencional (ver [_migrar]).
-  static const int _versionBase = 11;
+  static const int _versionBase = 12;
 
   /// Nombre del indice de [tablaCitas] por fecha.
   ///
@@ -250,6 +257,53 @@ class DatabaseHelper {
     colCreadoEn: 'TEXT NOT NULL',
     colActualizadoEn: 'TEXT NOT NULL',
     colAdminEliminado: 'INTEGER NOT NULL DEFAULT 0',
+  };
+
+  // ------------------------------------------------------------------
+  // PERFIL DEL CLIENTE (v12)
+  //
+  // La tabla que le faltaba a la Fase 3. `Editar Perfil` escribia nombre,
+  // correo y telefono en SharedPreferences y ahi terminaba: una preferencia no
+  // se puede encolar, no se puede comparar con la nube y no puede decir
+  // "esto cambio despues de la ultima sincronizacion". Con `clientes` el
+  // perfil pasa a tener el mismo tratamiento que las citas: escritura local
+  // inmediata con `sync_status = 'pending'`, y `SyncService` lo sube.
+  //
+  // OJO con la PK: es el uid de Firebase Auth cuando lo hay, y el CORREO
+  // normalizado cuando no (login sin red, contra las credenciales del
+  // keystore). Ese segundo caso es exactamente el que la v12 existe para
+  // cubrir: el cliente edita su perfil sin internet y todavia no tiene
+  // identidad en la nube, pero igual tiene que poder guardarse. La columna
+  // `uid` se rellena cuando el push consigue la sesion.
+  // ------------------------------------------------------------------
+  static const String tablaClientes = 'clientes';
+  static const String colUid = 'uid';
+
+  /// Baja logica del perfil, mismo nombre y significado que `admins.eliminado`.
+  ///
+  /// Se declara aparte de [colAdminEliminado] aunque el texto SQL sea el
+  /// mismo: son columnas de tablas distintas y el dia que una de las dos cambie,
+  /// que hoy se compartan una constante seria el bug.
+  static const String colEliminado = 'eliminado';
+
+  /// Correo del perfil cliente.
+  ///
+  /// Distinta de [colCorreoCliente] ('correo_cliente'), que es la de
+  /// `citas` y de `cambios_password`: alla el correo es METADATO de una cita
+  /// que puede pertenecer a cualquiera, aca es la IDENTIDAD del registro.
+  /// Mantener los dos nombres separados evita que un dia alguien "unifique
+  /// las constantes" y pase a escribir la identidad del cliente en una cita.
+  static const String colCorreo = 'correo';
+
+  static const Map<String, String> _columnasClientes = <String, String>{
+    colUid: 'TEXT NOT NULL DEFAULT \'\'',
+    colCorreo: 'TEXT NOT NULL DEFAULT \'\'',
+    colNombre: 'TEXT NOT NULL DEFAULT \'\'',
+    colTelefono: 'TEXT NOT NULL DEFAULT \'\'',
+    colEliminado: 'INTEGER NOT NULL DEFAULT 0',
+    colCreadoEn: 'TEXT NOT NULL DEFAULT \'\'',
+    colActualizadoEn: 'TEXT NOT NULL DEFAULT \'\'',
+    colSyncStatus: "TEXT NOT NULL DEFAULT 'pending'",
   };
 
   // `colTelefono` NO se redeclara aca: ya existe arriba para `citas.telefono`, y
@@ -448,6 +502,7 @@ class DatabaseHelper {
     // la tabla que referencia exista.
     await _crearTalleres(db);
     await _crearAdmins(db);
+    await _crearClientes(db);
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_citas_taller_id '
       'ON $tablaCitas ($colTallerId)',
@@ -554,6 +609,38 @@ class DatabaseHelper {
     await db.execute(
       'CREATE UNIQUE INDEX IF NOT EXISTS idx_${tablaAdmins}_email '
       'ON $tablaAdmins ($colAdminEmail COLLATE NOCASE)',
+    );
+  }
+
+  /// Crea la tabla de perfil cliente (v12).
+  ///
+  /// `IF NOT EXISTS` por la misma razon que talleres, admins y catalogos: esta
+  /// funcion la llaman los dos caminos (creacion nueva y migracion) y no
+  /// importa cual llegue primero.
+  ///
+  /// El indice UNICO sobre `correo COLLATE NOCASE` es lo que garantiza "una
+  /// fila por persona". Hace falta por un camino concreto: el cliente que
+  /// edita su perfil SIN red obtiene una fila cuya PK es el correo; si despues
+  /// entra CON red y la nube manda el mismo perfil con su uid, un `INSERT` a
+  /// ciegas dejaria dos filas para la misma persona. El indice convierte ese
+  /// error en un conflicto que el repositorio sabe resolver (primero busca por
+  /// `uid`, luego por `correo`). Mismo molde que `idx_talleres_nombre`.
+  ///
+  /// Sin indice de `sync_status`, por el mismo motivo que en
+  /// [_crearCambiosPassword]: es una tabla de una o dos filas.
+  Future<void> _crearClientes(DatabaseExecutor db) async {
+    final definiciones = <String>[
+      _pkUuid,
+      ..._columnasClientes.entries.map((e) => '${e.key} ${e.value}'),
+    ];
+
+    await db.execute(
+      'CREATE TABLE IF NOT EXISTS $tablaClientes (${definiciones.join(', ')})',
+    );
+
+    await db.execute(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_${tablaClientes}_correo '
+      'ON $tablaClientes ($colCorreo COLLATE NOCASE)',
     );
   }
 
@@ -1024,6 +1111,9 @@ class DatabaseHelper {
       if (versionAnterior < 11) {
         await _migrarAV11(txn);
       }
+      if (versionAnterior < 12) {
+        await _migrarAV12(txn);
+      }
     });
   }
 
@@ -1208,6 +1298,21 @@ class DatabaseHelper {
         "ADD COLUMN $colCorreoCambioPassword TEXT NOT NULL DEFAULT ''",
       );
     }
+  }
+
+  /// Paso 11 -> 12: tabla `clientes`, el perfil del cliente offline-first.
+  ///
+  /// Solo crea tablas nuevas, igual que la v10 y a diferencia de la v7: no hay
+  /// nada que transformar porque antes no existia una copia local del perfil.
+  /// Lo que SI existia (SharedPreferences) queda intacto: es la lectura rapida
+  /// que usan el saludo del AppBar y el prellenado del formulario, y seguir
+  /// funcionando sin tocarla es lo que hace que esta migracion sea inocua.
+  ///
+  /// `_crearClientes` trae el `IF NOT EXISTS` y el indice unico por correo, de
+  /// modo que un dispositivo que ya tuviera la tabla por una corrida previa de
+  /// una v12 en desarrollo no revienta la transaccion.
+  Future<void> _migrarAV12(DatabaseExecutor txn) async {
+    await _crearClientes(txn);
   }
 
   Future<void> cerrar() async {

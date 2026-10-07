@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:autofix/core/auth/sesion_cliente.dart';
 import 'package:autofix/core/connectivity/connectivity_scope.dart';
 import 'package:autofix/core/mapa/estilos_mapa.dart';
 import 'package:autofix/core/mapa/etiqueta_distancia.dart';
@@ -207,12 +208,29 @@ class _TalleresMapaScreenState extends State<TalleresMapaScreen> {
     _armarEsperaDeEstilo();
     _ubicar();
     _cargarTalleres();
+    // El pull de catalogos del arranque termina DESPUES de que este mapa ya
+    // construyo sus marcadores con la lista local (posiblemente vacia). Sin
+    // este oyente la pantalla se quedaria con lo que leyo al abrirse hasta
+    // que alguien recargue a mano.
+    TallerRepository.instance.addListener(_alCambiarElCatalogo);
   }
 
   @override
   void dispose() {
+    TallerRepository.instance.removeListener(_alCambiarElCatalogo);
     _temporizadorEstilo?.cancel();
     super.dispose();
+  }
+
+  /// El catalogo local cambio y esta pantalla ya estaba pintada.
+  ///
+  /// Relee la tabla y vuelve a armar los marcadores por el mismo camino con
+  /// que los arma al abrirse; no hay un segundo código de pintado que pueda
+  /// desincronizarse del primero.
+  void _alCambiarElCatalogo() {
+    if (!mounted) return;
+    debugPrint('[Mapa] catalogo local cambio, recargando talleres');
+    unawaited(_cargarTalleres());
   }
 
   /// Arranca (o reinicia) el reloj del estilo.
@@ -507,6 +525,25 @@ class _TalleresMapaScreenState extends State<TalleresMapaScreen> {
     unawaited(_explorarTaller(taller));
   }
 
+  /// `true` solo cuando la ficha debe ofrecer "Agendar cita".
+  ///
+  /// El Bug 4: el boton se mostraba siempre que hubiera un `onTallerSelected`,
+  /// y el dashboard se lo pasaba tambien a un invitado para poder lanzarle el
+  /// dialogo "inicia sesión para agendar" DESPUES del toque. El resultado era
+  /// un invitado viendo la opcion de agendar. La regla ahora es que no la vea
+  /// nunca, y el chequeo se hace contra la SESION y no contra un flag de UI.
+  ///
+  /// [SesionCliente.haySesion] mira Firebase Auth y la sesion local: el login
+  /// sin red abre el dashboard sin pasar por Auth, y esa persona si puede
+  /// agendar (la cita se guarda primero en SQLite y sube sola cuando vuelva
+  /// la red).
+  ///
+  /// Es la segunda barrera: el dashboard ademas deja este callback en `null`
+  /// cuando no toca, y ahi `onTallerSelected == null` desactiva el boton por
+  /// su cuenta.
+  bool get _puedeAgendar =>
+      widget.onTallerSelected != null && SesionCliente.haySesion;
+
   /// Ficha del taller con su distancia y la acción de agendar.
   Future<void> _mostrarFicha(Taller taller) async {
     await showModalBottomSheet<void>(
@@ -584,7 +621,7 @@ class _TalleresMapaScreenState extends State<TalleresMapaScreen> {
                     Expanded(
                       child: _BotonPrimario(
                         etiqueta: 'Agendar cita',
-                        onPressed: widget.onTallerSelected == null
+                        onPressed: !_puedeAgendar
                             ? null
                             : () {
                                 Navigator.pop(context);

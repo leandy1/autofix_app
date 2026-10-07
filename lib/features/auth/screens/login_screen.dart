@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 
 import 'package:autofix/core/auth/sesion_cliente.dart';
 import 'package:autofix/core/auth/sesion_admin.dart';
+import 'package:autofix/core/connectivity/connectivity_scope.dart';
 import 'package:autofix/features/admin/screens/dashboard_admin_screen.dart';
 import 'package:autofix/features/auth/controllers/login_controller.dart';
 import 'package:autofix/features/cliente/screens/dashboard_cliente_screen.dart';
 import 'package:autofix/features/devMode/screens/talleres_afiliados_screen.dart';
+import 'package:autofix/features/sync/sync_service.dart';
 import 'package:autofix/shared/theme/app_colors.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -106,6 +108,95 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  /// `true` cuando el sistema afirma que no hay ninguna via de red.
+  ///
+  /// Se consulta en el instante en que se pulsa "Ingresar", no en `build`:
+  /// usar `of` registraria una dependencia y repintaria todo el Login cada vez
+  /// que cambie la red, para una informacion que solo se necesita al enviar.
+  ///
+  /// Sin `ConnectivityScope` en el arbol (tests, app montada a medias)
+  /// devuelve `false` y el login sigue el camino normal de Firebase Auth, que
+  /// es el que no puede quedarse callado.
+  bool _sinRed() {
+    final scope = context
+        .getElementForInheritedWidgetOfExactType<ConnectivityScope>();
+    final servicio = scope?.widget as ConnectivityScope?;
+    return servicio?.notifier?.desconectado ?? false;
+  }
+
+  /// La sesion de este rol quedo restaurada en memoria al arrancar.
+  ///
+  /// Es lo que hace posible entrar sin red: sin esa sesion no hay perfil
+  /// (cliente) ni taller (admin) con los que pintar el dashboard, y desde el
+  /// login offline no hay forma de recuperarlos.
+  bool _sesionLocalLista(LoginRole role) => role == LoginRole.admin
+      ? SesionAdmin.instance.activa
+      : SesionCliente.instance.activa;
+
+  /// Entra al dashboard sin tocar la red, validando contra las credenciales
+  /// que "Recuérdame" dejo guardadas en el keystore.
+  ///
+  /// Es el otro lado del login híbrido: con red la cuenta se valida contra
+  /// Firebase Auth; sin red lo unico que se puede hacer es reconocer a alguien
+  /// cuyas credenciales ya estan en ESTE dispositivo. Por eso avisa en vez de
+  /// quedarse mudo cuando no hay nada guardado o lo tecleado no coincide.
+  Future<void> _entrarSinRed({
+    required String usuario,
+    required String contrasena,
+    required LoginRole role,
+  }) async {
+    final guardadas = await _loginController.credencialesRecordadas();
+    if (!mounted) return;
+
+    // Con recordamiento las cajas vienen enmascaradas (`san***`) y
+    // `_handleLogin` ya las reemplazo por las credenciales reales; sin
+    // recordamiento lo que llega es lo que el usuario acaba de teclear.
+    final coincide =
+        guardadas != null &&
+        usuario.trim().toLowerCase() ==
+            guardadas.usuario.trim().toLowerCase() &&
+        contrasena == guardadas.contrasena;
+
+    if (!coincide || !_sesionLocalLista(role)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Sin conexión. Solo puedes entrar con las credenciales guardadas '
+            'en este dispositivo.',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (role == LoginRole.admin) {
+      await SesionCliente.instance.cerrar();
+      // Mismo arranque que `loginAdmin` (stop + start): la cola local y el
+      // listener de Firestore tienen que estar vivos para que, cuando vuelva
+      // la red, lo pendiente se suba sin reiniciar la app.
+      try {
+        await SyncService.instance.stop();
+        await SyncService.instance.start();
+      } catch (e) {
+        debugPrint('Login: SyncService no arrancó sin red ($e)');
+      }
+    } else {
+      await SesionAdmin.instance.cerrar();
+    }
+
+    await _loginController.persistirRol(role);
+    if (!mounted) return;
+
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => role == LoginRole.admin
+            ? const DashboardScreen()
+            : const DashboardClienteScreen(),
+      ),
+    );
+  }
+
   Future<void> _handleLogin() async {
     await _cargaInicial;
     if (!mounted) return;
@@ -133,6 +224,13 @@ class _LoginScreenState extends State<LoginScreen> {
         contrasena: contrasena,
         activo: true,
       );
+      // Brecha de seguridad: la pantalla DEV se apila CON el Login debajo, asi
+      // que este `State` NO se destruye y los campos siguen con `dev` / `1234`
+      // la proxima vez que el usuario regrese (al cerrar sesion en la pantalla
+      // DEV). A diferencia de los otros dos ramos, aca no hay un
+      // `pushReplacement` que vacie los controladores por arte de magia.
+      _userController.clear();
+      _passwordController.clear();
       if (!mounted) return;
       Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => const TalleresAfiliadosScreen()),
@@ -154,6 +252,16 @@ class _LoginScreenState extends State<LoginScreen> {
       if (usuario.trim().isEmpty || contrasena.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Ingresa correo y contraseña.')),
+        );
+        return;
+      }
+      // LOGIN HIBRIDO: sin red no hay nada con que validar contra Auth, asi
+      // que se valida contra las credenciales guardadas en este dispositivo.
+      if (_sinRed()) {
+        await _entrarSinRed(
+          usuario: usuario,
+          contrasena: contrasena,
+          role: LoginRole.admin,
         );
         return;
       }
@@ -202,6 +310,18 @@ class _LoginScreenState extends State<LoginScreen> {
     if (usuario.trim().isEmpty || contrasena.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Ingresa correo y contraseña.')),
+      );
+      return;
+    }
+
+    // LOGIN HIBRIDO (mismo camino que en el rol admin): sin red, la validacion
+    // se hace contra las credenciales del keystore y la sesion local que
+    // `main()` restauro, en vez de intentar una llamada que no puede responder.
+    if (_sinRed()) {
+      await _entrarSinRed(
+        usuario: usuario,
+        contrasena: contrasena,
+        role: LoginRole.cliente,
       );
       return;
     }
@@ -305,16 +425,28 @@ class _LoginScreenState extends State<LoginScreen> {
         },
         onSuccess: () {
           if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Cuenta creada y sincronizada con Firebase.'),
-              behavior: SnackBarBehavior.floating,
-              backgroundColor: AppColors.headerNavy,
-            ),
-          );
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => const DashboardClienteScreen()),
-          );
+          // Cada paso va en su PROPIO try: si el aviso falla, la navegacion
+          // tiene que ocurrir igual. Envolviendo los dos juntos, un error de
+          // `ScaffoldMessenger` dejaria al usuario en el formulario creyendo
+          // que la cuenta no se creo.
+          try {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Cuenta creada y sincronizada con Firebase.'),
+                behavior: SnackBarBehavior.floating,
+                backgroundColor: AppColors.headerNavy,
+              ),
+            );
+          } catch (e) {
+            debugPrint('Login: no se pudo avisar la cuenta creada ($e)');
+          }
+          try {
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(builder: (_) => const DashboardClienteScreen()),
+            );
+          } catch (e) {
+            debugPrint('Login: no se pudo abrir el dashboard ($e)');
+          }
         },
       ),
     );
@@ -744,7 +876,15 @@ class _CrearCuentaClienteDialogState extends State<_CrearCuentaClienteDialog> {
       });
       return;
     }
-    Navigator.of(context).pop();
+    // El cierre del dialogo y el ruteo post-registro van protegidos: ambos
+    // corren con el contexto de este dialogo, que en el instante del `pop` deja
+    // de estar montado. Si alguno truena, la cuenta YA existe en Firebase y el
+    // error quedaria sin atender (ni pantalla roja en release).
+    try {
+      Navigator.of(context).pop();
+    } catch (e) {
+      debugPrint('Login: no se pudo cerrar el dialogo de registro ($e)');
+    }
     widget.onSuccess();
   }
 

@@ -130,5 +130,32 @@ void main() {
       final vuelta = Cita.fromMap(conServicios.toMap());
       expect(vuelta.servicios, ['Frenos', 'Alineación']);
     });
+
+    // Regresion del error que salia en el dispositivo:
+    // `[SyncService] Error procesando doc ...: type 'String' is not a subtype
+    // of type 'List<dynamic>?' in type cast`. `toMap()` serializa los servicios
+    // como JSON, asi que una cita que BAJA de Firestore llega como String y un
+    // `as List?` revienta; con eso la cita entera se descartaba y nunca llegaba
+    // a SQLite.
+    test('leerServicios acepta el JSON que manda Firestore', () {
+      expect(Cita.leerServicios('["Cambio de aceite y filtro","Frenos"]'), [
+        'Cambio de aceite y filtro',
+        'Frenos',
+      ]);
+    });
+
+    test('leerServicios acepta una lista nativa', () {
+      expect(Cita.leerServicios(['Frenos', 'Alineación']), [
+        'Frenos',
+        'Alineación',
+      ]);
+    });
+
+    test('leerServicios devuelve vacío en vez de lanzar', () {
+      expect(Cita.leerServicios(null), isEmpty);
+      expect(Cita.leerServicios(''), isEmpty);
+      expect(Cita.leerServicios('no es json'), isEmpty);
+      expect(Cita.leerServicios('{"no":"es lista"}'), isEmpty);
+    });
   });
 }
