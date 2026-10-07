@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:autofix/core/data/base_repository.dart';
 import 'package:autofix/core/utils/reloj.dart';
+import 'package:autofix/core/utils/uuid.dart';
 
 /// Taller AFILIADO a AutoFix: uno de los pocos que la empresa tiene en su red.
 ///
@@ -50,6 +51,26 @@ class Taller implements EntidadPersistida {
   /// `lib/core/utils/uuid.dart`.
   @override
   final String? id;
+
+  /// Código corto y estable para interfaces. Se deriva del UUID para evitar
+  /// añadir un contador local que pudiera colisionar entre dispositivos.
+  String get codigoVisible {
+    final valor = id;
+    if (valor == null || valor.isEmpty) return 'TALLER-SIN-ID';
+    if (!Uuid.tieneFormaDeUuid(valor.toLowerCase())) {
+      return 'TALLER-${valor.padLeft(3, '0')}';
+    }
+
+    // FNV-1a: código reproducible entre ejecuciones, sin exponer fragmentos del
+    // UUID. El pequeño catálogo de afiliados mantiene muy bajo el riesgo de
+    // colisión visual; la identidad real sigue siendo siempre `id`.
+    var hash = 0x811c9dc5;
+    for (final byte in valor.codeUnits) {
+      hash = ((hash ^ byte) * 0x01000193) & 0xffffffff;
+    }
+    final corto = hash.toRadixString(36).toUpperCase().padLeft(7, '0');
+    return 'TALLER-$corto';
+  }
 
   final String nombre;
 

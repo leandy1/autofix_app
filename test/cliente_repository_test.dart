@@ -42,7 +42,7 @@ void main() {
     return filas.length;
   }
 
-  group('esquema v12', () {
+  group('perfil y migración local', () {
     test('una base creada de cero trae la tabla clientes', () async {
       final db = await DatabaseHelper.instance.base;
       final info = await db.rawQuery(
@@ -105,12 +105,12 @@ void main() {
       },
     );
 
-    test('una base v11 gana la tabla clientes al subir a v12', () async {
+    test('una base v11 sube a v13 con clientes y vehículos locales', () async {
       await DatabaseHelper.resetParaPruebas();
       final ruta = await rutaDeLaBase();
 
       // Un archivo que dice "soy la version 11". No hace falta replicar el
-      // esquema v11 entero: el paso 11 -> 12 solo crea la tabla nueva, asi
+      // esquema v11 entero: los pasos posteriores solo agregan tablas nuevas, asi
       // que basta con que `user_version` sea 11 para que `onUpgrade` corra.
       final vieja = await databaseFactory.openDatabase(
         ruta,
@@ -121,7 +121,7 @@ void main() {
       );
       await vieja.close();
 
-      // Abrir con el helper dispara onUpgrade 11 -> 12.
+      // Abrir con el helper dispara onUpgrade hasta la versión actual.
       final db = await DatabaseHelper.instance.base;
       final info = await db.rawQuery(
         'PRAGMA table_info(${DatabaseHelper.tablaClientes})',
@@ -131,8 +131,15 @@ void main() {
         contains(DatabaseHelper.colCorreo),
         reason: 'la migracion 11 -> 12 no creo la tabla',
       );
+      final vehiculos = await db.rawQuery(
+        'PRAGMA table_info(${DatabaseHelper.tablaVehiculos})',
+      );
+      expect(
+        vehiculos.map((f) => f['name']),
+        contains(DatabaseHelper.colClienteIdVehiculo),
+      );
       final version = await db.rawQuery('PRAGMA user_version');
-      expect(version.first.values.first, 12);
+      expect(version.first.values.first, 13);
     });
   });
 

@@ -12,6 +12,8 @@ import 'package:autofix/features/citas/models/codigo_de_cita.dart';
 /// trazabilidad de cuando se atraso.
 enum EstadoCita {
   pendiente('Pendiente'),
+  aceptada('Aceptada'),
+  rechazada('Rechazada'),
   esperandoPieza('Esperando Pieza'),
   enProceso('En proceso'),
   completado('Completado');
@@ -180,7 +182,8 @@ class Cita implements EntidadPersistida {
 
   /// Estado de sincronizacion con Firestore (Fase 2).
   ///
-  /// 'pending' = recien creada/modificada localmente, falta subir.
+  /// 'pending' = recién creada/modificada localmente, falta subir.
+  /// 'error' = falló el último intento; sigue en cola para volver a intentarse.
   /// 'synced' = coincide con la nube.
   /// Se escribe SIEMPRE en el mapa (no es opcional) porque la columna tiene
   // NOT NULL DEFAULT 'pending' en la tabla.
@@ -204,8 +207,9 @@ class Cita implements EntidadPersistida {
   /// UUID o un hueco.
   String get identificadorParaPantalla => codigoVisible;
 
-  /// "La fecha ya paso y todavia no se completo". La hora de la cita no cambia
-  /// la clasificacion: una cita de hoy sigue vigente hasta el final del dia.
+  /// La fecha ya pasó y la cita sigue activa (no fue completada ni rechazada).
+  /// La hora no cambia la clasificación: una cita de hoy sigue vigente hasta
+  /// el final del día.
   ///
   /// `ahora` va por parametro a proposito: leer el reloj adentro hace que dos
   /// dispositivos clasifiquen la misma cita distinto, y en cuanto hay
@@ -219,7 +223,9 @@ class Cita implements EntidadPersistida {
     final local = fechaCita.toLocal();
     final fechaDia = DateTime(local.year, local.month, local.day);
     final ahoraDia = DateTime(ahora.year, ahora.month, ahora.day);
-    return estado != EstadoCita.completado && fechaDia.isBefore(ahoraDia);
+    return estado != EstadoCita.completado &&
+        estado != EstadoCita.rechazada &&
+        fechaDia.isBefore(ahoraDia);
   }
 
   /// Llave exacta del mapa de colores de la UI. Va en mayusculas porque asi
@@ -363,32 +369,39 @@ class Cita implements EntidadPersistida {
 
   factory Cita.fromMap(Map<String, Object?> map) {
     return Cita(
-      id: map[_kId] as String?,
-      codigoVisible: (map[_kCodigoVisible] as String?) ?? codigoCitaTemporal,
-      cliente: map[_kCliente] as String,
-      telefono: (map[_kTelefono] as String?) ?? '',
-      correoCliente: (map[_kCorreoCliente] as String?) ?? '',
-      vehiculo: map[_kVehiculo] as String,
-      marca: (map[_kMarca] as String?) ?? '',
-      modelo: (map[_kModelo] as String?) ?? '',
-      anio: (map[_kAnio] as num?)?.toInt() ?? 0,
-      placa: (map[_kPlaca] as String?) ?? '',
+      id: map[_kId]?.toString(),
+      codigoVisible: map[_kCodigoVisible]?.toString() ?? codigoCitaTemporal,
+      cliente: map[_kCliente]?.toString() ?? '',
+      telefono: map[_kTelefono]?.toString() ?? '',
+      correoCliente: map[_kCorreoCliente]?.toString() ?? '',
+      vehiculo: map[_kVehiculo]?.toString() ?? '',
+      marca: map[_kMarca]?.toString() ?? '',
+      modelo: map[_kModelo]?.toString() ?? '',
+      anio: _entero(map[_kAnio]),
+      placa: map[_kPlaca]?.toString() ?? '',
       servicios: leerServicios(map[_kServicios]),
-      tecnico: (map[_kTecnico] as String?) ?? '',
-      descripcion: (map[_kDescripcion] as String?) ?? '',
+      tecnico: map[_kTecnico]?.toString() ?? '',
+      descripcion: map[_kDescripcion]?.toString() ?? '',
       fechaCita: desdeIso(map[_kFechaCita]) ?? Reloj.instancia.ahora(),
-      estado: EstadoCita.desdeNombre(map[_kEstado] as String),
-      tallerId: map[_kTallerId] as String?,
+      estado: EstadoCita.desdeNombre(
+        map[_kEstado]?.toString() ?? EstadoCita.pendiente.name,
+      ),
+      tallerId: map[_kTallerId]?.toString(),
       creadoEn: desdeIso(map[_kCreadoEn]),
       actualizadoEn: desdeIso(map[_kActualizadoEn]),
-      total: (map[_kTotal] as num?)?.toInt() ?? 0,
-      syncStatus: (map[_kSyncStatus] as String?) ?? 'pending',
+      total: _entero(map[_kTotal]),
+      syncStatus: map[_kSyncStatus]?.toString() ?? 'pending',
       trazabilidad: Trazabilidad(
         eliminadoEn: desdeIso(map['eliminado_en']),
-        eliminadoPor: map['eliminado_por'] as String?,
+        eliminadoPor: map['eliminado_por']?.toString(),
         restauradoEn: desdeIso(map['restaurado_en']),
       ),
     );
+  }
+
+  static int _entero(Object? valor) {
+    if (valor is num) return valor.toInt();
+    return int.tryParse(valor?.toString() ?? '') ?? 0;
   }
 
   /// Lee `servicios` venga como venga.

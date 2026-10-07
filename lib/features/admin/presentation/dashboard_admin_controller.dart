@@ -138,12 +138,11 @@ class DashboardAdminController extends ChangeNotifier {
 
   /// Ordenes abiertas del taller: lo que esta en turno y todavia no se entrego.
   ///
-  /// Suma de los tres estados operativos. 'Completado' no entra (ya se entrego)
-  /// y las atrasadas no son un estado aparte: una atrasada esta, ademas, en uno
-  /// de estos tres, asi que sumarlas aqui las contaria dos veces. Por eso el
-  /// conteo real de atrasadas vive aparte, en [atrasadas].
+  /// Citas aceptadas o en operación que todavía no se han entregado. Las
+  /// rechazadas y completadas no son órdenes abiertas.
   int get ordenesAbiertas =>
       _global.contar(EstadoCita.pendiente) +
+      _global.contar(EstadoCita.aceptada) +
       _global.contar(EstadoCita.esperandoPieza) +
       _global.contar(EstadoCita.enProceso);
 

@@ -661,6 +661,44 @@ class CitaRepository implements BaseRepository<Cita> {
     return filas.map(Cita.fromMap).toList();
   }
 
+  /// Citas cuyo último intento de push falló. Se consultan por separado para
+  /// que una tanda de fallidas no ocupe todos los cupos de la cola `pending`.
+  Future<List<Cita>> obtenerFallidasDeSync({int limite = 50}) async {
+    final db = await _helper.base;
+    final filas = await db.query(
+      tabla,
+      where: "${DatabaseHelper.colSyncStatus} = 'error'",
+      orderBy: '${DatabaseHelper.colActualizadoEn} ASC',
+      limit: limite,
+    );
+    return filas.map(Cita.fromMap).toList();
+  }
+
+  /// Registra que el último intento de sincronizar esta fila falló. El estado
+  /// `error` se reintenta en la siguiente tanda separada de `pending`.
+  Future<int> marcarErrorSync(String id) async {
+    final db = await _helper.base;
+    return db.update(
+      tabla,
+      <String, Object?>{DatabaseHelper.colSyncStatus: 'error'},
+      where: '${DatabaseHelper.colId} = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// Vuelve a mostrar como pendiente una fila fallida antes de reintentarla.
+  Future<int> marcarPendienteSync(String id) async {
+    final db = await _helper.base;
+    return db.update(
+      tabla,
+      <String, Object?>{DatabaseHelper.colSyncStatus: 'pending'},
+      where:
+          '${DatabaseHelper.colId} = ? AND '
+          "${DatabaseHelper.colSyncStatus} = 'error'",
+      whereArgs: [id],
+    );
+  }
+
   /// Marca una cita como sincronizada (sync_status = 'synced').
   ///
   /// Lo llama [SyncService] tras un push exitoso. No toca `actualizado_en`

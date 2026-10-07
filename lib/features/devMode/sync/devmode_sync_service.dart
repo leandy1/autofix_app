@@ -51,7 +51,15 @@ class DevModeSyncService {
   Future<void> start() async {
     if (_running) return;
     try {
-      await _subirTalleresLocalesAFirebase();
+      await _asegurarSesionDeLectura();
+      if (await _tieneClaimDev()) {
+        await _subirTalleresLocalesAFirebase();
+      } else {
+        debugPrint(
+          '[DevModeSync] Lectura activa; escritura remota requiere el claim '
+          'Firebase dev=true.',
+        );
+      }
 
       _talleresSubscription = _db
           .collection('talleres')
@@ -67,6 +75,20 @@ class DevModeSyncService {
     } on FirebaseException {
       // Firebase no inicializado (ej. en tests) — skip real-time sync,
       // los datos siguen disponibles desde SQLite.
+    }
+  }
+
+  /// La clave local del modo DEV no es una identidad verificable por Rules.
+  /// Solo un UID con claim emitido por Admin SDK puede escribir catálogos.
+  Future<bool> _tieneClaimDev() async {
+    try {
+      final usuario = FirebaseAuth.instance.currentUser;
+      if (usuario == null) return false;
+      final token = await usuario.getIdTokenResult();
+      return token.claims?['dev'] == true;
+    } on Object catch (error) {
+      debugPrint('[DevModeSync] No se pudieron leer claims DEV: $error');
+      return false;
     }
   }
 

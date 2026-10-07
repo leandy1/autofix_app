@@ -139,18 +139,23 @@ void main() {
       expect(mapa['ATRASADAS']!.length, 0);
     });
 
-    test('una cita pendiente de dias anteriores cae en ATRASADAS al consultar hoy', () async {
-      final controller = nuevoController();
-      await controller.guardar(nueva().copyWith(fechaCita: DateTime(2026, 9, 30, 9, 30)));
+    test(
+      'una cita pendiente de dias anteriores cae en ATRASADAS al consultar hoy',
+      () async {
+        final controller = nuevoController();
+        await controller.guardar(
+          nueva().copyWith(fechaCita: DateTime(2026, 9, 30, 9, 30)),
+        );
 
-      final mapa = controller.agruparPorEstado(
-        DateTime(2026, 10, 1),
-        ahora: DateTime(2026, 10, 1, 10),
-      );
+        final mapa = controller.agruparPorEstado(
+          DateTime(2026, 10, 1),
+          ahora: DateTime(2026, 10, 1, 10),
+        );
 
-      expect(mapa['ATRASADAS']!.length, 1);
-      expect(mapa['Pendiente']!.length, 0);
-    });
+        expect(mapa['ATRASADAS']!.length, 1);
+        expect(mapa['Pendiente']!.length, 0);
+      },
+    );
 
     test('filtra por dia: lo de otro dia no aparece al consultar fecha distinta a hoy', () async {
       final controller = nuevoController();
@@ -205,7 +210,7 @@ void main() {
       expect(cita.esAtrasada(DateTime(2026, 10, 1, 9)), isFalse);
       expect(cita.etiquetaUI(DateTime(2026, 10, 2, 0)), 'ATRASADAS');
       expect(cita.etiquetaUI(DateTime(2026, 10, 1, 9)), 'Pendiente');
-      expect(CitasController.etiquetas.length, 5);
+      expect(CitasController.etiquetas.length, 7);
     });
   });
 

@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:autofix/core/auth/sesion_cliente.dart';
+import 'package:autofix/core/connectivity/connectivity_scope.dart';
+import 'package:autofix/core/connectivity/connectivity_service.dart';
 import 'package:autofix/core/mapa/etiqueta_distancia.dart';
 import 'package:autofix/core/ubicacion/ubicacion_service.dart';
 import 'package:autofix/features/citas/data/cita_repository.dart';
@@ -15,6 +17,9 @@ import 'package:autofix/features/talleres/models/taller.dart';
 import 'package:autofix/shared/theme/app_colors.dart';
 import 'package:autofix/features/cliente/widgets/agenda_cliente_widgets.dart';
 import 'package:autofix/features/cliente/widgets/cliente_section_widgets.dart';
+import 'package:autofix/features/cliente/data/catalogo_vehiculos_api.dart';
+import 'package:autofix/features/cliente/data/vehiculo_repository.dart';
+import 'package:autofix/features/cliente/models/vehiculo.dart';
 
 /// "RD$ 1,250" -- pesos dominicanos con separador de miles.
 ///
@@ -78,6 +83,45 @@ class AgendarCitaClienteSection extends StatefulWidget {
 }
 
 class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
+  static const List<String> _marcasComunesOffline = [
+    'Toyota',
+    'Honda',
+    'Hyundai',
+    'Kia',
+    'Nissan',
+    'Mazda',
+    'Mitsubishi',
+    'Suzuki',
+    'Ford',
+    'Chevrolet',
+    'BMW',
+    'Mercedes-Benz',
+    'Lexus',
+    'Jeep',
+    'Isuzu',
+    'Subaru',
+    'Volkswagen',
+    'Audi',
+    'Volvo',
+    'Acura',
+  ];
+
+  final CatalogoVehiculosApi _catalogoVehiculos = CatalogoVehiculosApi();
+  List<String> _marcasDisponibles = _marcasComunesOffline;
+  List<String> _modelosDisponibles = const [];
+  bool _cargandoMarcas = false;
+  bool _cargandoModelos = false;
+  bool _inicializoCatalogo = false;
+  bool _ultimaConexion = false;
+  String? _avisoCatalogo;
+  ConnectivityService? _servicioConectividad;
+  int _solicitudModelos = 0;
+
+  List<String> get _aniosDisponibles => List<String>.generate(
+    DateTime.now().year - 1980 + 2,
+    (indice) => (DateTime.now().year + 1 - indice).toString(),
+  );
+
   /// Catálogo de servicios REAL de la base, no una lista fija del widget.
   ///
   /// Antes eran cuatro literales y el admin no podía cambiar nada: los servicios
@@ -105,6 +149,8 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
   TimeOfDay _horaSeleccionada = const TimeOfDay(hour: 9, minute: 0);
   bool _vehiculoFormularioVisible = false;
   bool _vehiculoSeleccionado = false;
+  String? _vehiculoSeleccionadoId;
+  List<Vehiculo> _vehiculosRegistrados = const [];
 
   /// Talleres afiliados reales, leídos de la base local.
   List<Taller> _talleres = const <Taller>[];
@@ -125,10 +171,272 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
     _prellenarDesdeElPerfil();
     _cargarTalleres();
     _cargarServicios();
+    unawaited(_cargarVehiculosRegistrados());
     unawaited(_cargarPosicionSiHayPermiso());
     // Igual que el mapa: el pull del arranque puede bajar los talleres
     // DESPUES de que ya se pinto la lista de este formulario.
     TallerRepository.instance.addListener(_alCambiarElCatalogo);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    try {
+      final servicio = ConnectivityScope.read(context);
+      if (!identical(servicio, _servicioConectividad)) {
+        _servicioConectividad?.removeListener(_alCambiarConectividad);
+        _servicioConectividad = servicio;
+        _ultimaConexion = servicio.hayConexion;
+        servicio.addListener(_alCambiarConectividad);
+      }
+    } on Object {
+      // Tests o previews pueden montar el formulario sin el scope de la app;
+      // en ese caso se usan las opciones locales y el ingreso manual.
+    }
+    if (!_inicializoCatalogo) {
+      _inicializoCatalogo = true;
+      unawaited(_cargarMarcas());
+    }
+  }
+
+  bool get _hayConexion => _servicioConectividad?.hayConexion ?? false;
+
+  String? get _clienteIdVehiculos =>
+      SesionCliente.instance.correo?.trim().toLowerCase();
+
+  Future<void> _cargarVehiculosRegistrados() async {
+    final clienteId = _clienteIdVehiculos;
+    if (clienteId == null || clienteId.isEmpty) return;
+    try {
+      final vehiculos = await VehiculoRepository.instance.obtenerPorCliente(
+        clienteId,
+      );
+      if (mounted) setState(() => _vehiculosRegistrados = vehiculos);
+    } on Object {
+      if (mounted) {
+        _mostrarAviso('No se pudieron leer los vehículos guardados.');
+      }
+    }
+  }
+
+  void _seleccionarVehiculoRegistrado(Vehiculo? vehiculo) {
+    if (vehiculo == null) return;
+    setState(() {
+      _vehiculoSeleccionadoId = vehiculo.id;
+      _marcaController.text = vehiculo.marca;
+      _modeloController.text = vehiculo.modelo;
+      _anioController.text = vehiculo.anio.toString();
+      _placaController.text = vehiculo.placa;
+      _vehiculoSeleccionado = true;
+      _vehiculoFormularioVisible = false;
+    });
+    final anio = vehiculo.anio;
+    unawaited(_cargarModelos(marca: vehiculo.marca, anio: anio));
+  }
+
+  void _agregarOtroVehiculo() {
+    setState(() {
+      _vehiculoSeleccionadoId = null;
+      _vehiculoSeleccionado = false;
+      _vehiculoFormularioVisible = true;
+      _marcaController.clear();
+      _modeloController.clear();
+      _anioController.clear();
+      _placaController.clear();
+      _modelosDisponibles = const [];
+    });
+  }
+
+  Future<void> _guardarVehiculo() async {
+    final clienteId = _clienteIdVehiculos;
+    final marca = _marcaController.text.trim();
+    final modelo = _modeloController.text.trim();
+    final anio = int.tryParse(_anioController.text.trim());
+    if (clienteId == null || clienteId.isEmpty) {
+      _mostrarAviso('Inicia sesión con tu correo para registrar el vehículo.');
+      return;
+    }
+    if (marca.isEmpty || modelo.isEmpty || anio == null || anio < 1886) {
+      _mostrarAviso('Completa marca, modelo y año del vehículo.');
+      return;
+    }
+
+    final existente = _vehiculoSeleccionadoId == null
+        ? null
+        : _vehiculosRegistrados
+              .where((vehiculo) => vehiculo.id == _vehiculoSeleccionadoId)
+              .firstOrNull;
+    final vehiculo = Vehiculo(
+      id: existente?.id,
+      clienteId: clienteId,
+      marca: marca,
+      modelo: modelo,
+      anio: anio,
+      placa: _placaController.text.trim().toUpperCase(),
+      creadoEn: existente?.creadoEn,
+    );
+
+    try {
+      final id = existente == null
+          ? await VehiculoRepository.instance.crear(vehiculo)
+          : (await VehiculoRepository.instance.actualizar(vehiculo) > 0
+                ? existente.id!
+                : null);
+      if (id == null) throw StateError('No se encontró el vehículo a editar.');
+      final actualizados = await VehiculoRepository.instance.obtenerPorCliente(
+        clienteId,
+      );
+      final guardado = actualizados.firstWhere((item) => item.id == id);
+      if (!mounted) return;
+      setState(() {
+        _vehiculosRegistrados = actualizados;
+        _vehiculoSeleccionadoId = guardado.id;
+        _vehiculoSeleccionado = true;
+        _vehiculoFormularioVisible = false;
+      });
+      _mostrarAviso('Vehículo guardado en este dispositivo.');
+    } on Object {
+      if (mounted) {
+        _mostrarAviso('No se pudo guardar el vehículo. Intenta otra vez.');
+      }
+    }
+  }
+
+  void _alCambiarConectividad() {
+    final conectado = _hayConexion;
+    if (conectado && !_ultimaConexion) {
+      unawaited(_cargarMarcas());
+      final marca = _marcaController.text.trim();
+      final anio = int.tryParse(_anioController.text.trim());
+      if (marca.isNotEmpty && anio != null) {
+        unawaited(_cargarModelos(marca: marca, anio: anio));
+      }
+    } else if (!conectado && _ultimaConexion && mounted) {
+      setState(() {
+        _avisoCatalogo = 'Sin conexión: usa las marcas guardadas o escribe los datos manualmente.';
+      });
+    }
+    _ultimaConexion = conectado;
+  }
+
+  Future<void> _cargarMarcas() async {
+    final online = _hayConexion;
+    if (mounted && online) setState(() => _cargandoMarcas = true);
+    try {
+      final recibidas = await _catalogoVehiculos.obtenerMarcas(enLinea: online);
+      if (!mounted) return;
+      final normalizadas = <String, String>{
+        for (final marca in _marcasComunesOffline) marca.toLowerCase(): marca,
+        for (final marca in recibidas)
+          if (marca.trim().isNotEmpty) marca.toLowerCase(): marca.trim(),
+      };
+      final comunes = _marcasComunesOffline
+          .map((marca) => normalizadas.remove(marca.toLowerCase()) ?? marca)
+          .toList();
+      final resto = normalizadas.values.toList()
+        ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+      setState(() {
+        _marcasDisponibles = [...comunes, ...resto];
+        _cargandoMarcas = false;
+        _avisoCatalogo = online ? null : 'Sin conexión: catálogo local listo; puedes ingresar una marca manualmente.';
+      });
+    } on Object {
+      if (!mounted) return;
+      setState(() {
+        _marcasDisponibles = _marcasComunesOffline;
+        _cargandoMarcas = false;
+        _avisoCatalogo = online
+            ? 'No se pudo actualizar el catálogo. Puedes ingresar la marca manualmente.'
+            : 'Sin conexión: usa las marcas comunes o ingresa una manualmente.';
+      });
+    }
+  }
+
+  void _seleccionarMarca(String? marca) {
+    if (marca == null) {
+      setState(() {
+        _marcaController.clear();
+        _anioController.clear();
+        _modeloController.clear();
+        _modelosDisponibles = const [];
+      });
+      return;
+    }
+    setState(() {
+      _marcaController.text = marca;
+      _anioController.clear();
+      _modeloController.clear();
+      _modelosDisponibles = const [];
+      _avisoCatalogo = null;
+    });
+  }
+
+  void _seleccionarAnio(String? anio) {
+    if (anio == null) {
+      setState(() {
+        _anioController.clear();
+        _modeloController.clear();
+        _modelosDisponibles = const [];
+      });
+      return;
+    }
+    setState(() {
+      _anioController.text = anio;
+      _modeloController.clear();
+      _modelosDisponibles = const [];
+      _avisoCatalogo = null;
+    });
+    final marca = _marcaController.text.trim();
+    final anioNumero = int.tryParse(anio);
+    if (marca.isNotEmpty && anioNumero != null) {
+      unawaited(_cargarModelos(marca: marca, anio: anioNumero));
+    }
+  }
+
+  void _seleccionarModelo(String? modelo) {
+    if (modelo == null) {
+      setState(() => _modeloController.clear());
+      return;
+    }
+    setState(() {
+      _modeloController.text = modelo;
+      _avisoCatalogo = null;
+    });
+  }
+
+  Future<void> _cargarModelos({
+    required String marca,
+    required int anio,
+  }) async {
+    final token = ++_solicitudModelos;
+    final online = _hayConexion;
+    if (online && mounted) setState(() => _cargandoModelos = true);
+    try {
+      final modelos = await _catalogoVehiculos.obtenerModelos(
+        marca: marca,
+        anio: anio,
+        enLinea: online,
+      );
+      if (!mounted || token != _solicitudModelos) return;
+      setState(() {
+        _modelosDisponibles = modelos;
+        _cargandoModelos = false;
+        _avisoCatalogo = modelos.isEmpty
+            ? online
+                  ? 'No hay modelos para esa selección. Puedes escribir el modelo manualmente.'
+                  : 'Sin conexión: escribe el modelo manualmente.'
+            : online
+            ? null
+            : 'Modelos disponibles desde la caché local.';
+      });
+    } on Object {
+      if (!mounted || token != _solicitudModelos) return;
+      setState(() {
+        _modelosDisponibles = const [];
+        _cargandoModelos = false;
+        _avisoCatalogo = 'No se pudieron cargar los modelos. Puedes ingresarlos manualmente.';
+      });
+    }
   }
 
   /// Rellena nombre, correo y teléfono con lo que sabe la sesion del cliente.
@@ -210,6 +518,8 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
   @override
   void dispose() {
     TallerRepository.instance.removeListener(_alCambiarElCatalogo);
+    _servicioConectividad?.removeListener(_alCambiarConectividad);
+    _catalogoVehiculos.close();
     _clienteController.dispose();
     _correoController.dispose();
     _telefonoController.dispose();
@@ -348,6 +658,11 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
       return;
     }
 
+    if (!_vehiculoSeleccionado) {
+      _mostrarAviso('Selecciona o registra un vehículo para la cita.');
+      return;
+    }
+
     // Sin `taller_id` la cita quedaría huérfana y el taller no podría verla.
     final tallerId = widget.tallerSeleccionadoId;
     if (tallerId == null) {
@@ -357,7 +672,7 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
 
     final cita = Cita(
       cliente: cliente,
-      correoCliente: _correoController.text.trim(),
+      correoCliente: _correoController.text.trim().toLowerCase(),
       telefono: _telefonoController.text.trim(),
       vehiculo: _vehiculoResumen,
       marca: _marcaController.text.trim(),
@@ -404,14 +719,24 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
     // usar el perfil guardado; solo se limpian los datos de esta solicitud.
     _prellenarDesdeElPerfil();
     _descripcionController.clear();
-    _marcaController.clear();
-    _modeloController.clear();
-    _anioController.clear();
-    _placaController.clear();
+    final vehiculo = _vehiculosRegistrados
+        .where((item) => item.id == _vehiculoSeleccionadoId)
+        .firstOrNull;
+    if (vehiculo != null) {
+      _marcaController.text = vehiculo.marca;
+      _modeloController.text = vehiculo.modelo;
+      _anioController.text = vehiculo.anio.toString();
+      _placaController.text = vehiculo.placa;
+    } else {
+      _marcaController.clear();
+      _modeloController.clear();
+      _anioController.clear();
+      _placaController.clear();
+    }
     setState(() {
       _serviciosSeleccionados.clear();
       _vehiculoFormularioVisible = false;
-      _vehiculoSeleccionado = false;
+      _vehiculoSeleccionado = vehiculo != null;
     });
   }
 
@@ -507,18 +832,29 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
         VehiculoPlaceholderCliente(
           formularioVisible: _vehiculoFormularioVisible,
           seleccionado: _vehiculoSeleccionado,
-          resumenVehiculo: null,
+          resumenVehiculo: _vehiculoSeleccionado ? _vehiculoResumen : null,
           marcaController: _marcaController,
           modeloController: _modeloController,
           anioController: _anioController,
           placaController: _placaController,
           errorFormulario: null,
+          marcasDisponibles: _marcasDisponibles,
+          modelosDisponibles: _modelosDisponibles,
+          aniosDisponibles: _aniosDisponibles,
+          cargandoMarcas: _cargandoMarcas,
+          cargandoModelos: _cargandoModelos,
+          mensajeCatalogo: _avisoCatalogo,
+          onMarcaSelected: _seleccionarMarca,
+          onAnioSelected: _seleccionarAnio,
+          onModeloSelected: _seleccionarModelo,
+          onRecargarCatalogo: () => unawaited(_cargarMarcas()),
+          vehiculosRegistrados: _vehiculosRegistrados,
+          vehiculoSeleccionadoId: _vehiculoSeleccionadoId,
+          onVehiculoRegistradoSelected: _seleccionarVehiculoRegistrado,
+          onAgregarVehiculo: _agregarOtroVehiculo,
           onPressed: () => setState(() => _vehiculoFormularioVisible = true),
           onCancel: () => setState(() => _vehiculoFormularioVisible = false),
-          onSave: () => setState(() {
-            _vehiculoFormularioVisible = false;
-            _vehiculoSeleccionado = true;
-          }),
+          onSave: () => unawaited(_guardarVehiculo()),
         ),
         const SizedBox(height: 18),
         etiquetaFormularioCliente('Servicio'),

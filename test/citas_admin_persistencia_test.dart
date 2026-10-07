@@ -84,6 +84,7 @@ void main() {
   Cita citaDelCliente() => Cita(
     cliente: 'María Pérez',
     telefono: '809-555-0142',
+    correoCliente: 'maria@ejemplo.com',
     vehiculo: 'Toyota Hilux',
     marca: 'Toyota',
     modelo: 'Hilux',
@@ -94,6 +95,7 @@ void main() {
     descripcion: 'Revisión general',
     fechaCita: DateTime.utc(2026, 11, 3, 10),
     tallerId: tallerId,
+    codigoVisible: 'CITA-0025',
     total: 4500,
   );
 
@@ -110,8 +112,10 @@ void main() {
       // contrario. Con un `??` inventando un id aca el test dejaria de detectar
       // una cita sin id.
       id: base.id!,
+      codigoVisible: base.codigoVisible,
       cliente: base.cliente,
       telefono: base.telefono,
+      correoCliente: base.correoCliente,
       marca: base.marca,
       modelo: base.modelo,
       anio: base.anio.toString(),
@@ -130,6 +134,8 @@ void main() {
 
     final estadoCita = switch (tarjeta.estado) {
       EstadoCitaAdmin.pendiente => EstadoCita.pendiente,
+      EstadoCitaAdmin.aceptada => EstadoCita.aceptada,
+      EstadoCitaAdmin.rechazada => EstadoCita.rechazada,
       EstadoCitaAdmin.esperandoPieza => EstadoCita.esperandoPieza,
       EstadoCitaAdmin.enProceso => EstadoCita.enProceso,
       EstadoCitaAdmin.completada => EstadoCita.completado,
@@ -138,8 +144,10 @@ void main() {
 
     return Cita(
       id: tarjeta.id,
+      codigoVisible: tarjeta.codigoVisible,
       cliente: tarjeta.cliente,
       telefono: tarjeta.telefono,
+      correoCliente: tarjeta.correoCliente,
       vehiculo: base.vehiculo,
       marca: tarjeta.marca,
       modelo: tarjeta.modelo,
@@ -174,6 +182,8 @@ void main() {
       final original = citaDelCliente();
       final ida = CitaAdmin(
         id: original.id ?? '44444444-4444-4444-8444-444444444444',
+        codigoVisible: original.codigoVisible,
+        correoCliente: original.correoCliente,
         cliente: original.cliente,
         telefono: original.telefono,
         marca: original.marca,
@@ -193,6 +203,8 @@ void main() {
       );
 
       expect(ida.tallerId, tallerId);
+      expect(ida.codigoVisible, original.codigoVisible);
+      expect(ida.correoCliente, original.correoCliente);
       expect(ida.creadoEn, DateTime.utc(2026, 1, 1, 8));
       expect(ida.actualizadoEn, DateTime.utc(2026, 1, 2, 9));
     });
@@ -221,6 +233,8 @@ void main() {
         reason: 'editar desde el admin no debe desasociar la cita del taller',
       );
       expect(fila.first['telefono'], '809-555-9999');
+      expect(fila.first['codigo_visible'], 'CITA-0025');
+      expect(fila.first['correo_cliente'], 'maria@ejemplo.com');
     });
 
     test('la cita sigue apareciendo en obtenerPorTaller tras editar', () async {

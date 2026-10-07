@@ -25,11 +25,13 @@ class CitasController extends ChangeNotifier {
 
   static final DateFormat _fechaHora = DateFormat('dd/MM/yyyy HH:mm');
 
-  /// Orden de los grupos del dia. Las 5 llaves siempre estan, aunque el grupo
+  /// Orden de los grupos del dia. Las 7 llaves siempre estan, aunque el grupo
   /// este vacio, para que el acordeon pueda pintar '0' sin romperse el for.
   static const List<String> etiquetas = [
     Cita.etiquetaAtrasadas,
     'Pendiente',
+    'Aceptada',
+    'Rechazada',
     'Esperando Pieza',
     'En proceso',
     'Completado',

@@ -88,12 +88,14 @@ class DatabaseHelper {
   ///      solo existia en SharedPreferences, que es un almacenamiento de
   ///      preferencias: no tiene forma de encolarse, ni de compararse con la
   ///      nube, ni siquiera de decir "esto cambio despues de la ultima sync".
+  /// v13 = VEHÍCULOS DEL CLIENTE: agrega la lista local, que sigue disponible
+  ///      al agendar sin depender de la API de catálogo.
   ///
   /// OJO: subir la version NO borra la base por si sola, dispara `onUpgrade`, que
   /// es lo que permite a un dispositivo que ya instalo la v1 seguir funcionando.
   /// En la v7 el `onUpgrade` hace `DROP TABLE`, asi que en ESTE caso si borra los
   /// datos, y es intencional (ver [_migrar]).
-  static const int _versionBase = 12;
+  static const int _versionBase = 13;
 
   /// Nombre del indice de [tablaCitas] por fecha.
   ///
@@ -104,6 +106,7 @@ class DatabaseHelper {
   static const String idxCitasFecha = 'idx_citas_fecha';
 
   static const String tablaCitas = 'citas';
+  static const String tablaVehiculos = 'vehiculos';
   static const String colId = 'id';
   static const String colCodigoQr = 'codigo_qr';
 
@@ -135,6 +138,13 @@ class DatabaseHelper {
   /// `TEXT NOT NULL DEFAULT ''` igual que `telefono`: las citas que ya existen
   /// no tienen correo y no deben romper un SELECT.
   static const String colCorreoCliente = 'correo_cliente';
+
+  static const String colClienteIdVehiculo = 'cliente_id';
+  static const String colMarcaVehiculo = 'marca';
+  static const String colModeloVehiculo = 'modelo';
+  static const String colAnioVehiculo = 'anio';
+  static const String colPlacaVehiculo = 'placa';
+  static const String colActivoVehiculo = 'activo';
 
   // ------------------------------------------------------------------
   // SINCRONIZACION (Fase 2)
@@ -528,7 +538,30 @@ class DatabaseHelper {
 
     await _crearCambiosPassword(db);
     await _crearCatalogos(db);
+    await _crearVehiculos(db);
     await _sembrarCatalogos(db);
+  }
+
+  /// Registro local de vehículos del cliente. Los vehículos son seleccionables
+  /// al agendar incluso si la API pública no está disponible.
+  Future<void> _crearVehiculos(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS $tablaVehiculos (
+        $colId TEXT NOT NULL PRIMARY KEY,
+        $colClienteIdVehiculo TEXT NOT NULL,
+        $colMarcaVehiculo TEXT NOT NULL,
+        $colModeloVehiculo TEXT NOT NULL,
+        $colAnioVehiculo INTEGER NOT NULL,
+        $colPlacaVehiculo TEXT NOT NULL DEFAULT '',
+        $colActivoVehiculo INTEGER NOT NULL DEFAULT 1,
+        $colCreadoEn TEXT NOT NULL,
+        $colActualizadoEn TEXT NOT NULL
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_vehiculos_cliente_activo '
+      'ON $tablaVehiculos ($colClienteIdVehiculo, $colActivoVehiculo)',
+    );
   }
 
   /// Crea la cola de cambios de contraseña pendientes (v10).
@@ -1114,6 +1147,10 @@ class DatabaseHelper {
       if (versionAnterior < 12) {
         await _migrarAV12(txn);
       }
+
+      if (versionAnterior < 13) {
+        await _migrarAV13(txn);
+      }
     });
   }
 
@@ -1200,7 +1237,7 @@ class DatabaseHelper {
     );
   }
 
-/// Paso 8 -> 9: Aislamiento por taller (v9) + tabla local de admins para devmode sync.
+  /// Paso 8 -> 9: Aislamiento por taller (v9) + tabla local de admins para devmode sync.
   ///
   /// Agrega columna `taller_id` a las 4 tablas de catalogo SOLO si no existe.
   /// Usa `ALTER TABLE ADD COLUMN` como se solicito (Opcion A).
@@ -1313,6 +1350,13 @@ class DatabaseHelper {
   /// una v12 en desarrollo no revienta la transaccion.
   Future<void> _migrarAV12(DatabaseExecutor txn) async {
     await _crearClientes(txn);
+  }
+
+  /// Paso 12 -> 13: lista local de vehículos por cliente.
+  ///
+  /// Solo agrega una tabla, sin alterar las citas ni descartar datos existentes.
+  Future<void> _migrarAV13(DatabaseExecutor txn) async {
+    await _crearVehiculos(txn);
   }
 
   Future<void> cerrar() async {

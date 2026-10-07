@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import 'package:autofix/core/auth/sesion_cliente.dart';
 import 'package:autofix/features/citas/data/cita_repository.dart';
 import 'package:autofix/features/citas/models/cita.dart';
 import 'package:autofix/features/talleres/data/taller_repository.dart';
@@ -38,25 +39,32 @@ class CitaClienteItem {
 /// POR QUE ESTE CONTROLLER EXISTE APARTE DE [CitasController]
 /// ---------------------------------------------------------------
 /// [CitasController] es la pantalla del ADMIN: filtra por `SesionAdmin.tallerId`
-/// y agrupa por dia para el acordeon. Este es el cliente, que no tiene sesion
-/// (el login de cliente es "acceso directo", sin autenticacion) y quiere otra
-/// cosa: la lista completa de sus citas, de las proximas a las pasadas.
+/// y agrupa por dia para el acordeon. Este controller usa el correo del perfil
+/// local para reunir citas creadas por el cliente y citas que el taller le
+/// asignó desde el panel.
 ///
 /// ---------------------------------------------------------------
 /// DESCONEXION
 /// ---------------------------------------------------------------
 /// Los dos repositorios que consulta leen SQLite, no la nube, asi que esta
-/// pantalla no puede fallar por falta de red: es la razon por la que no existe
-/// ningun manejo de `FirebaseException` ni de timeouts aca. Lo que si puede
+/// pantalla no puede fallar por falta de red: es la razón por la que no existe
+/// ningún manejo de `FirebaseException` ni de timeouts acá. Lo que sí puede
 /// fallar es la base local, y eso va a [error] con la lista intacta, para que
 /// la vista muestre el reintento en vez de una pantalla en blanco.
 class MisCitasController extends ChangeNotifier {
-  MisCitasController({CitaRepository? citas, TallerRepository? talleres})
-    : _citas = citas ?? CitaRepository.instance,
-      _talleres = talleres ?? TallerRepository.instance;
+  MisCitasController({
+    CitaRepository? citas,
+    TallerRepository? talleres,
+    String? correoCliente,
+  }) : _citas = citas ?? CitaRepository.instance,
+       _talleres = talleres ?? TallerRepository.instance,
+       _correoCliente = (correoCliente ?? SesionCliente.instance.correo)
+           ?.trim()
+           .toLowerCase();
 
   final CitaRepository _citas;
   final TallerRepository _talleres;
+  final String? _correoCliente;
 
   List<CitaClienteItem> _items = const <CitaClienteItem>[];
   bool _cargando = true;
@@ -83,7 +91,18 @@ class MisCitasController extends ChangeNotifier {
       // Las dos lecturas son locales. Si la base esta corrupta o inaccesible,
       // la excepcion la agarra el catch de abajo y la lista anterior se
       // conserva: no se pinta una pantalla vacia por un error de disco.
-      final citas = await _citas.obtenerTodas();
+      final citasLocales = await _citas.obtenerTodas();
+      final correo = _correoCliente;
+      // La base local puede contener citas de otro rol o de una cuenta usada
+      // antes en el mismo dispositivo. Mis Citas siempre se aísla por el
+      // correo del perfil, igual que el pull de Firestore por ownerUid.
+      final citas = correo == null || correo.isEmpty
+          ? const <Cita>[]
+          : citasLocales
+                .where(
+                  (cita) => cita.correoCliente.trim().toLowerCase() == correo,
+                )
+                .toList(growable: false);
       final talleres = await _talleres.obtenerTodas();
 
       final nombres = <String, String>{
@@ -94,7 +113,7 @@ class MisCitasController extends ChangeNotifier {
       var pendientes = 0;
       final items = <CitaClienteItem>[];
       for (final cita in citas) {
-        if (cita.syncStatus == 'pending') pendientes++;
+        if (cita.syncStatus != 'synced') pendientes++;
         items.add(
           CitaClienteItem(
             cita: cita,
@@ -102,7 +121,7 @@ class MisCitasController extends ChangeNotifier {
             // Un solo `ahora` para toda la pasada, con la misma razon que en
             // `CitasController.agruparPorEstado`.
             etiqueta: cita.etiquetaUI(ahora),
-            enCola: cita.syncStatus == 'pending',
+            enCola: cita.syncStatus != 'synced',
           ),
         );
       }
@@ -124,7 +143,10 @@ class MisCitasController extends ChangeNotifier {
   /// la base local significa que el taller no esta en este dispositivo. Mezclar
   /// los dos en "Taller" le haria creer al usuario que todo esta bien cuando
   /// falta informacion.
-  static String _nombreDelTaller(String? tallerId, Map<String, String> nombres) {
+  static String _nombreDelTaller(
+    String? tallerId,
+    Map<String, String> nombres,
+  ) {
     if (tallerId == null) return 'Taller sin asignar';
     return nombres[tallerId] ?? 'Taller no disponible';
   }
@@ -147,12 +169,14 @@ class MisCitasController extends ChangeNotifier {
     bool esFutura(CitaClienteItem item) =>
         !item.cita.fechaCita.toLocal().isBefore(diaDeHoy);
 
-    final futuras = [for (final i in items) if (esFutura(i)) i]..sort(
-      (a, b) => a.cita.fechaCita.compareTo(b.cita.fechaCita),
-    );
-    final pasadas = [for (final i in items) if (!esFutura(i)) i]..sort(
-      (a, b) => b.cita.fechaCita.compareTo(a.cita.fechaCita),
-    );
+    final futuras = [
+      for (final i in items)
+        if (esFutura(i)) i,
+    ]..sort((a, b) => a.cita.fechaCita.compareTo(b.cita.fechaCita));
+    final pasadas = [
+      for (final i in items)
+        if (!esFutura(i)) i,
+    ]..sort((a, b) => b.cita.fechaCita.compareTo(a.cita.fechaCita));
 
     return [...futuras, ...pasadas];
   }

@@ -115,6 +115,40 @@ void main() {
     expect(releida.placa, 'A123456');
   });
 
+  test('un error de push queda visible y sigue siendo reintentable', () async {
+    final id = await CitaRepository.instance.crear(nueva());
+
+    expect(await CitaRepository.instance.marcarErrorSync(id), 1);
+    var releida = await CitaRepository.instance.obtenerPorId(id);
+    expect(releida!.syncStatus, 'error');
+    expect(
+      (await CitaRepository.instance.obtenerFallidasDeSync()).map((c) => c.id),
+      contains(id),
+    );
+    expect(await CitaRepository.instance.obtenerPendientesDeSync(), isEmpty);
+
+    expect(await CitaRepository.instance.marcarPendienteSync(id), 1);
+    releida = await CitaRepository.instance.obtenerPorId(id);
+    expect(releida!.syncStatus, 'pending');
+  });
+
+  test(
+    'Aceptar y rechazar quedan en SQLite pendientes de sincronización',
+    () async {
+      for (final estado in [EstadoCita.aceptada, EstadoCita.rechazada]) {
+        final id = await CitaRepository.instance.crear(
+          nueva().copyWith(syncStatus: 'synced'),
+        );
+
+        expect(await CitaRepository.instance.cambiarEstado(id, estado), 1);
+        final releida = await CitaRepository.instance.obtenerPorId(id);
+
+        expect(releida!.estado, estado);
+        expect(releida.syncStatus, 'pending');
+      }
+    },
+  );
+
   // -------------------------------------------------------------------
   // BORRADO LOGICO (v7)
   //

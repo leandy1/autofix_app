@@ -16,6 +16,7 @@ import 'package:autofix/features/talleres/models/taller.dart';
 /// sin sesion (el cliente no tiene), sin nube y con el orden que espera el
 /// usuario (lo proximo arriba).
 void main() {
+  const correoCliente = 'ana@autofix.test';
   setUpAll(() {
     TestWidgetsFlutterBinding.ensureInitialized();
     sqfliteFfiInit();
@@ -38,18 +39,23 @@ void main() {
   final repoCitas = CitaRepository.instance;
   final repoTalleres = TallerRepository.instance;
 
-  Cita citaEn(DateTime fecha, {String? tallerId, EstadoCita estado = EstadoCita.pendiente}) =>
-      Cita(
-        cliente: 'Ana Torres',
-        vehiculo: 'Toyota Hilux',
-        fechaCita: fecha,
-        estado: estado,
-        tallerId: tallerId,
-      );
+  Cita citaEn(
+    DateTime fecha, {
+    String? tallerId,
+    EstadoCita estado = EstadoCita.pendiente,
+  }) => Cita(
+    cliente: 'Ana Torres',
+    correoCliente: correoCliente,
+    vehiculo: 'Toyota Hilux',
+    fechaCita: fecha,
+    estado: estado,
+    tallerId: tallerId,
+  );
 
   MisCitasController nuevoController() => MisCitasController(
     citas: repoCitas,
     talleres: repoTalleres,
+    correoCliente: correoCliente,
   );
 
   group('lectura local', () {
@@ -65,7 +71,11 @@ void main() {
 
     test('lista la cita con el nombre del taller ya resuelto', () async {
       final idTaller = await repoTalleres.crear(
-        const Taller(nombre: 'Global Refriauto', latitud: 18.5, longitud: -69.9),
+        const Taller(
+          nombre: 'Global Refriauto',
+          latitud: 18.5,
+          longitud: -69.9,
+        ),
       );
       final id = await repoCitas.crear(
         citaEn(DateTime.now().add(const Duration(days: 2)), tallerId: idTaller),
@@ -92,11 +102,32 @@ void main() {
 
       expect(controller.hayCitas, isFalse);
     });
+
+    test(
+      'filtra y conserva las citas asociadas al correo del perfil',
+      () async {
+        await repoCitas.crear(
+          citaEn(DateTime.now().add(const Duration(days: 2))),
+        );
+        await repoCitas.crear(
+          citaEn(DateTime.now().add(const Duration(days: 3)))
+              .copyWith(correoCliente: 'otra@autofix.test'),
+        );
+
+        final controller = nuevoController();
+        await controller.cargar();
+
+        expect(controller.items, hasLength(1));
+        expect(controller.items.single.cita.correoCliente, correoCliente);
+      },
+    );
   });
 
   group('cola de sincronizacion', () {
     test('cuenta las citas que todavia no subieron', () async {
-      await repoCitas.crear(citaEn(DateTime.now().add(const Duration(days: 3))));
+      await repoCitas.crear(
+        citaEn(DateTime.now().add(const Duration(days: 3))),
+      );
       final segunda = await repoCitas.crear(
         citaEn(DateTime.now().add(const Duration(days: 4))),
       );
@@ -137,16 +168,20 @@ void main() {
 
   group('orden para el cliente', () {
     test('las proximas van primero y las pasadas al final', () async {
-      await repoCitas.crear(citaEn(DateTime.now().subtract(const Duration(days: 5))));
-      await repoCitas.crear(citaEn(DateTime.now().add(const Duration(days: 10))));
-      await repoCitas.crear(citaEn(DateTime.now().add(const Duration(days: 1))));
+      await repoCitas.crear(
+        citaEn(DateTime.now().subtract(const Duration(days: 5))),
+      );
+      await repoCitas.crear(
+        citaEn(DateTime.now().add(const Duration(days: 10))),
+      );
+      await repoCitas.crear(
+        citaEn(DateTime.now().add(const Duration(days: 1))),
+      );
 
       final controller = nuevoController();
       await controller.cargar();
 
-      final fechas = [
-        for (final item in controller.items) item.cita.fechaCita,
-      ];
+      final fechas = [for (final item in controller.items) item.cita.fechaCita];
       final ahora = DateTime.now();
 
       // No es la lista ordenada en su totalidad sino los DOS grupos del
@@ -164,7 +199,9 @@ void main() {
 
   group('casos sin taller', () {
     test('distingue "sin asignar" de "no disponible"', () async {
-      await repoCitas.crear(citaEn(DateTime.now().add(const Duration(days: 2))));
+      await repoCitas.crear(
+        citaEn(DateTime.now().add(const Duration(days: 2))),
+      );
       await repoCitas.crear(
         citaEn(
           DateTime.now().add(const Duration(days: 3)),
@@ -175,14 +212,17 @@ void main() {
       final controller = nuevoController();
       await controller.cargar();
 
-      final nombres = [for (final i in controller.items) i.tallerNombre]..sort();
+      final nombres = [for (final i in controller.items) i.tallerNombre]
+        ..sort();
       expect(nombres, ['Taller no disponible', 'Taller sin asignar']);
     });
   });
 
   group('errores de la base local', () {
     test('una base ilegible deja el aviso y conserva la lista', () async {
-      await repoCitas.crear(citaEn(DateTime.now().add(const Duration(days: 2))));
+      await repoCitas.crear(
+        citaEn(DateTime.now().add(const Duration(days: 2))),
+      );
       final controller = nuevoController();
       await controller.cargar();
       expect(controller.hayCitas, isTrue);
