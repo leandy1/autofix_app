@@ -594,7 +594,7 @@ class SyncService {
       modelo: data['modelo'] as String? ?? '',
       anio: (data['anio'] as num?)?.toInt() ?? 0,
       placa: data['placa'] as String? ?? '',
-      servicios: List<String>.from(data['servicios'] as List? ?? []),
+      servicios: Cita.leerServicios(data['servicios']),
       tecnico: data['tecnico'] as String? ?? '',
       descripcion: data['descripcion'] as String? ?? '',
       fechaCita: _parseDate(data['fecha_cita']) ?? DateTime.now().toUtc(),

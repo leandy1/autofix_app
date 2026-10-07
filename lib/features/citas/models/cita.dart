@@ -373,7 +373,7 @@ class Cita implements EntidadPersistida {
       modelo: (map[_kModelo] as String?) ?? '',
       anio: (map[_kAnio] as num?)?.toInt() ?? 0,
       placa: (map[_kPlaca] as String?) ?? '',
-      servicios: _leerServicios(map[_kServicios]),
+      servicios: leerServicios(map[_kServicios]),
       tecnico: (map[_kTecnico] as String?) ?? '',
       descripcion: (map[_kDescripcion] as String?) ?? '',
       fechaCita: desdeIso(map[_kFechaCita]) ?? Reloj.instancia.ahora(),
@@ -391,10 +391,27 @@ class Cita implements EntidadPersistida {
     );
   }
 
-  static List<String> _leerServicios(Object? crudo) {
+  /// Lee `servicios` venga como venga.
+  ///
+  /// `toMap()` lo serializa como JSON porque SQLite no tiene arrays, y ese es
+  /// exactamente el formato que Firestore recibe al subir la misma cita
+  /// (`SyncService._citaToMap` reutiliza `toMap()`), asi que una cita que
+  /// BAJA de la nube trae el JSON como String y no una lista. Aceptar las dos
+  /// formas (y una lista nativa, por si algun dia Firestore guarda array de
+  /// verdad) es lo que permite que el mismo codigo lea SQLite y la nube.
+  ///
+  /// Un cast directo `as List?` sobre el String revienta con
+  /// `type 'String' is not a subtype of type 'List<dynamic>?'` y deja la cita
+  /// entera sin importar, no solo los servicios.
+  static List<String> leerServicios(Object? crudo) {
+    if (crudo is List) return crudo.map((e) => e.toString()).toList();
     if (crudo is! String || crudo.isEmpty) return const [];
-    final decodificado = jsonDecode(crudo);
-    if (decodificado is! List) return const [];
-    return decodificado.map((e) => e.toString()).toList();
+    try {
+      final decodificado = jsonDecode(crudo);
+      if (decodificado is! List) return const [];
+      return decodificado.map((e) => e.toString()).toList();
+    } on FormatException {
+      return const [];
+    }
   }
 }

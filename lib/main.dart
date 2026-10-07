@@ -67,6 +67,14 @@ Future<void> main() async {
     ),
   );
 
+  // Rotación bloqueada en vertical (capa Dart; Android e iOS ya lo tienen en
+  // su manifest: `screenOrientation="portrait"` e `UISupportedInterfaceOrientations`).
+  // Se pide antes de `runApp` para que ni el primer frame ni la transición de
+  // entrada se vean en horizontal.
+  await SystemChrome.setPreferredOrientations(<DeviceOrientation>[
+    DeviceOrientation.portraitUp,
+  ]);
+
   runApp(const ConectividadApp(child: AutoFixApp()));
 
   // Ciclo de vida de los datos locales (reglas 1 y 2 de `LimpiezaLocal`):
