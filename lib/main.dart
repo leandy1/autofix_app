@@ -44,8 +44,17 @@ Future<void> main() async {
     // sesión local marcada por Recuérdame, ese token no debe convertirse en
     // un bypass implícito: el usuario volverá al login y tendrá que validar
     // credenciales con internet.
+    //
+    // La unica excepcion es el usuario ANONIMO. No tiene identidad, asi que
+    // no puede validar nada por nadie en el login; en cambio es el que
+    // permite que `sincronizarCatalogos()` lea `talleres` y `admins` con las
+    // reglas `request.auth != null`. Firmarlo fuera aca obligaria a crear una
+    // cuenta anonima nueva en CADA arranque, para leer lo mismo.
     try {
-      await FirebaseAuth.instance.signOut();
+      final usuarioPrevia = FirebaseAuth.instance.currentUser;
+      if (usuarioPrevia != null && !usuarioPrevia.isAnonymous) {
+        await FirebaseAuth.instance.signOut();
+      }
     } catch (e) {
       debugPrint('Firebase Auth previo no se pudo cerrar ($e)');
     }

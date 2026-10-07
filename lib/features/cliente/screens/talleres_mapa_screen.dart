@@ -208,12 +208,29 @@ class _TalleresMapaScreenState extends State<TalleresMapaScreen> {
     _armarEsperaDeEstilo();
     _ubicar();
     _cargarTalleres();
+    // El pull de catalogos del arranque termina DESPUES de que este mapa ya
+    // construyo sus marcadores con la lista local (posiblemente vacia). Sin
+    // este oyente la pantalla se quedaria con lo que leyo al abrirse hasta
+    // que alguien recargue a mano.
+    TallerRepository.instance.addListener(_alCambiarElCatalogo);
   }
 
   @override
   void dispose() {
+    TallerRepository.instance.removeListener(_alCambiarElCatalogo);
     _temporizadorEstilo?.cancel();
     super.dispose();
+  }
+
+  /// El catalogo local cambio y esta pantalla ya estaba pintada.
+  ///
+  /// Relee la tabla y vuelve a armar los marcadores por el mismo camino con
+  /// que los arma al abrirse; no hay un segundo código de pintado que pueda
+  /// desincronizarse del primero.
+  void _alCambiarElCatalogo() {
+    if (!mounted) return;
+    debugPrint('[Mapa] catalogo local cambio, recargando talleres');
+    unawaited(_cargarTalleres());
   }
 
   /// Arranca (o reinicia) el reloj del estilo.

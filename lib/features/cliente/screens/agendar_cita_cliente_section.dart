@@ -126,6 +126,9 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
     _cargarTalleres();
     _cargarServicios();
     unawaited(_cargarPosicionSiHayPermiso());
+    // Igual que el mapa: el pull del arranque puede bajar los talleres
+    // DESPUES de que ya se pinto la lista de este formulario.
+    TallerRepository.instance.addListener(_alCambiarElCatalogo);
   }
 
   /// Rellena nombre, correo y teléfono con lo que sabe la sesion del cliente.
@@ -166,6 +169,15 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
     });
   }
 
+  /// El catalogo local cambio y este formulario ya estaba armado.
+  ///
+  /// Vuelve a leer los activos y repinta la lista de seleccion, por el mismo
+  /// camino con el que la arma al construirse.
+  void _alCambiarElCatalogo() {
+    if (!mounted) return;
+    unawaited(_cargarTalleres());
+  }
+
   Future<void> _cargarTalleres() async {
     final talleres = await TallerRepository.instance.obtenerActivos();
     if (!mounted) return;
@@ -197,6 +209,7 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
 
   @override
   void dispose() {
+    TallerRepository.instance.removeListener(_alCambiarElCatalogo);
     _clienteController.dispose();
     _correoController.dispose();
     _telefonoController.dispose();

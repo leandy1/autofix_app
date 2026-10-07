@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 
 import 'package:autofix/core/data/base_repository.dart';
@@ -26,7 +27,8 @@ import 'package:autofix/features/talleres/models/taller.dart';
 ///
 /// CAMBIO v7: `crear` devuelve el `String` (UUID) en vez del `int` de SQLite, y
 /// el id lo genera el repositorio.
-class TallerRepository implements BaseRepository<Taller> {
+class TallerRepository extends ChangeNotifier
+    implements BaseRepository<Taller> {
   TallerRepository._();
 
   static final TallerRepository instance = TallerRepository._();
@@ -35,6 +37,18 @@ class TallerRepository implements BaseRepository<Taller> {
 
   @override
   String get tabla => DatabaseHelper.tablaTalleres;
+
+  /// Avisa a las pantallas que el catalogo LOCAL cambio en SQLite.
+  ///
+  /// Existe por el pull de arranque de `DevModeSyncService`: esa baja termina
+  /// DESPUES de que el mapa y el selector ya se construyeron, y sin este aviso
+  /// esas pantallas se quedarian con la lista que leyeron al abrirse. Es el
+  /// "falta un notifyListeners" del diagnostico, resuelto en el repositorio y
+  /// no en cada pantalla, porque quien escribe en la tabla es la unica que sabe
+  /// que algo cambio.
+  ///
+  /// `notifyListeners` es `protected`, por eso la ruta publica vive aca.
+  void avisarCatalogoActualizado() => notifyListeners();
 
   // ------------------------------ CREATE ------------------------------
 
