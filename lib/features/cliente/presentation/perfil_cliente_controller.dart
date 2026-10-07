@@ -5,6 +5,7 @@ import 'package:autofix/core/auth/credenciales_seguras.dart';
 import 'package:autofix/core/auth/recordarme_prefs.dart';
 import 'package:autofix/core/auth/sesion_cliente.dart';
 import 'package:autofix/features/cliente/data/cambios_password_repository.dart';
+import 'package:autofix/features/cliente/data/cliente_repository.dart';
 
 /// Aplica el cambio de contraseña en la nube. Se puede inyectar una version
 /// falsa para probar el flujo sin Firebase ni red.
@@ -40,13 +41,16 @@ class _SinSesionEnNube implements Exception {
 class PerfilClienteController extends ChangeNotifier {
   PerfilClienteController({
     CambiosPasswordRepository? cola,
+    ClienteRepository? repositorio,
     CambioPasswordEnNube? aplicarEnNube,
     DateTime Function()? reloj,
   }) : _cola = cola ?? CambiosPasswordRepository.instance,
+       _repositorio = repositorio ?? ClienteRepository(),
        _aplicarEnNube = aplicarEnNube ?? _aplicarEnFirebaseAuth,
        _reloj = reloj ?? DateTime.now;
 
   final CambiosPasswordRepository _cola;
+  final ClienteRepository _repositorio;
   final CambioPasswordEnNube _aplicarEnNube;
   final DateTime Function() _reloj;
 
@@ -59,6 +63,23 @@ class PerfilClienteController extends ChangeNotifier {
 
   /// Guarda nombre/correo/teléfono en el perfil local. Devuelve el mensaje a
   /// mostrar.
+  ///
+  /// ---------------------------------------------------------------
+  /// POR QUE ESCRIBE EN DOS LADOS
+  /// ---------------------------------------------------------------
+  /// Hasta la Fase 3 esto solo tocaba SharedPreferences, y el resultado era un
+  /// "Información guardada" que era cierto en el instante en que se escribio y
+  /// falso un segundo despues: una preferencia no sobrevive a la necesidad de
+  /// sincronizar. [guardarDatos] escribe PRIMERO en SQLite via
+  /// [ClienteRepository.guardarLocal] con `sync_status = 'pending'`, que es lo
+  /// que `SyncService` sube cuando vuelva la red, y recien despues actualiza la
+  /// sesión en memoria y su cache de preferencias.
+  ///
+  /// El orden no es decorativo: si SQLite falla, no se actualiza la sesión, y
+  /// la pantalla puede decir "no se pudo guardar" sin que la app quede
+  /// enseñando un nombre que nunca llego a estar en cola. La preferencia se
+  /// escribe igual aunque aun no haya subido, porque es lo que el saludo del
+  /// AppBar y el prellenado del formulario leen y necesitan ver el cambio ya.
   Future<String> guardarDatos({
     required String nombre,
     required String correo,
@@ -70,6 +91,18 @@ class PerfilClienteController extends ChangeNotifier {
       telefono: telefono,
     );
     if (error != null) return error;
+
+    final guardado = await _repositorio.guardarLocal(
+      uid: _uidActual(),
+      // El correo con el que la sesion guardo su fila la vez anterior. Es con
+      // el que se BUSCA la fila; el parametro `correo` es el que se ESCRIBE.
+      // Sin este, editar el correo dejaria la fila vieja atras y crearia otra.
+      correoIdentidad: SesionCliente.instance.correo,
+      nombre: nombre,
+      correo: correo,
+      telefono: telefono,
+    );
+    if (!guardado) return 'No se pudo guardar la información.';
 
     await SesionCliente.instance.guardarPerfil(
       nombre: nombre,
@@ -189,6 +222,20 @@ class PerfilClienteController extends ChangeNotifier {
       }
     }
     return null;
+  }
+
+  /// El uid de Firebase Auth si hay sesion, y `null` si no (o si Firebase
+  /// ni siquiera esta inicializado, que es el caso del login sin red).
+  ///
+  /// `null` no es un error: [ClienteRepository.guardarLocal] usa en ese caso
+  /// el correo normalizado como identidad local, que es justamente lo que hace
+  /// posible editar el perfil sin internet.
+  static String? _uidActual() {
+    try {
+      return FirebaseAuth.instance.currentUser?.uid;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// El cambio real contra Firebase Auth.

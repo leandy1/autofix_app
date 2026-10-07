@@ -10,16 +10,20 @@ import 'package:autofix/core/database/database_helper.dart';
 import 'package:autofix/features/admin/screens/dashboard_admin_screen.dart';
 import 'package:autofix/features/auth/screens/login_screen.dart';
 
-/// El corazon del "arranque offline": [RutaInicial] tiene que decidir entre
-/// Dashboard y Login en el PRIMER frame, con la sesion que `main()` restauro
-/// desde SharedPreferences antes del `runApp`.
+/// El Login es la PRIMERA pantalla en todos los arranques, venga o no una
+/// sesion restaurada desde `main()`.
 ///
-/// Lo que este archivo protege es la DOSIS EXACTA de lo asincrono:
+/// Este archivo protege la cura del Bug 3: [RutaInicial] decide en el primer
+/// frame y su decision es "Login, siempre". Antes devolvia el Dashboard cuando
+/// `SesionAdmin`/`SesionCliente` estaban activos, y eso hacia invisible la
+/// pantalla que muestra al usuario recordado (`san***`) con la clave
+/// deshabilitada esperando a que pulse "Ingresar".
+///
+/// Lo que verifica:
 /// - Sin sesion guardada -> Login (el arranque normal de siempre).
-/// - Con sesion guardada -> Dashboard YA en el primer `pump`, sin splash y sin
-///   `FutureBuilder` intermedio. Si alguien "mejora" la ruta con un future,
-///   el requisito de entrar sin internet parpadeando el login se rompe y este
-///   test es el que lo delata.
+/// - Con sesion guardada -> Login igual, NUNCA el Dashboard; pero la sesion si
+///   quedo restaurada en memoria, que es lo que permite entrar sin red desde
+///   el propio Login.
 void main() {
   setUpAll(() {
     // Las prefs en memoria: sin esto `SharedPreferences.getInstance()` tira
@@ -81,15 +85,36 @@ void main() {
       expect(await SesionAdmin.instance.restaurar(), isTrue);
     });
 
-    testWidgets('el primer frame ya es el Dashboard', (tester) async {
+    testWidgets('el Login se pinta igual: no hay bypass al Dashboard', (
+      tester,
+    ) async {
       await tester.pumpWidget(const MaterialApp(home: RutaInicial()));
-      // Un solo pump: si la decision fuera asincrona, en este punto veriamos
-      // el splash (o el Login) y el Dashboard recien en el pump siguiente.
+      // Un solo pump: la decision tiene que estar tomada en el primer frame,
+      // sin FutureBuilder ni splash intermedio.
       await tester.pump();
 
-      expect(SesionAdmin.instance.activa, isTrue);
-      expect(find.byType(DashboardScreen), findsOneWidget);
-      expect(find.byType(LoginScreen), findsNothing);
+      expect(find.byType(LoginScreen), findsOneWidget);
+      expect(
+        find.byType(DashboardScreen),
+        findsNothing,
+        reason: 'una sesion guardada ya no salta el formulario de acceso',
+      );
+    });
+
+    testWidgets('la sesion si quedo restaurada, para entrar sin red', (
+      tester,
+    ) async {
+      await tester.pumpWidget(const MaterialApp(home: RutaInicial()));
+      await tester.pump();
+
+      expect(
+        SesionAdmin.instance.activa,
+        isTrue,
+        reason:
+            'el bypass desaparece, pero el dato local no: sin el, '
+            'el Login no podria dejar entrar a un usuario sin internet',
+      );
+      expect(SesionAdmin.instance.tallerId, 'taller-1');
     });
 
     tearDown(() async {

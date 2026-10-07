@@ -8,6 +8,7 @@ import 'package:autofix/core/auth/credenciales_seguras.dart';
 import 'package:autofix/core/auth/recordarme_prefs.dart';
 import 'package:autofix/core/auth/sesion_admin.dart';
 import 'package:autofix/core/auth/sesion_cliente.dart';
+import 'package:autofix/core/data/limpieza_local.dart';
 import 'package:autofix/features/cliente/data/cliente_repository.dart';
 import 'package:autofix/features/sync/sync_service.dart';
 import 'package:autofix/features/talleres/data/taller_repository.dart';
@@ -172,6 +173,12 @@ class LoginController extends ChangeNotifier {
                 taller?.nombre ??
                 doc.data()?['tallerNombre'] as String? ??
                 'Taller';
+            // Regla 3 del ciclo de vida local: si esta cuenta NO es la que
+            // dejo las citas y el perfil en SQLite, hay que purgarlos ANTES
+            // de abrir la sesion y antes de que SyncService arranque, para que
+            // su primer snapshot no conviva con filas del usuario anterior.
+            // Con la misma cuenta (o sin uid, login sin red) no hace nada.
+            await LimpiezaLocal.alIniciarSesion(uid: uid);
             // `await` y no fire-and-forget: la sesión en memoria y su decisión
             // de persistencia deben terminar antes de navegar al Dashboard.
             await SesionCliente.instance.cerrar();
@@ -254,6 +261,12 @@ class LoginController extends ChangeNotifier {
         await _cerrarAuthActual();
         return _terminarCliente(null);
       }
+
+      // Mismo criterio que en `loginAdmin`: purga local del usuario anterior
+      // (regla 3) ANTES de montar la sesion nueva. Va despues de `obtener` a
+      // proposito: el perfil de ESTA cuenta ya esta en memoria y la purga solo
+      // toca SQLite y SharedPreferences.
+      await LimpiezaLocal.alIniciarSesion(uid: uid);
 
       await SesionAdmin.instance.cerrar();
       await SesionCliente.instance.iniciar(
@@ -356,6 +369,11 @@ class LoginController extends ChangeNotifier {
         await _cerrarAuthActual();
         return _terminarCliente(null);
       }
+
+      // Una cuenta recién creada es una identidad NUEVA: si este dispositivo
+      // tenía datos locales de otro usuario, quedan atrás antes de que la
+      // sincronización de la sesión nueva empiece a bajar lo suyo.
+      await LimpiezaLocal.alIniciarSesion(uid: uid);
 
       await _clientes.crear(
         uid: uid,

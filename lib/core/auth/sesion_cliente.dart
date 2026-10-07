@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -55,6 +56,29 @@ class SesionCliente {
   /// y si no hay ninguno, "cliente".
   String get nombreVisible =>
       nombreAmigable(_nombre ?? _correo, reserva: 'cliente');
+
+  /// `true` cuando hay una sesión de cliente utilizable.
+  ///
+  /// Mira las DOS fuentes porque son caminos de entrada distintos y ambos
+  /// legitimos: la de Firebase Auth (login con red) y la local que `main()`
+  /// restauro desde SharedPreferences (login sin red, validando contra las
+  /// credenciales del keystore).
+  ///
+  /// La que NO cuenta es la del invitado: ese rol no tiene sesión de ninguna
+  /// de las dos formas, y es lo que impide que vea "Agendar cita".
+  ///
+  /// Nunca lanza: si Firebase no esta inicializado (tests, plataforma rara)
+  /// se queda con la sesion local.
+  static bool get haySesion {
+    try {
+      if (FirebaseAuth.instance.currentUser != null) return true;
+    } catch (e) {
+      debugPrint(
+        'SesionCliente: sin Firebase Auth, usando la sesion local ($e)',
+      );
+    }
+    return instance.activa;
+  }
 
   /// Abre sesión en memoria y, si [persistir] es `true`, la guarda localmente.
   ///

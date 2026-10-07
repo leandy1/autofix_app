@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import 'package:autofix/core/auth/sesion_admin.dart';
 import 'package:autofix/core/auth/credenciales_seguras.dart';
+import 'package:autofix/core/data/limpieza_local.dart';
 import 'package:autofix/core/database/semilla_inicial.dart';
 import 'package:autofix/features/configuracion/presentation/configuracion_controller.dart';
 import 'package:autofix/features/sync/sync_service.dart';
@@ -281,6 +282,14 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
                   // `await` porque cerrar sesion ahora tambien borra la caché
                   // local de sesion: sin este orden el proximo arranque entraria
                   // solo al Dashboard y pareceria que el logout no sirvio.
+                  //
+                  // ANTES de eso va la decision de limpieza local (reglas 1 y
+                  // 2 de `LimpiezaLocal`): lee el keystore y purga las citas y
+                  // el perfil locales si el usuario NO pidio recordar. Va
+                  // primero porque despues `CredencialesSeguras.borrar()`
+                  // se lleva la unica evidencia del recordamiento, y porque el
+                  // ultimo push necesita la sesion de Auth todavia abierta.
+                  await LimpiezaLocal.alCerrarSesion();
                   await SesionAdmin.instance.cerrar();
                   await CredencialesSeguras.borrar();
                   await SyncService.instance.stop();

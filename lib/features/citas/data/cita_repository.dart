@@ -553,6 +553,27 @@ class CitaRepository implements BaseRepository<Cita> {
     return filas.map(Cita.fromMap).toList();
   }
 
+  /// Borra TODAS las citas de la base local, sin excepcion.
+  ///
+  /// Es un `DELETE` fisico y no un borrado logico, y la diferencia importa:
+  /// [borrar] deja un tombstone que la nube tiene que enterarse, mientras que
+  /// esto es limpieza de un almacenamiento CACHE que dejo de corresponderle a
+  /// nadie (sesion sin "Recuerdame", o cambio de usuario). Si se usara el
+  /// borrado logico, cada logout sin recordamiento dejaria filas
+  /// `eliminado_en` que crecen sin limite y que ademas seguirian siendo visibles
+  /// para la Papelera.
+  ///
+  /// NO toca la nube. Es deliberado: el requisito es "borrado local para
+  /// ahorrar espacio", y un logout nunca deberia borrar citas de Firebase.
+  /// Lo que si debe subirse antes es lo que quedo `pending`, y de eso se
+  /// encarga [LimpiezaLocal] con un ultimo push.
+  ///
+  /// Devuelve las filas borradas.
+  Future<int> borrarTodas() async {
+    final db = await _helper.base;
+    return db.delete(tabla);
+  }
+
   /// Upsert desde la nube: inserta o actualiza lo que llega del `onSnapshot`.
   ///
   /// El nombre es "upsert" y no "actualizar" porque hace las dos cosas, y el

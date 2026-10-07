@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import 'package:autofix/core/auth/sesion_cliente.dart';
 import 'package:autofix/core/auth/credenciales_seguras.dart';
+import 'package:autofix/core/data/limpieza_local.dart';
 import 'package:autofix/features/talleres/data/taller_repository.dart';
 import 'package:autofix/features/talleres/models/taller.dart';
 import 'package:autofix/features/sync/sync_service.dart';
@@ -60,14 +61,25 @@ class _DashboardClienteScreenState extends State<DashboardClienteScreen> {
   }
 
   /// El nombre por defecto es 'AutoFix Central', pero el formulario necesita el
-  /// `id` para poder guardar. Se resuelve contra la base; si ese taller no
+  /// `id` para guardar. Se resuelve contra la base; si ese taller no
   /// existe, queda sin seleccionar y el usuario elige uno desde el mapa.
+  ///
+  /// El `try` no es cosmético: este metodo se llama desde `initState` con
+  /// fire-and-forget, asi que un error de SQLite aqui seria un futuro rechazado
+  /// que nadie atrapa. En release eso se va al log y desaparece sin mas, que
+  /// fue como se oculto el crash del registro.
   Future<void> _resolverTallerInicial() async {
-    final taller = await TallerRepository.instance.obtenerPorNombre(
-      _selectedWorkshop,
-    );
-    if (!mounted || taller == null) return;
-    setState(() => _tallerSeleccionadoId = taller.id);
+    try {
+      final taller = await TallerRepository.instance.obtenerPorNombre(
+        _selectedWorkshop,
+      );
+      if (!mounted || taller == null) return;
+      setState(() => _tallerSeleccionadoId = taller.id);
+    } catch (e) {
+      debugPrint(
+        'DashboardCliente: no se pudo resolver el taller inicial ($e)',
+      );
+    }
   }
 
   void _changeSection(int index) {
@@ -83,6 +95,19 @@ class _DashboardClienteScreenState extends State<DashboardClienteScreen> {
     });
     if (widget.invitado) unawaited(_pedirSesionParaAgendar());
   }
+
+  /// Si el mapa puede ofrecer "Agendar cita" en esta sesión.
+  ///
+  /// No alcanza con mirar `invitado` ni con mirar la sesión por separado: un
+  /// invitado entra con `DashboardClienteScreen(invitado: true)` y la sesión
+  /// local de otro usuario puede seguir restaurada en el dispositivo. Las dos,
+  /// juntas, y el mapa repite el chequeo de sesión por su cuenta.
+  ///
+  /// Mientras esto sea `false` el callback viaja en `null`, que es como
+  /// [TalleresMapaScreen] decide desactivar el boton: el Bug 4 existia
+  /// justamente porque a un invitado se le pasaba el callback "por las dudas"
+  /// y el dialogo de sesion aparecia solo DESPUES del toque.
+  bool get _puedeAgendar => !widget.invitado && SesionCliente.haySesion;
 
   Future<void> _pedirSesionParaAgendar() async {
     final iniciarSesion = await showDialog<bool>(
@@ -114,6 +139,17 @@ class _DashboardClienteScreenState extends State<DashboardClienteScreen> {
     // no cerro nada. El PERFIL se conserva a proposito, para que la proxima
     // vez que entre el formulario de citas siga prellenado.
     if (!widget.invitado) {
+      // PRIMERO la decision de limpieza (reglas 1 y 2 de `LimpiezaLocal`):
+      // lee el keystore para saber si el usuario pidio recordar, y purga las
+      // citas y el perfil locales si NO lo hizo. Tiene que pasar antes de
+      // cualquier `CredencialesSeguras.borrar()` y antes del `signOut`,
+      // porque el ultimo push necesita la sesion de Auth todavia abierta.
+      //
+      // Va DENTRO del `if (!invitado)`: el invitado tambien llega a este
+      // metodo por el boton de salir, y el no tiene sesion que cerrar ni
+      // permiso para purgar los datos de quien este recordado en el
+      // dispositivo.
+      await LimpiezaLocal.alCerrarSesion();
       await SyncService.instance.stop();
       await SesionCliente.instance.cerrar();
       await CredencialesSeguras.borrar();
@@ -225,7 +261,7 @@ class _DashboardClienteScreenState extends State<DashboardClienteScreen> {
                   0 => TalleresMapaScreen(
                     embeddido: true,
                     tallerSeleccionadoId: _tallerSeleccionadoId,
-                    onTallerSelected: _seleccionarTaller,
+                    onTallerSelected: _puedeAgendar ? _seleccionarTaller : null,
                   ),
                   1 => AgendarCitaClienteSection(
                     tallerSeleccionado: _selectedWorkshop,
