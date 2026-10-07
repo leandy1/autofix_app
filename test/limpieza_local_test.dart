@@ -5,6 +5,8 @@ import 'package:autofix/core/database/database_helper.dart';
 import 'package:autofix/features/citas/data/cita_repository.dart';
 import 'package:autofix/features/citas/models/cita.dart';
 import 'package:autofix/features/cliente/data/cliente_repository.dart';
+import 'package:autofix/features/cliente/data/vehiculo_repository.dart';
+import 'package:autofix/features/cliente/models/vehiculo.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -53,7 +55,7 @@ void main() {
   }
 
   /// Deja el dispositivo como si un cliente hubiera usado la app: red de
-  /// talleres, un admin de la nube, una cita y el perfil local.
+  /// talleres, un admin de la nube, una cita, un vehículo y el perfil local.
   Future<void> dejarDatosDeUsuario() async {
     await DatabaseHelper.instance.sembrarTalleres();
 
@@ -80,12 +82,21 @@ void main() {
       correo: 'ana@autofix.test',
       telefono: '8090000000',
     );
+    await VehiculoRepository.instance.crear(
+      const Vehiculo(
+        clienteId: 'ana@autofix.test',
+        marca: 'Honda',
+        modelo: 'Civic',
+        anio: 2020,
+      ),
+    );
   }
 
   /// Cantidad de filas de DATOS DE USUARIO (lo que tiene que desaparecer).
   Future<int> datosDeUsuario() async =>
       (await contar(DatabaseHelper.tablaCitas)) +
-      (await contar(DatabaseHelper.tablaClientes));
+      (await contar(DatabaseHelper.tablaClientes)) +
+      (await contar(DatabaseHelper.tablaVehiculos));
 
   group('purgar()', () {
     test('borra citas y perfil pero deja talleres y admins', () async {
@@ -96,12 +107,13 @@ void main() {
         correo: 'ana@autofix.test',
         telefono: '8090000000',
       );
-      expect(await datosDeUsuario(), 2);
+      expect(await datosDeUsuario(), 3);
 
       await LimpiezaLocal.purgar(motivo: 'prueba directa');
 
       expect(await contar(DatabaseHelper.tablaCitas), 0);
       expect(await contar(DatabaseHelper.tablaClientes), 0);
+      expect(await contar(DatabaseHelper.tablaVehiculos), 0);
       // La plataforma no es dato de nadie: vaciarla dejaria al proximo
       // usuario sin mapa ni cuentas hasta la proxima sincronizacion.
       expect(await contar(DatabaseHelper.tablaTalleres), talleres);
@@ -136,7 +148,7 @@ void main() {
 
       await LimpiezaLocal.alArrancar(haySesion: true);
 
-      expect(await datosDeUsuario(), 2);
+      expect(await datosDeUsuario(), 3);
     });
 
     test('sin sesion purga', () async {
@@ -159,7 +171,7 @@ void main() {
 
       await LimpiezaLocal.alCerrarSesion();
 
-      expect(await datosDeUsuario(), 2);
+      expect(await datosDeUsuario(), 3);
     });
 
     test('sin Recuerdame purga', () async {
@@ -177,7 +189,7 @@ void main() {
 
       await LimpiezaLocal.alIniciarSesion(uid: 'uid-1');
 
-      expect(await datosDeUsuario(), 2);
+      expect(await datosDeUsuario(), 3);
     });
 
     test('la misma cuenta no purga', () async {
@@ -186,7 +198,7 @@ void main() {
 
       await LimpiezaLocal.alIniciarSesion(uid: 'uid-1');
 
-      expect(await datosDeUsuario(), 2);
+      expect(await datosDeUsuario(), 3);
     });
 
     test('una cuenta distinta purga, pero deja los catalogos', () async {
@@ -206,7 +218,7 @@ void main() {
       await LimpiezaLocal.alIniciarSesion(uid: null);
       await LimpiezaLocal.alIniciarSesion(uid: '   ');
 
-      expect(await datosDeUsuario(), 2);
+      expect(await datosDeUsuario(), 3);
     });
   });
 }

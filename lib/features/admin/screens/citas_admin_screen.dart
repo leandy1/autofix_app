@@ -21,6 +21,8 @@ import 'editar_perfil_admin_screen.dart';
 const Map<String, Color> kColorPorEstado = {
   'ATRASADAS': AppColors.atrasadas,
   'Pendiente': AppColors.pendientes,
+  'Aceptada': AppColors.greenAccent,
+  'Rechazada': AppColors.atrasadas,
   'Esperando Pieza': AppColors.esperandoPieza,
   'En proceso': AppColors.enProceso,
   'Completado': AppColors.completado,
@@ -58,6 +60,10 @@ class CitaAdminCard extends StatelessWidget {
         return 'Atrasadas';
       case EstadoCitaAdmin.pendiente:
         return 'Pendiente';
+      case EstadoCitaAdmin.aceptada:
+        return 'Aceptada';
+      case EstadoCitaAdmin.rechazada:
+        return 'Rechazada';
       case EstadoCitaAdmin.esperandoPieza:
         return 'Esperando Pieza';
       case EstadoCitaAdmin.enProceso:
@@ -73,6 +79,10 @@ class CitaAdminCard extends StatelessWidget {
         return AppColors.atrasadas;
       case EstadoCitaAdmin.pendiente:
         return AppColors.pendientes;
+      case EstadoCitaAdmin.aceptada:
+        return AppColors.greenAccent;
+      case EstadoCitaAdmin.rechazada:
+        return AppColors.atrasadas;
       case EstadoCitaAdmin.esperandoPieza:
         return AppColors.esperandoPieza;
       case EstadoCitaAdmin.enProceso:
@@ -214,10 +224,7 @@ class CitaAdminCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 18),
                       const Divider(color: AppColors.inputBorder),
-                      linea(
-                        'Recibo',
-                        'REC-${cita.id.toString().padLeft(6, '0')}',
-                      ),
+                      linea('Recibo', cita.codigoVisible),
                       linea(
                         'Fecha',
                         '${_fechaFormateada()} · ${cita.hora.format(context)}',
@@ -235,6 +242,8 @@ class CitaAdminCard extends StatelessWidget {
                       const SizedBox(height: 5),
                       linea('Nombre', cita.cliente),
                       linea('Teléfono', cita.telefono),
+                      if (cita.correoCliente.isNotEmpty)
+                        linea('Correo', cita.correoCliente),
                       const SizedBox(height: 14),
                       const Text(
                         'VEHÍCULO',
@@ -568,6 +577,8 @@ class CitaAdminCard extends StatelessWidget {
     final fields = [
       _Field(label: 'CLIENTE', value: cita.cliente),
       _Field(label: 'TELÉFONO', value: cita.telefono),
+      if (cita.correoCliente.isNotEmpty)
+        _Field(label: 'CORREO', value: cita.correoCliente),
       _Field(
         label: 'VEHÍCULO',
         value: '${cita.marca} ${cita.modelo} ${cita.anio}',
@@ -608,7 +619,7 @@ class CitaAdminCard extends StatelessWidget {
                 ],
                 Flexible(
                   child: Text(
-                    '#${cita.id}',
+                    cita.codigoVisible,
                     style: const TextStyle(
                       color: AppColors.headerNavy,
                       fontSize: 12,
@@ -659,6 +670,8 @@ class CitaAdminCard extends StatelessWidget {
                         if (nuevoEstado == null) return;
                         final nuevoEstadoEnum = switch (nuevoEstado) {
                           'Pendiente' => EstadoCitaAdmin.pendiente,
+                          'Aceptada' => EstadoCitaAdmin.aceptada,
+                          'Rechazada' => EstadoCitaAdmin.rechazada,
                           'Esperando Pieza' => EstadoCitaAdmin.esperandoPieza,
                           'En proceso' => EstadoCitaAdmin.enProceso,
                           'Completado' => EstadoCitaAdmin.completada,
@@ -682,8 +695,10 @@ class CitaAdminCard extends StatelessWidget {
                         onEdited?.call(
                           CitaAdmin(
                             id: cita.id,
+                            codigoVisible: cita.codigoVisible,
                             cliente: cita.cliente,
                             telefono: cita.telefono,
+                            correoCliente: cita.correoCliente,
                             marca: cita.marca,
                             modelo: cita.modelo,
                             anio: cita.anio,
@@ -841,6 +856,7 @@ class _EditarCitaDialog extends StatefulWidget {
 class _EditarCitaDialogState extends State<_EditarCitaDialog> {
   late final TextEditingController _clienteController;
   late final TextEditingController _telefonoController;
+  late final TextEditingController _correoController;
   late final TextEditingController _modeloController;
   late final TextEditingController _anioController;
   late final TextEditingController _placaController;
@@ -857,6 +873,7 @@ class _EditarCitaDialogState extends State<_EditarCitaDialog> {
     super.initState();
     _clienteController = TextEditingController(text: widget.cita.cliente);
     _telefonoController = TextEditingController(text: widget.cita.telefono);
+    _correoController = TextEditingController(text: widget.cita.correoCliente);
     _modeloController = TextEditingController(text: widget.cita.modelo);
     _anioController = TextEditingController(text: widget.cita.anio);
     _placaController = TextEditingController(text: widget.cita.placa);
@@ -874,6 +891,8 @@ class _EditarCitaDialogState extends State<_EditarCitaDialog> {
     _estadoSeleccionado = switch (widget.cita.estado) {
       EstadoCitaAdmin.atrasada => 'Pendiente',
       EstadoCitaAdmin.pendiente => 'Pendiente',
+      EstadoCitaAdmin.aceptada => 'Aceptada',
+      EstadoCitaAdmin.rechazada => 'Rechazada',
       EstadoCitaAdmin.esperandoPieza => 'Esperando Pieza',
       EstadoCitaAdmin.enProceso => 'En proceso',
       EstadoCitaAdmin.completada => 'Completado',
@@ -885,6 +904,7 @@ class _EditarCitaDialogState extends State<_EditarCitaDialog> {
   void dispose() {
     _clienteController.dispose();
     _telefonoController.dispose();
+    _correoController.dispose();
     _modeloController.dispose();
     _anioController.dispose();
     _placaController.dispose();
@@ -980,6 +1000,12 @@ class _EditarCitaDialogState extends State<_EditarCitaDialog> {
                       TextField(
                         controller: _telefonoController,
                         decoration: _decoracionCampo('Teléfono'),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _correoController,
+                        keyboardType: TextInputType.emailAddress,
+                        decoration: _decoracionCampo('Correo del cliente'),
                       ),
                       const SizedBox(height: 16),
                       const Text(
@@ -1240,8 +1266,10 @@ class _EditarCitaDialogState extends State<_EditarCitaDialog> {
                 onPressed: () {
                   final citaActualizada = CitaAdmin(
                     id: widget.cita.id,
+                    codigoVisible: widget.cita.codigoVisible,
                     cliente: _clienteController.text.trim(),
                     telefono: _telefonoController.text.trim(),
+                    correoCliente: _correoController.text.trim().toLowerCase(),
                     marca: _marcaSeleccionada ?? widget.cita.marca,
                     modelo: _modeloController.text.trim(),
                     anio: _anioController.text.trim(),
@@ -1252,6 +1280,8 @@ class _EditarCitaDialogState extends State<_EditarCitaDialog> {
                     estado: switch (_estadoSeleccionado) {
                       'Atrasadas' => EstadoCitaAdmin.atrasada,
                       'Pendiente' => EstadoCitaAdmin.pendiente,
+                      'Aceptada' => EstadoCitaAdmin.aceptada,
+                      'Rechazada' => EstadoCitaAdmin.rechazada,
                       'Esperando Pieza' => EstadoCitaAdmin.esperandoPieza,
                       'En proceso' => EstadoCitaAdmin.enProceso,
                       'Completado' => EstadoCitaAdmin.completada,
@@ -1476,6 +1506,7 @@ class _CitasScreenState extends State<CitasScreen> {
       if (query.isNotEmpty) {
         final cliente = cita.cliente.toLowerCase();
         final telefono = cita.telefono.toLowerCase();
+        final correo = cita.correoCliente.toLowerCase();
         final vehiculo = cita.vehiculo.toLowerCase();
         final marca = cita.marca.toLowerCase();
         final modelo = cita.modelo.toLowerCase();
@@ -1487,6 +1518,7 @@ class _CitasScreenState extends State<CitasScreen> {
         final coincide =
             cliente.contains(query) ||
             telefono.contains(query) ||
+            correo.contains(query) ||
             vehiculo.contains(query) ||
             marca.contains(query) ||
             modelo.contains(query) ||
@@ -1505,6 +1537,8 @@ class _CitasScreenState extends State<CitasScreen> {
     final estado = switch (cita.estado) {
       EstadoCitaAdmin.atrasada => cita_data.EstadoCita.pendiente,
       EstadoCitaAdmin.pendiente => cita_data.EstadoCita.pendiente,
+      EstadoCitaAdmin.aceptada => cita_data.EstadoCita.aceptada,
+      EstadoCitaAdmin.rechazada => cita_data.EstadoCita.rechazada,
       EstadoCitaAdmin.esperandoPieza => cita_data.EstadoCita.esperandoPieza,
       EstadoCitaAdmin.enProceso => cita_data.EstadoCita.enProceso,
       EstadoCitaAdmin.completada => cita_data.EstadoCita.completado,
@@ -1518,8 +1552,10 @@ class _CitasScreenState extends State<CitasScreen> {
     );
     return cita_data.Cita(
       id: cita.id,
+      codigoVisible: cita.codigoVisible,
       cliente: cita.cliente,
       telefono: cita.telefono,
+      correoCliente: cita.correoCliente,
       vehiculo: _vehiculoPersistible(
         marca: cita.marca,
         modelo: cita.modelo,
@@ -1562,6 +1598,8 @@ class _CitasScreenState extends State<CitasScreen> {
         ? EstadoCitaAdmin.atrasada
         : switch (cita.estado) {
             cita_data.EstadoCita.pendiente => EstadoCitaAdmin.pendiente,
+            cita_data.EstadoCita.aceptada => EstadoCitaAdmin.aceptada,
+            cita_data.EstadoCita.rechazada => EstadoCitaAdmin.rechazada,
             cita_data.EstadoCita.esperandoPieza =>
               EstadoCitaAdmin.esperandoPieza,
             cita_data.EstadoCita.enProceso => EstadoCitaAdmin.enProceso,
@@ -1575,8 +1613,10 @@ class _CitasScreenState extends State<CitasScreen> {
       // sin guardar revienta la pantalla al construir la tarjeta, en vez de
       // aparecer sin id.
       id: cita.id,
+      codigoVisible: cita.codigoVisible,
       cliente: cita.cliente,
       telefono: cita.telefono,
+      correoCliente: cita.correoCliente,
       marca: cita.marca,
       modelo: cita.modelo,
       anio: cita.anio.toString(),
@@ -1613,6 +1653,8 @@ class _CitasScreenState extends State<CitasScreen> {
     if (nuevo == EstadoCitaAdmin.atrasada) return;
     final estado = switch (nuevo) {
       EstadoCitaAdmin.pendiente => cita_data.EstadoCita.pendiente,
+      EstadoCitaAdmin.aceptada => cita_data.EstadoCita.aceptada,
+      EstadoCitaAdmin.rechazada => cita_data.EstadoCita.rechazada,
       EstadoCitaAdmin.esperandoPieza => cita_data.EstadoCita.esperandoPieza,
       EstadoCitaAdmin.enProceso => cita_data.EstadoCita.enProceso,
       EstadoCitaAdmin.completada => cita_data.EstadoCita.completado,
@@ -1620,6 +1662,29 @@ class _CitasScreenState extends State<CitasScreen> {
     };
     final cambiado = await _citasController.cambiarEstado(id, estado);
     if (!cambiado && mounted) _mostrarErrorPersistencia();
+  }
+
+  /// Aceptar o rechazar es un cambio parcial en SQLite; el controller marca la
+  /// fila como `pending` y solicita a SyncService subirla cuando haya red.
+  Future<void> _responderSolicitud(
+    cita_data.Cita cita,
+    cita_data.EstadoCita estado,
+  ) async {
+    final id = cita.id;
+    if (id == null) {
+      _mostrarErrorPersistencia();
+      return;
+    }
+
+    final guardada = await _citasController.cambiarEstado(id, estado);
+    if (!mounted) return;
+    if (!guardada) {
+      _mostrarErrorPersistencia();
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Solicitud ${estado.etiqueta.toLowerCase()}.')),
+    );
   }
 
   /// BORRADO LOGICO desde la v7: `_citasController.eliminar` no borra la fila,
@@ -1650,7 +1715,14 @@ class _CitasScreenState extends State<CitasScreen> {
           children: [
             _buildHeroCard(),
             const SizedBox(height: 16),
-            const SolicitudesCitasAdminSection(),
+            ListenableBuilder(
+              listenable: _citasController,
+              builder: (context, _) => SolicitudesCitasAdminSection(
+                citas: _citasController.citas,
+                onCambiarEstado: _responderSolicitud,
+                cargando: _citasController.cargando,
+              ),
+            ),
             const SizedBox(height: 16),
             _buildFiltrosAvanzados(),
             const SizedBox(height: 16),
@@ -2436,6 +2508,7 @@ class _CrearCitaDialog extends StatefulWidget {
 class _CrearCitaDialogState extends State<_CrearCitaDialog> {
   late final TextEditingController _clienteController;
   late final TextEditingController _telefonoController;
+  late final TextEditingController _correoController;
   late final TextEditingController _modeloController;
   late final TextEditingController _anioController;
   late final TextEditingController _placaController;
@@ -2456,6 +2529,7 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
     super.initState();
     _clienteController = TextEditingController();
     _telefonoController = TextEditingController();
+    _correoController = TextEditingController();
     _modeloController = TextEditingController();
     _anioController = TextEditingController();
     _placaController = TextEditingController();
@@ -2466,6 +2540,7 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
   void dispose() {
     _clienteController.dispose();
     _telefonoController.dispose();
+    _correoController.dispose();
     _modeloController.dispose();
     _anioController.dispose();
     _placaController.dispose();
@@ -2629,6 +2704,27 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                             );
                             if (digitos.length < 10 || digitos.length > 15) {
                               return 'Ingresa un teléfono válido (10 a 15 dígitos).';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 10),
+                        TextFormField(
+                          controller: _correoController,
+                          keyboardType: TextInputType.emailAddress,
+                          decoration: _decoracionCampo('Correo del cliente')
+                              .copyWith(
+                                hintText: 'cliente@ejemplo.com',
+                                helperText: 'Vincula esta cita con Mis citas del cliente.',
+                              ),
+                          validator: (valor) {
+                            final correo = valor?.trim() ?? '';
+                            if (correo.isEmpty) {
+                              return 'Ingresa el correo del cliente para vincular la cita.';
+                            }
+                            if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
+                                .hasMatch(correo)) {
+                              return 'Ingresa un correo válido.';
                             }
                             return null;
                           },
@@ -2975,6 +3071,8 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                             }
 
                             final estado = switch (_estadoSeleccionado) {
+                              'Aceptada' => cita_data.EstadoCita.aceptada,
+                              'Rechazada' => cita_data.EstadoCita.rechazada,
                               'Esperando Pieza' =>
                                 cita_data.EstadoCita.esperandoPieza,
                               'En proceso' => cita_data.EstadoCita.enProceso,
@@ -2984,6 +3082,9 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                             final anio = _anioController.text.trim();
                             final cita = cita_data.Cita(
                               cliente: _clienteController.text.trim(),
+                              correoCliente: _correoController.text
+                                  .trim()
+                                  .toLowerCase(),
                               telefono: _telefonoController.text.trim(),
                               vehiculo: _vehiculoPersistible(
                                 marca: _marcaSeleccionada!,

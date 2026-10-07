@@ -7,9 +7,10 @@ import 'package:autofix/core/auth/credenciales_seguras.dart';
 import 'package:autofix/core/auth/sesion_cliente.dart';
 import 'package:autofix/features/citas/data/cita_repository.dart';
 import 'package:autofix/features/cliente/data/cliente_repository.dart';
+import 'package:autofix/features/cliente/data/vehiculo_repository.dart';
 import 'package:autofix/features/sync/sync_service.dart';
 
-/// Ciclo de vida de los datos LOCALES de un usuario (citas y perfil).
+/// Ciclo de vida de los datos LOCALES de un usuario (citas, perfil y vehículos).
 ///
 /// ---------------------------------------------------------------
 /// LAS TRES REGLAS QUE ESTE ARCHIVO HACE CUMPLIR
@@ -30,8 +31,8 @@ import 'package:autofix/features/sync/sync_service.dart';
 /// ---------------------------------------------------------------
 /// QUE SE BORRA Y QUE NO
 /// ---------------------------------------------------------------
-/// Se borra: `citas` (fisicamente, todas) y `clientes` (el perfil local), mas
-/// la sesion de perfil en SharedPreferences.
+/// Se borra: `citas`, `clientes` (perfil local) y `vehiculos` del usuario, más
+/// la sesión de perfil en SharedPreferences.
 ///
 /// NO se borra: `talleres`, `admins` ni los catalogos de Configuracion. Esos
 /// son datos PERMANENTES de la plataforma (Bloque 2), no de una persona, y
@@ -123,7 +124,7 @@ class LimpiezaLocal {
   ///    esperando al SDK de Firestore. El chequeo de pendientes va ANTES que
   ///    el de conectividad a proposito: leer `hayConexion` construye el
   ///    `ConnectivityService`, y eso no vale la pena si no hay nada pendiente.
-  /// 3. **Borrar.** `citas` y `clientes`, fisicamente.
+  /// 3. **Borrar.** `citas`, `clientes` y `vehiculos`, fisicamente.
   /// 4. **Olvidar la sesion de perfil.** Lo que quedo en SharedPreferences
   ///    tambien es dato local del usuario.
   static Future<void> purgar({required String motivo}) async {
@@ -148,16 +149,19 @@ class LimpiezaLocal {
 
     var citas = 0;
     var perfiles = 0;
+    var vehiculos = 0;
     try {
       citas = await CitaRepository.instance.borrarTodas();
       perfiles = await ClienteRepository().borrarLocalTodo();
+      vehiculos = await VehiculoRepository.instance.borrarLocalTodo();
       await SesionCliente.instance.olvidarTodo();
     } catch (e) {
       debugPrint('LimpiezaLocal: purge incompleto ($e)');
     }
 
     debugPrint(
-      '[LimpiezaLocal] purge ($motivo): $citas citas, $perfiles perfiles',
+      '[LimpiezaLocal] purge ($motivo): $citas citas, $perfiles perfiles, '
+      '$vehiculos vehículos',
     );
   }
 
@@ -176,6 +180,10 @@ class LimpiezaLocal {
       limite: 1,
     );
     if (citas.isNotEmpty) return true;
+    final citasFallidas = await CitaRepository.instance.obtenerFallidasDeSync(
+      limite: 1,
+    );
+    if (citasFallidas.isNotEmpty) return true;
     final perfiles = await ClienteRepository().pendientesDeSync(limite: 1);
     return perfiles.isNotEmpty;
   }

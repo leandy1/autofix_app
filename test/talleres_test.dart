@@ -38,6 +38,17 @@ void main() {
       p.join(await getDatabasesPath(), 'autofix_talleres_test.db');
 
   group('esquema', () {
+    test('el código visible del taller no expone el UUID', () {
+      const taller = Taller(
+        id: 'a1b2c3d4-e5f6-4789-8abc-def012345678',
+        nombre: 'Taller de prueba',
+        latitud: 18.5,
+        longitud: -69.9,
+      );
+      expect(taller.codigoVisible, matches(RegExp(r'^TALLER-[0-9A-Z]{7}$')));
+      expect(taller.codigoVisible, isNot(contains(taller.id!)));
+    });
+
     test('talleres se crea con TODAS las columnas del modelo', () async {
       // Este test atrapa el "no such column": el modelo declara sus claves como
       // literales para no depender de `DatabaseHelper`, asi que PRAGMA es la unica
@@ -188,16 +199,13 @@ void main() {
       );
     });
 
-    test(
-      '"AutoFix Central" puede sembrarse desde SemillaInicial',
-      () async {
-        await DatabaseHelper.instance.sembrarTalleres();
-        expect(
-          await TallerRepository.instance.obtenerPorNombre('AutoFix Central'),
-          isNotNull,
-        );
-      },
-    );
+    test('"AutoFix Central" puede sembrarse desde SemillaInicial', () async {
+      await DatabaseHelper.instance.sembrarTalleres();
+      expect(
+        await TallerRepository.instance.obtenerPorNombre('AutoFix Central'),
+        isNotNull,
+      );
+    });
   });
 
   group('CRUD de talleres', () {
@@ -616,10 +624,7 @@ void main() {
       expect(citas, isEmpty, reason: 'la v7 reinicia el esquema a proposito');
 
       // Lo que si importa: los catalogos quedan creados y sembrados.
-      expect(
-        (await TallerRepository.instance.obtenerTodas()),
-        isEmpty,
-      );
+      expect((await TallerRepository.instance.obtenerTodas()), isEmpty);
       expect(
         (await TecnicoRepository.instance.obtenerTodas()).length,
         SemillaInicial.tecnicos.length,
@@ -711,22 +716,22 @@ void main() {
         (await MarcaRepository.instance.obtenerTodas()).length,
         SemillaInicial.marcas.length,
       );
-      expect(
-        (await TallerRepository.instance.obtenerTodas()),
-        isEmpty,
-      );
+      expect((await TallerRepository.instance.obtenerTodas()), isEmpty);
     });
 
-    test('migrar dos veces no crea errores y permite sembrarTalleres', () async {
-      await sembrarBaseV3(qr: 'VIEJO-DOS');
-      await TallerRepository.instance.obtenerTodas();
-      await DatabaseHelper.instance.cerrar();
-      await DatabaseHelper.instance.sembrarTalleres();
+    test(
+      'migrar dos veces no crea errores y permite sembrarTalleres',
+      () async {
+        await sembrarBaseV3(qr: 'VIEJO-DOS');
+        await TallerRepository.instance.obtenerTodas();
+        await DatabaseHelper.instance.cerrar();
+        await DatabaseHelper.instance.sembrarTalleres();
 
-      expect(
-        (await TallerRepository.instance.obtenerTodas()).length,
-        SemillaInicial.talleres.length,
-      );
-    });
+        expect(
+          (await TallerRepository.instance.obtenerTodas()).length,
+          SemillaInicial.talleres.length,
+        );
+      },
+    );
   });
 }

@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:autofix/features/cliente/presentation/mis_citas_controller.dart';
+import 'package:autofix/features/cliente/widgets/accion_qr_cita_cliente.dart';
 import 'package:autofix/features/cliente/widgets/cliente_section_widgets.dart';
 import 'package:autofix/features/citas/models/cita.dart';
+import 'package:autofix/features/sync/sync_service.dart';
 import 'package:autofix/shared/theme/app_colors.dart';
 
 /// Colores por etiqueta de estado, con las MISMAS llaves y colores que
@@ -19,6 +21,8 @@ import 'package:autofix/shared/theme/app_colors.dart';
 const Map<String, Color> _colorPorEtiqueta = {
   Cita.etiquetaAtrasadas: AppColors.atrasadas,
   'Pendiente': AppColors.pendientes,
+  'Aceptada': AppColors.greenAccent,
+  'Rechazada': AppColors.atrasadas,
   'Esperando Pieza': AppColors.esperandoPieza,
   'En proceso': AppColors.enProceso,
   'Completado': AppColors.completado,
@@ -54,8 +58,7 @@ class MisCitasClienteSection extends StatefulWidget {
   const MisCitasClienteSection({super.key});
 
   @override
-  State<MisCitasClienteSection> createState() =>
-      _MisCitasClienteSectionState();
+  State<MisCitasClienteSection> createState() => _MisCitasClienteSectionState();
 }
 
 class _MisCitasClienteSectionState extends State<MisCitasClienteSection> {
@@ -65,6 +68,7 @@ class _MisCitasClienteSectionState extends State<MisCitasClienteSection> {
   void initState() {
     super.initState();
     _controller = MisCitasController();
+    SyncService.instance.addListener(_alCambiarSync);
     // Sin `await`: el spinner de carga es el estado que ya arranca en `true`.
     unawaited(_controller.cargar());
   }
@@ -74,7 +78,12 @@ class _MisCitasClienteSectionState extends State<MisCitasClienteSection> {
     // Sin esto cada vez que el cliente cambia de pestana la seccion acumula un
     // ChangeNotifier vivo que sigue notificando a nadie.
     _controller.dispose();
+    SyncService.instance.removeListener(_alCambiarSync);
     super.dispose();
+  }
+
+  void _alCambiarSync() {
+    if (mounted) unawaited(_controller.cargar());
   }
 
   @override
@@ -91,7 +100,8 @@ class _MisCitasClienteSectionState extends State<MisCitasClienteSection> {
             const TituloSeccionCliente(
               eyebrow: 'TUS VISITAS',
               title: 'Mis citas',
-              subtitle: 'Presenta el código QR al llegar al taller',
+              subtitle:
+                  'Consulta el estado y presenta el QR cuando acepten tu cita.',
             ),
             const SizedBox(height: 14),
             if (_controller.hayPendientes) ...[
@@ -136,8 +146,8 @@ class _MisCitasClienteSectionState extends State<MisCitasClienteSection> {
           icono: Icons.confirmation_number_outlined,
           titulo: 'Aún no tienes citas',
           detalle:
-              'Agenda tu primera visita desde la pestaña "Agendar" y verás '
-              'aquí su código QR, con o sin conexión.',
+              'Agenda tu primera visita desde la pestaña "Agendar" y podrás '
+              'seguir aquí su estado y código.',
         ),
       ];
     }
@@ -170,11 +180,17 @@ class _AvisoDeCola extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.orangePrimary.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.orangePrimary.withValues(alpha: 0.35)),
+        border: Border.all(
+          color: AppColors.orangePrimary.withValues(alpha: 0.35),
+        ),
       ),
       child: Row(
         children: [
-          const Icon(Icons.cloud_upload_outlined, size: 18, color: AppColors.orangePrimary),
+          const Icon(
+            Icons.cloud_upload_outlined,
+            size: 18,
+            color: AppColors.orangePrimary,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -259,7 +275,10 @@ class _EstadoVacio extends StatelessWidget {
 }
 
 class _BotonSecundarioCliente extends StatelessWidget {
-  const _BotonSecundarioCliente({required this.etiqueta, required this.onPressed});
+  const _BotonSecundarioCliente({
+    required this.etiqueta,
+    required this.onPressed,
+  });
 
   final String etiqueta;
   final VoidCallback onPressed;
@@ -325,7 +344,7 @@ class _TarjetaCita extends StatelessWidget {
           ),
           if (item.enCola) ...[
             const SizedBox(height: 8),
-            const _BadgeEnCola(),
+            _BadgeEnCola(error: cita.syncStatus == 'error'),
           ],
           const SizedBox(height: 14),
           Row(
@@ -408,99 +427,10 @@ class _TarjetaCita extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          Material(
-            color: AppColors.background,
-            borderRadius: BorderRadius.circular(12),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () => _showQrPreview(context),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(
-                  children: [
-                    const _MockQrCode(size: 68),
-                    const SizedBox(width: 13),
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Código de tu cita',
-                            style: TextStyle(
-                              color: AppColors.labelDark,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          SizedBox(height: 4),
-                          Text(
-                            'Toca para ampliar la vista previa del QR.',
-                            style: TextStyle(
-                              color: AppColors.textGray,
-                              fontSize: 11,
-                              height: 1.35,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Icon(
-                      Icons.open_in_full,
-                      color: AppColors.textGray,
-                      size: 16,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showQrPreview(BuildContext context) {
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Código QR de la cita',
-              style: TextStyle(
-                color: AppColors.labelDark,
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              cita.identificadorParaPantalla,
-              style: const TextStyle(
-                color: AppColors.orangePrimary,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 18),
-            const _MockQrCode(size: 180),
+          if (cita.estado == EstadoCita.aceptada) ...[
             const SizedBox(height: 14),
-            const Text(
-              'Vista previa ilustrativa',
-              style: TextStyle(color: AppColors.textGray, fontSize: 12),
-            ),
+            AccionQrCitaCliente(cita: cita),
           ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'Cerrar',
-              style: TextStyle(color: AppColors.orangePrimary),
-            ),
-          ),
         ],
       ),
     );
@@ -514,25 +444,33 @@ class _TarjetaCita extends StatelessWidget {
 /// respuesta y distintas consecuencias. Sin esta linea el usuario no sabe que
 /// hay algo esperando red.
 class _BadgeEnCola extends StatelessWidget {
-  const _BadgeEnCola();
+  const _BadgeEnCola({required this.error});
+
+  final bool error;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
-        color: AppColors.blueAccent.withValues(alpha: 0.13),
+        color: (error ? AppColors.atrasadas : AppColors.blueAccent).withValues(
+          alpha: 0.13,
+        ),
         borderRadius: BorderRadius.circular(20),
       ),
-      child: const Row(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.cloud_upload_outlined, size: 12, color: AppColors.blueAccent),
+          Icon(
+            error ? Icons.cloud_off_outlined : Icons.cloud_upload_outlined,
+            size: 12,
+            color: error ? AppColors.atrasadas : AppColors.blueAccent,
+          ),
           SizedBox(width: 5),
           Text(
-            'En cola de envío',
+            error ? 'Error de envío · se reintentará' : 'En cola de envío',
             style: TextStyle(
-              color: AppColors.blueAccent,
+              color: error ? AppColors.atrasadas : AppColors.blueAccent,
               fontSize: 10,
               fontWeight: FontWeight.w700,
             ),
@@ -567,66 +505,4 @@ class _StatusBadge extends StatelessWidget {
       ),
     );
   }
-}
-
-class _MockQrCode extends StatelessWidget {
-  const _MockQrCode({required this.size});
-
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      size: Size.square(size),
-      painter: const _QrPatternPainter(),
-    );
-  }
-}
-
-class _QrPatternPainter extends CustomPainter {
-  const _QrPatternPainter();
-
-  static const _modules = 17;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final module = size.width / _modules;
-    final fill = Paint()..color = AppColors.headerNavy;
-    canvas.drawRect(Offset.zero & size, Paint()..color = Colors.white);
-    for (var y = 0; y < _modules; y++) {
-      for (var x = 0; x < _modules; x++) {
-        if (_isFinder(x, y)) {
-          if (_finderModuleIsFilled(x, y)) {
-            canvas.drawRect(
-              Rect.fromLTWH(x * module, y * module, module, module),
-              fill,
-            );
-          }
-        } else if ((x * 7 + y * 11 + x * y) % 5 < 2) {
-          canvas.drawRect(
-            Rect.fromLTWH(x * module, y * module, module, module),
-            fill,
-          );
-        }
-      }
-    }
-  }
-
-  bool _isFinder(int x, int y) =>
-      (x < 5 && y < 5) ||
-      (x >= _modules - 5 && y < 5) ||
-      (x < 5 && y >= _modules - 5);
-
-  bool _finderModuleIsFilled(int x, int y) {
-    final localX = x >= _modules - 5 ? x - (_modules - 5) : x;
-    final localY = y >= _modules - 5 ? y - (_modules - 5) : y;
-    return localX == 0 ||
-        localX == 4 ||
-        localY == 0 ||
-        localY == 4 ||
-        (localX == 2 && localY == 2);
-  }
-
-  @override
-  bool shouldRepaint(covariant _QrPatternPainter oldDelegate) => false;
 }

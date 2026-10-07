@@ -7,6 +7,7 @@ import 'package:autofix/core/connectivity/connectivity_service.dart';
 import 'package:autofix/core/utils/borrado_logico.dart';
 import 'package:autofix/features/citas/data/cita_repository.dart';
 import 'package:autofix/features/citas/models/cita.dart';
+import 'package:autofix/features/citas/models/codigo_de_cita.dart';
 import 'package:autofix/features/cliente/data/cambios_password_repository.dart';
 import 'package:autofix/features/cliente/data/cliente_repository.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -44,18 +45,20 @@ import 'dart:async';
 /// - `talleres` y `admins` bajan al ABRIR LA APP, solos, desde
 ///   `DevModeSyncService.sincronizarCatalogos`. Ese catalogo es permanente y
 ///   no depende de quien entre.
-/// - LAS CITAS no: bajan justo DESPUES del login, filtradas por la sesion
-///   (taller del admin / dueno del cliente). Ver [start].
+/// - LAS CITAS no: bajan justo DESPUES del login, filtradas por la sesión
+///   (taller del admin / owner UID o correo del cliente). Ver [start].
 /// - El PERFIL cliente baja con su propio listener, solo si hay sesión de
 ///   cliente. Ver [_iniciarListenerDePerfil].
-class SyncService {
+class SyncService extends ChangeNotifier {
   SyncService._();
 
   static final SyncService instance = SyncService._();
 
   final CitaRepository _repo = CitaRepository.instance;
   final ClienteRepository _repoClientes = ClienteRepository();
-  FirebaseFirestore get _db => FirebaseFirestore.instance;
+  FirebaseFirestore? _firestoreOverride;
+  String? _uidOverride;
+  FirebaseFirestore get _db => _firestoreOverride ?? FirebaseFirestore.instance;
   ConnectivityService? _connectivity;
   ConnectivityService get _connectivityService =>
       _connectivity ??= ConnectivityService();
@@ -67,8 +70,27 @@ class SyncService {
   /// falla rapido, se queda esperando al SDK de Firestore y el logout se cuelga.
   bool get hayConexion => _connectivityService.hayConexion;
 
+  @visibleForTesting
+  void usarFirestoreParaPruebas(FirebaseFirestore? firestore) {
+    _firestoreOverride = firestore;
+  }
+
+  @visibleForTesting
+  void usarAuthUidParaPruebas(String? uid) {
+    _uidOverride = uid;
+  }
+
+  Future<void> Function(Cita cita)? _hookAntesDePushParaPruebas;
+
+  @visibleForTesting
+  void usarHookAntesDePushParaPruebas(Future<void> Function(Cita cita)? hook) {
+    _hookAntesDePushParaPruebas = hook;
+  }
+
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
   _snapshotSubscription;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
+  _snapshotCorreoSubscription;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
   _clientesSubscription;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
@@ -83,25 +105,32 @@ class SyncService {
   /// anterior hasta el proximo arranque de la app.
   String? _firmaDelFiltro;
 
-  /// La consulta de citas que le toca a la sesion actual.
+  /// Filtros Firestore de citas que le tocan a la sesión actual.
   ///
-  /// Admin -> solo las de SU `taller_id`. Cliente (o cualquiera sin sesión de
-  /// admin) -> solo las que EL creo (`ownerUid`). Es lo que hace que un
-  /// administrador no descargue el historial entero de la plataforma y un
-  /// cliente no descargue las ordenes de otros talleres.
+  /// Admin -> solo las de SU `taller_id`. Cliente -> las que creó (`ownerUid`)
+  /// y las que el taller vinculó a su correo (`correo_cliente`).
   String _firmaDeLaSesion() {
     final tallerId = SesionAdmin.instance.tallerId;
-    return tallerId != null
-        ? 'taller:$tallerId'
-        : 'dueno:${_currentUid() ?? ''}';
+    if (tallerId != null) return 'taller:$tallerId';
+    final correo = SesionCliente.instance.correo?.trim().toLowerCase() ?? '';
+    return 'dueno:${_currentUid() ?? ''}|correo:$correo';
   }
 
-  Query<Map<String, dynamic>> _consultaDeLaSesion() {
+  List<Query<Map<String, dynamic>>> _consultasDeLaSesion() {
     final tallerId = SesionAdmin.instance.tallerId;
     if (tallerId != null) {
-      return _db.collection('citas').where('taller_id', isEqualTo: tallerId);
+      return <Query<Map<String, dynamic>>>[
+        _db.collection('citas').where('taller_id', isEqualTo: tallerId),
+      ];
     }
-    return _db.collection('citas').where('ownerUid', isEqualTo: _currentUid());
+    final uid = _currentUid();
+    final correo = SesionCliente.instance.correo?.trim().toLowerCase() ?? '';
+    return <Query<Map<String, dynamic>>>[
+      if (uid != null && uid.isNotEmpty)
+        _db.collection('citas').where('ownerUid', isEqualTo: uid),
+      if (correo.isNotEmpty)
+        _db.collection('citas').where('correo_cliente', isEqualTo: correo),
+    ];
   }
 
   /// Inicia la sincronizacion de la sesion actual.
@@ -122,7 +151,7 @@ class SyncService {
   /// [_firmaDelFiltro].
   Future<void> start() async {
     final firma = _firmaDeLaSesion();
-    final yaCorre = _snapshotSubscription != null;
+    final yaCorre = _firmaDelFiltro != null;
     final cambiaLaSesion = yaCorre && _firmaDelFiltro != firma;
     if (yaCorre && !cambiaLaSesion) return;
 
@@ -130,19 +159,34 @@ class SyncService {
       // El listener viejo sigue escuchando la consulta del usuario anterior y
       // su snapshot bajaria sus citas a una base que acaba de purgarse.
       await _snapshotSubscription?.cancel();
+      await _snapshotCorreoSubscription?.cancel();
       await _clientesSubscription?.cancel();
       _snapshotSubscription = null;
+      _snapshotCorreoSubscription = null;
       _clientesSubscription = null;
     }
 
-    _snapshotSubscription = _consultaDeLaSesion()
-        .snapshots(includeMetadataChanges: true)
-        .listen(
-          _onSnapshot,
-          onError: (e) {
-            debugPrint('[SyncService] Error en onSnapshot: $e');
-          },
-        );
+    final consultas = _consultasDeLaSesion();
+    if (consultas.isNotEmpty) {
+      _snapshotSubscription = consultas.first
+          .snapshots(includeMetadataChanges: true)
+          .listen(
+            _onSnapshot,
+            onError: (e) {
+              debugPrint('[SyncService] Error en onSnapshot: $e');
+            },
+          );
+    }
+    if (consultas.length > 1) {
+      _snapshotCorreoSubscription = consultas[1]
+          .snapshots(includeMetadataChanges: true)
+          .listen(
+            _onSnapshot,
+            onError: (e) {
+              debugPrint('[SyncService] Error en onSnapshot por correo: $e');
+            },
+          );
+    }
     _firmaDelFiltro = firma;
 
     await _iniciarListenerDePerfil();
@@ -173,15 +217,18 @@ class SyncService {
   /// Detiene el listener (ej. al cerrar sesion).
   Future<void> stop() async {
     await _snapshotSubscription?.cancel();
+    await _snapshotCorreoSubscription?.cancel();
     await _clientesSubscription?.cancel();
     await _connectivitySubscription?.cancel();
     _snapshotSubscription = null;
+    _snapshotCorreoSubscription = null;
     _clientesSubscription = null;
     _connectivitySubscription = null;
     _firmaDelFiltro = null;
   }
 
-  /// Sube todas las citas locales con `sync_status = 'pending'`.
+  /// Sube la cola `pending` y reintenta fallos anteriores sin dejar que la
+  /// cola de errores ocupe los cupos de citas nuevas.
   ///
   /// El orden importa: primero las que ya tienen `codigo_visible`
   /// (solo actualizacion), luego las que tienen 'PENDIENTE' (transaccion
@@ -192,11 +239,41 @@ class SyncService {
 
     try {
       final pendientes = await _repo.obtenerPendientesDeSync();
-      for (final cita in pendientes) {
-        if (cita.codigoVisible == 'PENDIENTE') {
-          await _pushWithTransaction(cita);
-        } else {
-          await _pushSimple(cita);
+      final fallidas = await _repo.obtenerFallidasDeSync();
+      // Capturamos fallidas antes de procesar el lote, para no reintentar dos
+      // veces en un mismo ciclo una cita que acaba de fallar.
+      for (final cita in [...pendientes, ...fallidas]) {
+        final id = cita.id;
+        try {
+          if (id == null) {
+            throw StateError('La cita pendiente no tiene id local.');
+          }
+          if (cita.syncStatus == 'error') {
+            await _repo.marcarPendienteSync(id);
+          }
+          final normalizada = _normalizarCitaLegacy(cita);
+          await _hookAntesDePushParaPruebas?.call(normalizada);
+          if (normalizada.codigoVisible == 'PENDIENTE') {
+            await _pushWithTransaction(normalizada);
+          } else {
+            await _pushSimple(normalizada);
+          }
+        } on Object catch (error) {
+          if (id != null) {
+            try {
+              await _repo.marcarErrorSync(id);
+            } catch (errorAlMarcar) {
+              debugPrint(
+                '[SyncService] No se pudo marcar cita $id con error: '
+                '$errorAlMarcar',
+              );
+            }
+          }
+          // El error de una fila no aborta el lote: el resto de las citas puede
+          // sincronizarse. Las fallidas quedan en estado `error` para la
+          // siguiente tanda de reintentos.
+          debugPrint('[SyncService] Falló el push de cita $id: $error');
+          notifyListeners();
         }
       }
     } catch (e) {
@@ -208,6 +285,37 @@ class SyncService {
       await _drenarColas();
       _isPushing = false;
     }
+  }
+
+  /// Completa valores de compatibilidad antes de serializar citas antiguas.
+  /// Las columnas nuevas pueden estar vacías en SQLite, pero Firestore recibe
+  /// siempre strings/listas con forma válida y `correo_cliente` normalizado.
+  Cita _normalizarCitaLegacy(Cita cita) {
+    final vehiculoExistente = cita.vehiculo.trim();
+    final resumenVehiculo = [
+      cita.marca.trim(),
+      cita.modelo.trim(),
+      if (cita.anio > 0) cita.anio.toString(),
+    ].where((parte) => parte.isNotEmpty).join(' ');
+
+    return cita.copyWith(
+      cliente: cita.cliente.trim().isEmpty
+          ? 'Cliente sin nombre'
+          : cita.cliente.trim(),
+      telefono: cita.telefono.trim(),
+      correoCliente: cita.correoCliente.trim().toLowerCase(),
+      vehiculo: vehiculoExistente.isEmpty
+          ? (resumenVehiculo.isEmpty
+                ? 'Vehículo no especificado'
+                : resumenVehiculo)
+          : vehiculoExistente,
+      marca: cita.marca.trim(),
+      modelo: cita.modelo.trim(),
+      placa: cita.placa.trim().toUpperCase(),
+      servicios: cita.servicios,
+      tecnico: cita.tecnico.trim(),
+      descripcion: cita.descripcion.trim(),
+    );
   }
 
   /// Corre las dos colas de perfil sin que el fallo de una corte a la otra.
@@ -347,21 +455,14 @@ class SyncService {
   /// Sube una cita que YA tiene codigo_visible (solo update/merge).
   Future<void> _pushSimple(Cita cita) async {
     final ref = _db.collection('citas').doc(cita.id);
-    final data = _citaToMap(cita);
+    final data = _citaToMap(cita, ownerUid: await _resolverOwnerUid(cita));
     _preservarDueno(data, (await ref.get()).data());
     await ref.set(data, SetOptions(merge: true));
     await _repo.marcarSincronizada(cita.id!);
+    notifyListeners();
   }
 
-  /// S2: no pisar el `ownerUid` que el documento ya tenga en la nube.
-  ///
-  /// `_citaToMap` sella `ownerUid = _currentUid()` sin mirar nada mas. Eso es
-  /// correcto en el ALTA (el creador es el dueno), pero en un push de un
-  /// SEGUNDO dispositivo reescribia al dueno original: p. ej. si el admin
-  /// edita una cita que agendo el cliente, la cita pasaba a tener el uid del
-  /// admin, salia del filtro `where('ownerUid', ...)` con el que el cliente
-  /// consulta y desaparecia de su app. El dueno lo pone quien crea la cita y
-  /// nadie mas lo cambia; el resto de campos se actualiza con normalidad.
+  /// No pisar el `ownerUid` que el documento ya tenga en la nube.
   void _preservarDueno(
     Map<String, Object?> data,
     Map<String, dynamic>? documentoPrevio,
@@ -379,30 +480,58 @@ class SyncService {
   /// 5. Actualiza local via `asignarCodigoVisible` y marca sincronizada.
   Future<void> _pushWithTransaction(Cita cita) async {
     final counterRef = _db.collection('counters').doc('citas');
+    final citaRef = _db.collection('citas').doc(cita.id);
+    final ownerUid = await _resolverOwnerUid(cita);
 
-    await _db.runTransaction((tx) async {
+    final codigoFinal = await _db.runTransaction<String?>((tx) async {
+      // Firestore requiere TODAS las lecturas antes de escribir. Leer el
+      // documento de cita también hace idempotente un retry cuyo commit previo
+      // llegó a la nube pero cuya respuesta se perdió en la red.
       final counterSnap = await tx.get(counterRef);
-      int next = 1;
+      final citaPrevia = await tx.get(citaRef);
+      final codigoPrevio = citaPrevia.data()?['codigo_visible'] as String?;
+
+      if (!esCodigoAusente(codigoPrevio)) {
+        final data = _citaToMap(cita, ownerUid: ownerUid)
+          ..['codigo_visible'] = codigoPrevio;
+        _preservarDueno(data, citaPrevia.data());
+        tx.set(citaRef, data, SetOptions(merge: true));
+        return codigoPrevio;
+      }
+
+      var next = 1;
       if (counterSnap.exists) {
-        next = (counterSnap.data()?['nextNumber'] as int?) ?? 1;
+        final valor = counterSnap.data()?['nextNumber'];
+        next = valor is int ? valor : int.tryParse('$valor') ?? 1;
       }
       final nuevo = next + 1;
       final codigo = 'CITA-${next.toString().padLeft(4, '0')}';
 
-      tx.set(counterRef, {'nextNumber': nuevo}, SetOptions(merge: true));
-
-      final ref = _db.collection('citas').doc(cita.id);
-      final data = _citaToMap(cita)..['codigo_visible'] = codigo;
-      // Misma proteccion que en _pushSimple: todas las lecturas de la
-      // transaccion van ANTES de los writes, asi que aca tambien se lee
-      // primero el documento para no pisar su dueno.
-      _preservarDueno(data, (await tx.get(ref)).data());
-      tx.set(ref, data);
+      final data = _citaToMap(cita, ownerUid: ownerUid)
+        ..['codigo_visible'] = codigo;
+      _preservarDueno(data, citaPrevia.data());
+      tx.set(counterRef, {
+        'nextNumber': nuevo,
+        'lastCitaId': cita.id,
+      }, SetOptions(merge: true));
+      tx.set(citaRef, data);
+      return codigo;
     });
 
-    // La nube ya escribio el codigo; el onSnapshot lo bajara y actualizara
-    // local via _onSnapshot. Aqui solo marcamos pendiente de sync resuelto.
+    // El mismo código resuelto por la transacción se sella localmente; no se
+    // depende de que el listener Firestore alcance a procesar el snapshot.
+    if (codigoFinal != null) {
+      await _repo.asignarCodigoVisible(cita.id!, codigoFinal);
+    }
     await _repo.marcarSincronizada(cita.id!);
+    notifyListeners();
+  }
+
+  /// ownerUid identifica quién sube el documento. El vínculo con el cliente
+  /// cuando crea el Admin queda en `correo_cliente`, evitando leer perfiles
+  /// privados de otros usuarios desde la sesión del taller.
+  Future<String?> _resolverOwnerUid(Cita cita) async {
+    return _currentUid();
   }
 
   /// Callback del `onSnapshot` global. Hace upsert en SQLite.
@@ -413,16 +542,26 @@ class SyncService {
         final data = doc.data();
         if (data == null) continue;
 
-        // Ignora documentos de otros usuarios (solo en modo anonimo).
-        // Cuando hay sesion de admin el query ya filtra por taller_id.
+        // El listener por UID y el listener por correo pueden recibir la misma
+        // cita. Se aceptan ambos vínculos para que una cita creada desde el
+        // panel del taller también llegue a Mis Citas.
         if (!SesionAdmin.instance.activa) {
           final ownerUid = data['ownerUid'] as String?;
-          if (ownerUid != _currentUid()) continue;
+          final correoSesion =
+              SesionCliente.instance.correo?.trim().toLowerCase() ?? '';
+          final correoCita = (data['correo_cliente'] as String? ?? '')
+              .trim()
+              .toLowerCase();
+          final esDelUid = ownerUid != null && ownerUid == _currentUid();
+          final esDelCorreo =
+              correoSesion.isNotEmpty && correoCita == correoSesion;
+          if (!esDelUid && !esDelCorreo) continue;
         }
 
         if (change.type == DocumentChangeType.removed) {
           // Firestore no suele borrar (soft delete en app), pero por si acaso:
           await _repo.borrar(doc.id);
+          notifyListeners();
           continue;
         }
 
@@ -449,6 +588,7 @@ class SyncService {
         // a subirlo y no queremos crear un loop push -> snapshot -> push.
         await _repo.fusionarDesdeNube(cita);
         await _repo.marcarSincronizada(doc.id);
+        notifyListeners();
       } catch (e) {
         debugPrint('[SyncService] Error procesando doc ${change.doc.id}: $e');
       }
@@ -565,9 +705,10 @@ class SyncService {
   }
 
   /// Convierte `Cita` a mapa para Firestore.
-  Map<String, Object?> _citaToMap(Cita cita) {
+  Map<String, Object?> _citaToMap(Cita cita, {required String? ownerUid}) {
     final map = cita.toMap();
-    map['ownerUid'] = _currentUid();
+    map['correo_cliente'] = cita.correoCliente.trim().toLowerCase();
+    map['ownerUid'] = ownerUid;
     map['sync_status'] = 'synced';
     return map;
   }
@@ -612,10 +753,16 @@ class SyncService {
     );
   }
 
-  String? _currentUid() => FirebaseAuth.instance.currentUser?.uid;
+  String? _currentUid() {
+    final override = _uidOverride;
+    if (override != null) return override;
+    try {
+      return FirebaseAuth.instance.currentUser?.uid;
+    } on Object catch (error) {
+      debugPrint('[SyncService] Firebase Auth no está listo: $error');
+      return null;
+    }
+  }
 
-  EstadoCita _estadoFromString(String s) => EstadoCita.values.firstWhere(
-    (e) => e.name == s,
-    orElse: () => EstadoCita.pendiente,
-  );
+  EstadoCita _estadoFromString(String s) => EstadoCita.desdeNombre(s);
 }

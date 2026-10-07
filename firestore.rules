@@ -1,0 +1,174 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // El claim `dev` solo debe asignarse desde un entorno confiable usando
+    // Firebase Admin SDK. Nunca se concede desde el cliente Flutter.
+    function isDev() {
+      return signedIn() && request.auth.token.dev == true;
+    }
+
+    function adminPath() {
+      return /databases/$(database)/documents/admins/$(request.auth.uid);
+    }
+
+    function adminOfWorkshop(tallerId) {
+      return signedIn()
+        && tallerId is string
+        && exists(adminPath())
+        && get(adminPath()).data.tallerId == tallerId
+        && get(adminPath()).data.eliminado != true;
+    }
+
+    function canAdminAccessCita(data) {
+      return data.keys().hasAny(['taller_id'])
+        && data.taller_id is string
+        && adminOfWorkshop(data.taller_id);
+    }
+
+    function clientUidOwnsCita(data) {
+      return signedIn()
+        && data.keys().hasAny(['ownerUid'])
+        && data.ownerUid == request.auth.uid;
+    }
+
+    function ownsCita(data) {
+      return signedIn() && (
+        clientUidOwnsCita(data)
+        || (request.auth.token.email is string
+          && data.keys().hasAny(['correo_cliente'])
+          && data.correo_cliente is string
+          && data.correo_cliente.trim().lower()
+              == request.auth.token.email.trim().lower())
+      );
+    }
+
+    function preservesTaller(oldData, newData) {
+      return (oldData.keys().hasAny(['taller_id'])
+          && newData.keys().hasAny(['taller_id'])
+          && oldData.taller_id == newData.taller_id)
+        || (!oldData.keys().hasAny(['taller_id'])
+          && (!newData.keys().hasAny(['taller_id'])
+            || newData.taller_id == null));
+    }
+
+    function clientCanCreateCita(data) {
+      // Se acepta UID o correo autenticado. Si ownerUid está presente, se
+      // impide que el cliente lo asigne a una tercera cuenta.
+      return ownsCita(data)
+        && (!data.keys().hasAny(['ownerUid'])
+          || data.ownerUid == request.auth.uid);
+    }
+
+    function validCita(data) {
+      return data.cliente is string
+        && data.telefono is string
+        && data.correo_cliente is string
+        && data.vehiculo is string
+        && data.marca is string
+        && data.modelo is string
+        && data.anio is int
+        && data.placa is string
+        && data.servicios is string
+        && data.fecha_cita is string
+        && data.estado is string
+        && data.codigo_visible is string
+        && (!data.keys().hasAny(['taller_id'])
+          || data.taller_id == null
+          || data.taller_id is string);
+    }
+
+    function canAccessCita(data) {
+      return canAdminAccessCita(data) || ownsCita(data);
+    }
+
+    function citaPath(citaId) {
+      return /databases/$(database)/documents/citas/$(citaId);
+    }
+
+    function counterTargetsNewCitaCode(citaId) {
+      return citaId is string
+        && existsAfter(citaPath(citaId))
+        && canAccessCita(getAfter(citaPath(citaId)).data)
+        && getAfter(citaPath(citaId)).data.codigo_visible is string
+        && getAfter(citaPath(citaId)).data.codigo_visible.matches('^CITA-[0-9]+$')
+        && (!exists(citaPath(citaId))
+          || !get(citaPath(citaId)).data.keys().hasAny(['codigo_visible'])
+          || get(citaPath(citaId)).data.codigo_visible == 'PENDIENTE');
+    }
+
+    match /citas/{citaId} {
+      allow get, list: if canAccessCita(resource.data);
+
+      allow create: if validCita(request.resource.data)
+        && (canAdminAccessCita(request.resource.data)
+          || clientCanCreateCita(request.resource.data));
+
+      allow update: if validCita(request.resource.data)
+        && ((canAdminAccessCita(resource.data)
+            && canAdminAccessCita(request.resource.data))
+          || (ownsCita(resource.data)
+            && ownsCita(request.resource.data)
+            && ((resource.data.keys().hasAny(['ownerUid'])
+                  && (request.resource.data.ownerUid == resource.data.ownerUid
+                    || request.resource.data.ownerUid == request.auth.uid))
+                || (!resource.data.keys().hasAny(['ownerUid'])
+                  && request.resource.data.ownerUid == request.auth.uid))
+            && preservesTaller(resource.data, request.resource.data)));
+
+      // La app usa tombstones (`eliminado_en`) y no necesita borrar físicamente.
+      allow delete: if false;
+    }
+
+    match /clientes/{clienteUid} {
+      allow get: if signedIn() && request.auth.uid == clienteUid;
+      allow list: if false;
+      allow create, update: if signedIn()
+        && request.auth.uid == clienteUid
+        && request.resource.data.uid == clienteUid;
+      allow delete: if signedIn() && request.auth.uid == clienteUid;
+    }
+
+    // El mapa y el inicio de sesión necesitan leer estos catálogos autenticados.
+    // Solo el usuario con claim DEV puede cambiar talleres o cuentas de Admin.
+    match /talleres/{tallerId} {
+      allow get, list: if signedIn();
+      allow create, update, delete: if isDev();
+    }
+
+    match /admins/{adminUid} {
+      allow get, list: if signedIn();
+      allow create, update, delete: if isDev();
+    }
+
+    // Contador transaccional usado para asignar codigo_visible. Solo permite
+    // crear su valor inicial y avanzar de uno en uno; nunca decrementar ni
+    // alterar otros campos.
+    match /counters/{counterId} {
+      allow get: if signedIn() && counterId == 'citas';
+      allow list: if false;
+      allow create: if signedIn()
+        && counterId == 'citas'
+        && request.resource.data.keys().hasOnly(['nextNumber', 'lastCitaId'])
+        && request.resource.data.nextNumber is int
+        && request.resource.data.nextNumber == 2
+        && counterTargetsNewCitaCode(request.resource.data.lastCitaId);
+      allow update: if signedIn()
+        && counterId == 'citas'
+        && request.resource.data.keys().hasOnly(['nextNumber', 'lastCitaId'])
+        && resource.data.nextNumber is int
+        && request.resource.data.nextNumber == resource.data.nextNumber + 1
+        && counterTargetsNewCitaCode(request.resource.data.lastCitaId);
+      allow delete: if false;
+    }
+
+    // Todo lo que no esté definido arriba queda cerrado.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

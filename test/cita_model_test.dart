@@ -41,6 +41,34 @@ void main() {
       expect(recuperada.estado, cita.estado);
     });
 
+    test('lee campos de Firestore además de correo del cliente', () {
+      final documentoFirestore = cita.toMap()..['ownerUid'] = 'uid-del-cliente';
+
+      final recuperada = Cita.fromMap(documentoFirestore);
+
+      expect(recuperada.correoCliente, 'ana@example.com');
+      expect(recuperada.id, cita.id);
+    });
+
+    test('recupera una fila legacy con columnas nuevas ausentes o nulas', () {
+      final legacy = Cita.fromMap(<String, Object?>{
+        'id': 'legacy-id',
+        'cliente': null,
+        'telefono': null,
+        'vehiculo': null,
+        'fecha_cita': '2026-11-03T14:00:00.000Z',
+        'estado': null,
+      });
+
+      expect(legacy.id, 'legacy-id');
+      expect(legacy.cliente, isEmpty);
+      expect(legacy.correoCliente, isEmpty);
+      expect(legacy.vehiculo, isEmpty);
+      expect(legacy.tallerId, isNull);
+      expect(legacy.estado, EstadoCita.pendiente);
+      expect(legacy.codigoVisible, 'PENDIENTE');
+    });
+
     test(
       'la fecha se escribe SIEMPRE en UTC con la Z, nunca en hora local',
       () {
@@ -66,6 +94,11 @@ void main() {
 
     test('un estado desconocido en la base cae en pendiente', () {
       expect(EstadoCita.desdeNombre('inventado'), EstadoCita.pendiente);
+    });
+
+    test('recupera también etiquetas antiguas de estado recibidas de la nube', () {
+      expect(EstadoCita.desdeNombre('Aceptada'), EstadoCita.aceptada);
+      expect(EstadoCita.desdeNombre('RECHAZADA'), EstadoCita.rechazada);
     });
 
     test('la etiqueta coincide con la llave de kColorPorEstado de Leandy', () {

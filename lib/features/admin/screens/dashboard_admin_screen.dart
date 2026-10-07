@@ -126,6 +126,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   /// `shared/theme`, no un cuarto `switch`.
   Color _colorDeEstado(EstadoCita estado) => switch (estado) {
     EstadoCita.pendiente => AppColors.pendientes,
+    EstadoCita.aceptada => AppColors.greenAccent,
+    EstadoCita.rechazada => AppColors.atrasadas,
     EstadoCita.esperandoPieza => AppColors.esperandoPieza,
     EstadoCita.enProceso => AppColors.enProceso,
     EstadoCita.completado => AppColors.completado,
@@ -1043,7 +1045,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const SizedBox(width: 9),
             Expanded(
               child: Text(
-                'Cita encontrada · #${cita.id ?? 0}',
+                'Cita encontrada · ${cita.identificadorParaPantalla}',
                 style: const TextStyle(
                   color: AppColors.headerNavy,
                   fontSize: 17,

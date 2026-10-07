@@ -56,7 +56,7 @@ class _TalleresAfiliadosScreenState extends State<TalleresAfiliadosScreen> {
             ),
           ],
         ),
-         actions: [
+        actions: [
           IconButton(
             tooltip: 'Sincronizar',
             icon: const Icon(Icons.sync),
@@ -86,10 +86,10 @@ class _TalleresAfiliadosScreenState extends State<TalleresAfiliadosScreen> {
             return (taller.nombre.toLowerCase().contains(query) ||
                 taller.direccion.toLowerCase().contains(query));
           }).toList();
-                     final activos = _controller.talleres
-                       .where((taller) => taller.activo)
-                       .length;
-                     final inactivos = _controller.talleres.length - activos;
+          final activos = _controller.talleres
+              .where((taller) => taller.activo)
+              .length;
+          final inactivos = _controller.talleres.length - activos;
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(20),
@@ -207,10 +207,7 @@ class _TalleresAfiliadosScreenState extends State<TalleresAfiliadosScreen> {
         children: [
           Text(
             titulo,
-            style: TextStyle(
-              fontSize: 12,
-              color: color ?? AppColors.textGray,
-            ),
+            style: TextStyle(fontSize: 12, color: color ?? AppColors.textGray),
           ),
           const SizedBox(height: 6),
           Text(
@@ -374,7 +371,7 @@ class _TalleresAfiliadosScreenState extends State<TalleresAfiliadosScreen> {
                   children: [
                     if (taller.telefono.isNotEmpty) _dato(taller.telefono),
                     _dato('${taller.latitud}, ${taller.longitud}'),
-                    if (taller.id != null) _dato('ID #${taller.id}'),
+                    _dato(taller.codigoVisible),
                   ],
                 ),
               ],
@@ -531,8 +528,9 @@ class _TalleresAfiliadosScreenState extends State<TalleresAfiliadosScreen> {
                 ? 'Sincronización completa.'
                 : _controller.error!,
           ),
-          backgroundColor:
-              _controller.error == null ? Colors.green.shade800 : Colors.red.shade700,
+          backgroundColor: _controller.error == null
+              ? Colors.green.shade800
+              : Colors.red.shade700,
         ),
       );
     } finally {
@@ -613,7 +611,7 @@ class _TalleresAfiliadosScreenState extends State<TalleresAfiliadosScreen> {
                                 Text(
                                   taller == null
                                       ? 'NUEVO AFILIADO'
-                                      : 'TALLER #${taller.id}',
+                                      : taller.codigoVisible,
                                   style: const TextStyle(
                                     color: AppColors.orangePrimary,
                                     fontSize: 11,

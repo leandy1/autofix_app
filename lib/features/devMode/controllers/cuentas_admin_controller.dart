@@ -15,6 +15,24 @@ class CuentasAdminController extends ChangeNotifier {
   List<Taller> _talleres = [];
   List<Map<String, dynamic>> _admins = [];
 
+  /// Rules de producción solo permiten mutaciones DEV con custom claim.
+  /// El password local de la pantalla DEV no constituye una identidad Auth.
+  Future<bool> _exigirClaimDev() async {
+    try {
+      final usuario = FirebaseAuth.instance.currentUser;
+      if (usuario != null) {
+        final token = await usuario.getIdTokenResult();
+        if (token.claims?['dev'] == true) return true;
+      }
+    } on Object catch (error) {
+      debugPrint('[CuentasAdmin] No se pudo verificar el claim DEV: $error');
+    }
+    _error = 'La sesión Firebase actual no tiene el permiso DEV para modificar cuentas.';
+    _cargando = false;
+    notifyListeners();
+    return false;
+  }
+
   bool get cargando => _cargando;
   String? get error => _error;
   List<Taller> get talleres => _talleres;
@@ -64,8 +82,14 @@ class CuentasAdminController extends ChangeNotifier {
         'email': data['email'] as String? ?? '',
         'tallerId': data['tallerId'] as String? ?? '',
         'tallerNombre': data['tallerNombre'] as String?,
-        'creado_en': (data['creado_en'] as Timestamp?)?.toDate().toUtc().toIso8601String(),
-        'actualizado_en': (data['actualizado_en'] as Timestamp?)?.toDate().toUtc().toIso8601String(),
+        'creado_en': (data['creado_en'] as Timestamp?)
+            ?.toDate()
+            .toUtc()
+            .toIso8601String(),
+        'actualizado_en': (data['actualizado_en'] as Timestamp?)
+            ?.toDate()
+            .toUtc()
+            .toIso8601String(),
         'eliminado': (data['eliminado'] as bool?) ?? false,
         'authExists': true,
       };
@@ -81,6 +105,8 @@ class CuentasAdminController extends ChangeNotifier {
     _error = null;
     notifyListeners();
 
+    if (!await _exigirClaimDev()) return false;
+
     final normalizado = email.trim().toLowerCase();
 
     Future<DocumentSnapshot<Map<String, dynamic>>?> buscarEnFirestore(
@@ -95,16 +121,16 @@ class CuentasAdminController extends ChangeNotifier {
     }
 
     try {
-      DocumentSnapshot<Map<String, dynamic>>? admin =
-          await buscarEnFirestore(normalizado);
+      DocumentSnapshot<Map<String, dynamic>>? admin = await buscarEnFirestore(
+        normalizado,
+      );
 
       if (admin == null && email != normalizado) {
         admin = await buscarEnFirestore(email);
       }
 
       if (admin != null) {
-        final eliminado =
-            (admin.data()?['eliminado'] as bool?) ?? false;
+        final eliminado = (admin.data()?['eliminado'] as bool?) ?? false;
 
         if (eliminado) {
           await admin.reference.update({
@@ -150,15 +176,15 @@ class CuentasAdminController extends ChangeNotifier {
       return true;
     } on FirebaseAuthException catch (e) {
       if (e.code == 'email-already-in-use') {
-        DocumentSnapshot<Map<String, dynamic>>? admin =
-            await buscarEnFirestore(normalizado);
+        DocumentSnapshot<Map<String, dynamic>>? admin = await buscarEnFirestore(
+          normalizado,
+        );
         if (admin == null && email != normalizado) {
           admin = await buscarEnFirestore(email);
         }
 
         if (admin != null) {
-          final eliminado =
-              (admin.data()?['eliminado'] as bool?) ?? false;
+          final eliminado = (admin.data()?['eliminado'] as bool?) ?? false;
           if (eliminado) {
             await admin.reference.update({
               'eliminado': false,
@@ -196,6 +222,7 @@ class CuentasAdminController extends ChangeNotifier {
     _cargando = true;
     _error = null;
     notifyListeners();
+    if (!await _exigirClaimDev()) return false;
     try {
       await _db.collection('admins').doc(uid).update({
         'tallerId': nuevoTallerId,
@@ -221,6 +248,7 @@ class CuentasAdminController extends ChangeNotifier {
     _cargando = true;
     _error = null;
     notifyListeners();
+    if (!await _exigirClaimDev()) return false;
     try {
       await _db.collection('admins').doc(uid).update({
         'eliminado': true,
@@ -241,6 +269,7 @@ class CuentasAdminController extends ChangeNotifier {
     _cargando = true;
     _error = null;
     notifyListeners();
+    if (!await _exigirClaimDev()) return false;
     try {
       await _db.collection('admins').doc(uid).update({
         'eliminado': false,

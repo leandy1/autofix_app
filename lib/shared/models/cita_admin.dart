@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:autofix/features/citas/models/codigo_de_cita.dart';
 
 enum EstadoCitaAdmin {
   atrasada,
   pendiente,
+  aceptada,
+  rechazada,
   esperandoPieza,
   enProceso,
   completada,
@@ -22,6 +25,8 @@ class CitaAdmin {
     required this.hora,
     required this.estado,
     required this.descripcion,
+    this.codigoVisible = codigoCitaTemporal,
+    this.correoCliente = '',
     this.tecnico,
     this.total = 0.0,
     this.tallerId,
@@ -40,8 +45,12 @@ class CitaAdmin {
   ///
   /// Ver `lib/features/citas/models/cita.dart`.
   final String? id;
+
+  /// Identificador amigable para mostrar; nunca reemplazarlo por [id].
+  final String codigoVisible;
   final String cliente;
   final String telefono;
+  final String correoCliente;
   final String marca;
   final String modelo;
   final String anio;
