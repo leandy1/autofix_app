@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
@@ -8,6 +10,10 @@ import 'package:autofix/features/admin/widgets/solicitudes_citas_admin_section.d
 import 'package:autofix/features/auth/screens/login_screen.dart';
 import 'package:autofix/features/citas/models/cita.dart' as cita_data;
 import 'package:autofix/features/citas/presentation/citas_controller.dart';
+import 'package:autofix/features/configuracion/data/tecnico_repository.dart';
+import 'package:autofix/features/configuracion/data/tipo_servicio_repository.dart';
+import 'package:autofix/features/configuracion/models/tecnico.dart';
+import 'package:autofix/features/configuracion/models/tipo_servicio.dart';
 import 'package:autofix/features/sync/sync_service.dart';
 import 'package:autofix/shared/models/cita_admin.dart';
 import 'package:autofix/shared/models/demo_admin_data.dart';
@@ -31,6 +37,8 @@ const Map<String, Color> kColorPorEstado = {
 class CitaAdminCard extends StatelessWidget {
   const CitaAdminCard({
     required this.cita,
+    this.serviciosDisponibles = const <TipoServicio>[],
+    this.tecnicosDisponibles = const <Tecnico>[],
     this.onEdited,
     this.onDeleted,
     this.onEstadoCambiado,
@@ -38,6 +46,8 @@ class CitaAdminCard extends StatelessWidget {
   });
 
   final CitaAdmin cita;
+  final List<TipoServicio> serviciosDisponibles;
+  final List<Tecnico> tecnicosDisponibles;
   final ValueChanged<CitaAdmin>? onEdited;
 
   /// Borrado logico: recibe el UUID de la cita (`String` desde la v7), no un
@@ -358,6 +368,8 @@ class CitaAdminCard extends StatelessWidget {
       context: context,
       builder: (context) => _EditarCitaDialog(
         cita: cita,
+        serviciosDisponibles: serviciosDisponibles,
+        tecnicosDisponibles: tecnicosDisponibles,
         onSaved: (citaActualizada) {
           onEdited?.call(citaActualizada);
         },
@@ -844,10 +856,17 @@ class CitaAdminCard extends StatelessWidget {
 }
 
 class _EditarCitaDialog extends StatefulWidget {
-  const _EditarCitaDialog({required this.cita, required this.onSaved});
+  const _EditarCitaDialog({
+    required this.cita,
+    required this.onSaved,
+    required this.serviciosDisponibles,
+    required this.tecnicosDisponibles,
+  });
 
   final CitaAdmin cita;
   final ValueChanged<CitaAdmin> onSaved;
+  final List<TipoServicio> serviciosDisponibles;
+  final List<Tecnico> tecnicosDisponibles;
 
   @override
   State<_EditarCitaDialog> createState() => _EditarCitaDialogState();
@@ -885,7 +904,10 @@ class _EditarCitaDialogState extends State<_EditarCitaDialog> {
     _marcaSeleccionada = demoMarcasVehiculo.contains(widget.cita.marca)
         ? widget.cita.marca
         : demoMarcasVehiculo.first;
-    _tecnicoSeleccionado = demoTecnicosAdmin.contains(widget.cita.tecnico)
+    _tecnicoSeleccionado =
+        widget.tecnicosDisponibles.any(
+          (tecnico) => tecnico.nombre == widget.cita.tecnico,
+        )
         ? widget.cita.tecnico
         : null;
     _estadoSeleccionado = switch (widget.cita.estado) {
@@ -1101,31 +1123,39 @@ class _EditarCitaDialogState extends State<_EditarCitaDialog> {
                                 ),
                               ),
                             ),
-                            ...demoServiciosAdmin.map(
-                              (servicio) => CheckboxListTile(
+                            if (widget.serviciosDisponibles.isEmpty)
+                              const ListTile(
                                 dense: true,
-                                controlAffinity:
-                                    ListTileControlAffinity.leading,
-                                value: _serviciosMarcados.contains(
-                                  servicio.nombre,
-                                ),
-                                onChanged: (checked) {
-                                  setState(() {
-                                    if (checked == true) {
-                                      _serviciosMarcados.add(servicio.nombre);
-                                    } else {
-                                      _serviciosMarcados.remove(
-                                        servicio.nombre,
-                                      );
-                                    }
-                                  });
-                                },
                                 title: Text(
-                                  '${servicio.nombre} · ${servicio.precio}',
-                                  style: const TextStyle(fontSize: 13),
+                                  'No hay servicios activos configurados.',
+                                ),
+                              )
+                            else
+                              ...widget.serviciosDisponibles.map(
+                                (servicio) => CheckboxListTile(
+                                  dense: true,
+                                  controlAffinity:
+                                      ListTileControlAffinity.leading,
+                                  value: _serviciosMarcados.contains(
+                                    servicio.nombre,
+                                  ),
+                                  onChanged: (checked) {
+                                    setState(() {
+                                      if (checked == true) {
+                                        _serviciosMarcados.add(servicio.nombre);
+                                      } else {
+                                        _serviciosMarcados.remove(
+                                          servicio.nombre,
+                                        );
+                                      }
+                                    });
+                                  },
+                                  title: Text(
+                                    '${servicio.nombre} · RD\$ ${servicio.precio}',
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
                                 ),
                               ),
-                            ),
                           ],
                         ),
                       ),
@@ -1143,12 +1173,12 @@ class _EditarCitaDialogState extends State<_EditarCitaDialog> {
                       DropdownButtonFormField<String>(
                         initialValue: _tecnicoSeleccionado,
                         decoration: _decoracionCampo('Técnico'),
-                        items: demoTecnicosAdmin
+                        items: widget.tecnicosDisponibles
                             .map(
-                              (t) => DropdownMenuItem(
-                                value: t,
+                              (tecnico) => DropdownMenuItem(
+                                value: tecnico.nombre,
                                 child: Text(
-                                  t,
+                                  tecnico.nombre,
                                   style: const TextStyle(fontSize: 13),
                                 ),
                               ),
@@ -1288,7 +1318,7 @@ class _EditarCitaDialogState extends State<_EditarCitaDialog> {
                       _ => EstadoCitaAdmin.pendiente,
                     },
                     descripcion: _descripcionController.text.trim(),
-                    tecnico: _tecnicoSeleccionado,
+                    tecnico: _tecnicoSeleccionado ?? widget.cita.tecnico,
                     total: widget.cita.total,
                     tallerId: widget.cita.tallerId,
                     creadoEn: widget.cita.creadoEn,
@@ -1461,19 +1491,68 @@ class _CitasScreenState extends State<CitasScreen> {
   String? _tecnicoFiltro;
   bool _buscarEnTodasLasFechas = false;
   final CitasController _citasController = CitasController();
+  List<TipoServicio> _serviciosDisponibles = const <TipoServicio>[];
+  List<Tecnico> _tecnicosDisponibles = const <Tecnico>[];
+  bool _cargandoCatalogos = true;
 
   @override
   void initState() {
     super.initState();
     _busquedaController = TextEditingController();
     _citasController.cargar();
+    _cargarCatalogos();
+    SyncService.instance.addListener(_alCambiarCatalogos);
   }
 
   @override
   void dispose() {
     _busquedaController.dispose();
     _citasController.dispose();
+    SyncService.instance.removeListener(_alCambiarCatalogos);
     super.dispose();
+  }
+
+  Future<void> _cargarCatalogos() async {
+    final tallerId = SesionAdmin.instance.tallerId;
+    if (mounted) setState(() => _cargandoCatalogos = true);
+    if (tallerId == null || tallerId.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _serviciosDisponibles = const <TipoServicio>[];
+        _tecnicosDisponibles = const <Tecnico>[];
+        _cargandoCatalogos = false;
+      });
+      return;
+    }
+
+    try {
+      final resultados = await Future.wait(<Future<Object?>>[
+        TipoServicioRepository.instance.obtenerTodasPorTaller(tallerId),
+        TecnicoRepository.instance.obtenerActivosPorTaller(tallerId),
+      ]);
+      if (!mounted || SesionAdmin.instance.tallerId != tallerId) return;
+      setState(() {
+        _serviciosDisponibles = (resultados[0] as List<TipoServicio>)
+            .where((servicio) => servicio.activo)
+            .toList(growable: false);
+        _tecnicosDisponibles = resultados[1] as List<Tecnico>;
+        _cargandoCatalogos = false;
+        if (_tecnicoFiltro != null &&
+            !_tecnicosDisponibles.any(
+              (tecnico) => tecnico.nombre == _tecnicoFiltro,
+            )) {
+          _tecnicoFiltro = null;
+        }
+      });
+    } on Object catch (error) {
+      if (!mounted) return;
+      setState(() => _cargandoCatalogos = false);
+      debugPrint('[CitasScreen] No se pudieron cargar los catálogos: $error');
+    }
+  }
+
+  void _alCambiarCatalogos() {
+    if (mounted) unawaited(_cargarCatalogos());
   }
 
   List<cita_data.Cita> _obtenerCitasFiltradas(String categoria) {
@@ -2258,6 +2337,10 @@ class _CitasScreenState extends State<CitasScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
+                  if (_cargandoCatalogos) ...[
+                    const LinearProgressIndicator(minHeight: 2),
+                    const SizedBox(height: 10),
+                  ],
                   DropdownButtonFormField<String>(
                     initialValue: _tecnicoFiltro ?? 'Todos',
                     decoration: InputDecoration(
@@ -2295,10 +2378,13 @@ class _CitasScreenState extends State<CitasScreen> {
                           style: TextStyle(fontSize: 13),
                         ),
                       ),
-                      ...demoTecnicosAdmin.map(
-                        (t) => DropdownMenuItem(
-                          value: t,
-                          child: Text(t, style: const TextStyle(fontSize: 13)),
+                      ..._tecnicosDisponibles.map(
+                        (tecnico) => DropdownMenuItem(
+                          value: tecnico.nombre,
+                          child: Text(
+                            tecnico.nombre,
+                            style: const TextStyle(fontSize: 13),
+                          ),
                         ),
                       ),
                     ],
@@ -2430,6 +2516,8 @@ class _CitasScreenState extends State<CitasScreen> {
                       for (final cita in citas)
                         CitaAdminCard(
                           cita: _citaParaTarjeta(cita),
+                          serviciosDisponibles: _serviciosDisponibles,
+                          tecnicosDisponibles: _tecnicosDisponibles,
                           onEdited: (citaActualizada) {
                             _guardarEdicion(citaActualizada);
                           },
@@ -2477,11 +2565,15 @@ class _CitasScreenState extends State<CitasScreen> {
   }
 
   Future<void> _abrirFormularioNuevaCita() async {
+    await _cargarCatalogos();
+    if (!mounted) return;
     await showDialog<void>(
       context: context,
       useRootNavigator: true,
       builder: (context) {
         return _CrearCitaDialog(
+          serviciosDisponibles: _serviciosDisponibles,
+          tecnicosDisponibles: _tecnicosDisponibles,
           onSaved: (cita) async {
             final guardada = await _citasController.guardar(cita);
             if (!mounted) return guardada;
@@ -2497,9 +2589,15 @@ class _CitasScreenState extends State<CitasScreen> {
 }
 
 class _CrearCitaDialog extends StatefulWidget {
-  const _CrearCitaDialog({required this.onSaved});
+  const _CrearCitaDialog({
+    required this.onSaved,
+    required this.serviciosDisponibles,
+    required this.tecnicosDisponibles,
+  });
 
   final Future<bool> Function(cita_data.Cita cita) onSaved;
+  final List<TipoServicio> serviciosDisponibles;
+  final List<Tecnico> tecnicosDisponibles;
 
   @override
   State<_CrearCitaDialog> createState() => _CrearCitaDialogState();
@@ -2523,6 +2621,9 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
   final _formKey = GlobalKey<FormState>();
   bool _guardando = false;
   bool _intentoGuardar = false;
+
+  int get _totalEstimado =>
+      TipoServicio.totalDe(widget.serviciosDisponibles, _serviciosMarcados);
 
   @override
   void initState() {
@@ -2857,31 +2958,41 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                                   ),
                                 ),
                               ),
-                              ...demoServiciosAdmin.map(
-                                (servicio) => CheckboxListTile(
+                              if (widget.serviciosDisponibles.isEmpty)
+                                const ListTile(
                                   dense: true,
-                                  controlAffinity:
-                                      ListTileControlAffinity.leading,
-                                  value: _serviciosMarcados.contains(
-                                    servicio.nombre,
-                                  ),
-                                  onChanged: (checked) {
-                                    setState(() {
-                                      if (checked == true) {
-                                        _serviciosMarcados.add(servicio.nombre);
-                                      } else {
-                                        _serviciosMarcados.remove(
-                                          servicio.nombre,
-                                        );
-                                      }
-                                    });
-                                  },
                                   title: Text(
-                                    '${servicio.nombre} · ${servicio.precio}',
-                                    style: const TextStyle(fontSize: 13),
+                                    'No hay servicios activos configurados.',
+                                  ),
+                                )
+                              else
+                                ...widget.serviciosDisponibles.map(
+                                  (servicio) => CheckboxListTile(
+                                    dense: true,
+                                    controlAffinity:
+                                        ListTileControlAffinity.leading,
+                                    value: _serviciosMarcados.contains(
+                                      servicio.nombre,
+                                    ),
+                                    onChanged: (checked) {
+                                      setState(() {
+                                        if (checked == true) {
+                                          _serviciosMarcados.add(
+                                            servicio.nombre,
+                                          );
+                                        } else {
+                                          _serviciosMarcados.remove(
+                                            servicio.nombre,
+                                          );
+                                        }
+                                      });
+                                    },
+                                    title: Text(
+                                      '${servicio.nombre} · RD\$ ${servicio.precio}',
+                                      style: const TextStyle(fontSize: 13),
+                                    ),
                                   ),
                                 ),
-                              ),
                             ],
                           ),
                         ),
@@ -2895,30 +3006,60 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                             ),
                           ),
                         ],
+                        if (_serviciosMarcados.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: Text(
+                              'Total estimado: RD\$ $_totalEstimado',
+                              style: const TextStyle(
+                                color: AppColors.textDark,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 16),
                         _tituloSeccionModal('ASIGNACIÓN'),
+                        if (widget.tecnicosDisponibles.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.only(bottom: 8),
+                            child: Text(
+                              'No hay técnicos activos; la cita quedará sin asignar.',
+                              style: TextStyle(
+                                color: AppColors.textGray,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
                         DropdownButtonFormField<String>(
                           initialValue: _tecnicoSeleccionado,
                           decoration: _decoracionCampo('Técnico'),
                           validator: (valor) =>
-                              valor == null ? 'Selecciona un técnico.' : null,
+                              widget.tecnicosDisponibles.isNotEmpty &&
+                                  valor == null
+                              ? 'Selecciona un técnico.'
+                              : null,
                           hint: const Text(
                             'Seleccionar técnico',
                             style: TextStyle(fontSize: 13),
                           ),
-                          items: demoTecnicosAdmin
+                          items: widget.tecnicosDisponibles
                               .map(
-                                (t) => DropdownMenuItem(
-                                  value: t,
+                                (tecnico) => DropdownMenuItem(
+                                  value: tecnico.nombre,
                                   child: Text(
-                                    t,
+                                    tecnico.nombre,
                                     style: const TextStyle(fontSize: 13),
                                   ),
                                 ),
                               )
                               .toList(),
-                          onChanged: (valor) =>
-                              setState(() => _tecnicoSeleccionado = valor),
+                          onChanged: widget.tecnicosDisponibles.isEmpty
+                              ? null
+                              : (valor) => setState(
+                                  () => _tecnicoSeleccionado = valor,
+                                ),
                         ),
                         const SizedBox(height: 10),
                         Row(
@@ -3107,7 +3248,7 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                               estado: estado,
                               descripcion: _descripcionController.text.trim(),
                               tecnico: _tecnicoSeleccionado ?? '',
-                              total: 0,
+                              total: _totalEstimado,
                             );
 
                             setState(() => _guardando = true);

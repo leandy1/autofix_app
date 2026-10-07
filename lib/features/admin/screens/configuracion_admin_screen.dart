@@ -1,27 +1,25 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import 'package:autofix/core/auth/sesion_admin.dart';
 import 'package:autofix/core/auth/credenciales_seguras.dart';
+import 'package:autofix/core/auth/sesion_admin.dart';
 import 'package:autofix/core/data/limpieza_local.dart';
 import 'package:autofix/core/database/semilla_inicial.dart';
+import 'package:autofix/features/admin/screens/citas_admin_screen.dart';
+import 'package:autofix/features/admin/screens/dashboard_admin_screen.dart';
+import 'package:autofix/features/admin/screens/editar_perfil_admin_screen.dart';
+import 'package:autofix/features/auth/screens/login_screen.dart';
+import 'package:autofix/features/configuracion/models/grupo_servicio.dart';
+import 'package:autofix/features/configuracion/models/marca.dart';
+import 'package:autofix/features/configuracion/models/tecnico.dart';
+import 'package:autofix/features/configuracion/models/tipo_servicio.dart';
 import 'package:autofix/features/configuracion/presentation/configuracion_controller.dart';
 import 'package:autofix/features/sync/sync_service.dart';
-import 'package:autofix/shared/models/demo_admin_data.dart';
 import 'package:autofix/shared/theme/app_colors.dart';
 
-import 'dashboard_admin_screen.dart';
-import 'citas_admin_screen.dart';
-import 'editar_perfil_admin_screen.dart';
-
-import 'package:autofix/features/auth/screens/login_screen.dart';
-
 class ConfiguracionScreen extends StatefulWidget {
-  /// ID del taller al que pertenece el administrador.
-  ///
-  /// Se inyecta desde la navegación (viene del LoginController/perfil de admin).
-  /// En la rama actual (sin login real) se usa el primer taller de la semilla
-  /// como valor por defecto temporal.
   final String? tallerId;
 
   const ConfiguracionScreen({super.key, this.tallerId});
@@ -31,113 +29,54 @@ class ConfiguracionScreen extends StatefulWidget {
 }
 
 class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
-  // Un solo controller para los tres catalogos que ya escriben en SQLite.
-  // Tecnicos, Tipos de Servicio y Estados se leen y se escriben por aca; Marcas y
-  // Grupos siguen leyendo `demo_admin_data.dart` (ver la nota de PAUSADO mas
-  // abajo). La pantalla no toca un repositorio nunca.
-
   late final ConfiguracionController _cfg = ConfiguracionController(
     tallerId: widget.tallerId ?? SemillaInicial.talleres.first.id,
   );
 
-  // Controladores solo para los campos de texto. Los de Tecnico, Tipo de
-  // Servicio y Estado ya tienen boton conectado; los de Marca y Grupo todavia no.
-  final TextEditingController _nombreServicioController =
-      TextEditingController();
-  final TextEditingController _precioServicioController =
-      TextEditingController();
-  final TextEditingController _tecnicoController = TextEditingController();
-  final TextEditingController _marcaController = TextEditingController();
-  final TextEditingController _grupoController = TextEditingController();
-
-  // Solo para la demo visual del acordeón "Grupos de Servicios".
-  bool _grupoDemoExpandido = true;
-
   @override
   void initState() {
     super.initState();
-    // Sin `await`: la pantalla aparece de inmediato y el `ListenableBuilder`
-    // muestra el estado que haya cuando terminen las lecturas. Una base local
-    // tarda milisegundos y no amerita una pantalla de carga propia.
+    SyncService.instance.addListener(_alCambiarSync);
     _cfg.cargar();
   }
 
   @override
   void dispose() {
+    SyncService.instance.removeListener(_alCambiarSync);
     _cfg.dispose();
-    _nombreServicioController.dispose();
-    _precioServicioController.dispose();
-    _tecnicoController.dispose();
-    _marcaController.dispose();
-    _grupoController.dispose();
     super.dispose();
+  }
+
+  void _alCambiarSync() {
+    if (mounted) unawaited(_cfg.cargar(mostrarCarga: false));
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: _buildAppBar(),
-      drawer: _buildDrawer(context),
-      // `ListenableBuilder` en vez de `setState`: el `setState` de esta pantalla
-      // es para el acordeon de Grupos (que es estado puramente visual). Los datos
-      // los decide el controller, y el solo avisa cuando hay que repintar. Asi el
-      // estado de red de la base no se mezcla con el estado del diseno.
-      body: ListenableBuilder(
-        listenable: _cfg,
-        builder: (context, _) => SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Configuración del Sistema',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textDark,
-                ),
-              ),
-              const SizedBox(height: 16),
-              _buildTiposDeServicioCard(),
-              const SizedBox(height: 16),
-              _buildListaSimpleCard(
-                titulo: 'Técnicos',
-                hint: 'Ej: Juan Pérez',
-                controller: _tecnicoController,
-                items: _cfg.tecnicos
-                    .map((t) => (nombre: t.nombre, id: t.id))
-                    .toList(),
-                onAgregar: _agregarTecnico,
-                onEliminar: _cfg.eliminarTecnico,
-              ),
-              const SizedBox(height: 16),
-              // v7: Marcas paso de `demoMarcasConfiguracion` (const en
-              // `demo_admin_data.dart`) a filas de la tabla `marcas`. El punto 6
-              // del encargo define que la fuente es esta base. El `onAgregar` y el
-              // `onEliminar` ya no son no-op: el boton esta cableado.
-              _buildListaSimpleCard(
-                titulo: 'Marcas de Vehículo',
-                hint: 'Ej: Nissan',
-                controller: _marcaController,
-                items: _cfg.marcas
-                    .map((m) => (nombre: m.nombre, id: m.id))
-                    .toList(),
-                onAgregar: _agregarMarca,
-                onEliminar: _cfg.eliminarMarca,
-              ),
-              const SizedBox(height: 16),
-              _buildGruposDeServiciosCard(),
-            ],
-          ),
+    return DefaultTabController(
+      length: 3,
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: _buildAppBar(),
+        drawer: _buildDrawer(context),
+        body: ListenableBuilder(
+          listenable: _cfg,
+          builder: (context, _) {
+            if (_cfg.cargando) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            return TabBarView(
+              children: <Widget>[
+                _buildServiciosTab(),
+                _buildTecnicosTab(),
+                _buildCatalogosTab(),
+              ],
+            );
+          },
         ),
       ),
     );
   }
-
-  // ---------------------------------------------------------------------
-  // AppBar + Drawer
-  // ---------------------------------------------------------------------
 
   PreferredSizeWidget _buildAppBar() {
     final taller = SesionAdmin.instance.tallerNombre ?? 'SISTEMA DE GESTIÓN';
@@ -193,6 +132,17 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
           ),
         ),
       ],
+      bottom: const TabBar(
+        indicatorColor: AppColors.orangePrimary,
+        indicatorWeight: 3,
+        labelColor: Colors.white,
+        unselectedLabelColor: Colors.white60,
+        tabs: [
+          Tab(icon: Icon(Icons.build_circle_outlined), text: 'Servicios'),
+          Tab(icon: Icon(Icons.engineering_outlined), text: 'Técnicos'),
+          Tab(icon: Icon(Icons.category_outlined), text: 'Catálogos'),
+        ],
+      ),
     );
   }
 
@@ -247,7 +197,6 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
             _drawerItem(
               icon: Icons.grid_view_rounded,
               label: 'Dashboard',
-              selected: false,
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const DashboardScreen()),
               ),
@@ -255,7 +204,6 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
             _drawerItem(
               icon: Icons.calendar_today_outlined,
               label: 'Citas',
-              selected: false,
               onTap: () => Navigator.of(context)
                   .push(MaterialPageRoute(builder: (_) => const CitasScreen())),
             ),
@@ -267,7 +215,6 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
             _drawerItem(
               icon: Icons.manage_accounts_outlined,
               label: 'Editar Perfil',
-              selected: false,
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (_) => const EditarPerfilAdminScreen(),
@@ -278,33 +225,7 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 20),
               child: TextButton.icon(
-                onPressed: () async {
-                  // `await` porque cerrar sesion ahora tambien borra la caché
-                  // local de sesion: sin este orden el proximo arranque entraria
-                  // solo al Dashboard y pareceria que el logout no sirvio.
-                  //
-                  // ANTES de eso va la decision de limpieza local (reglas 1 y
-                  // 2 de `LimpiezaLocal`): lee el keystore y purga las citas y
-                  // el perfil locales si el usuario NO pidio recordar. Va
-                  // primero porque despues `CredencialesSeguras.borrar()`
-                  // se lleva la unica evidencia del recordamiento, y porque el
-                  // ultimo push necesita la sesion de Auth todavia abierta.
-                  await LimpiezaLocal.alCerrarSesion();
-                  await SesionAdmin.instance.cerrar();
-                  await CredencialesSeguras.borrar();
-                  await SyncService.instance.stop();
-                  try {
-                    await FirebaseAuth.instance.signOut();
-                    await FirebaseAuth.instance.signInAnonymously();
-                    await SyncService.instance.start();
-                  } catch (_) {}
-                  if (context.mounted) {
-                    Navigator.of(context).pushAndRemoveUntil(
-                      MaterialPageRoute(builder: (_) => const LoginScreen()),
-                      (route) => false,
-                    );
-                  }
-                },
+                onPressed: _cerrarSesion,
                 icon: const Icon(
                   Icons.logout,
                   size: 18,
@@ -322,12 +243,27 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
     );
   }
 
-  /// Usa Material (no Container) para que el ListTile no lance el warning
-  /// de "background color or ink splashes may be invisible".
+  Future<void> _cerrarSesion() async {
+    await LimpiezaLocal.alCerrarSesion();
+    await SesionAdmin.instance.cerrar();
+    await CredencialesSeguras.borrar();
+    await SyncService.instance.stop();
+    try {
+      await FirebaseAuth.instance.signOut();
+      await FirebaseAuth.instance.signInAnonymously();
+      await SyncService.instance.start();
+    } catch (_) {}
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
+  }
+
   Widget _drawerItem({
     required IconData icon,
     required String label,
-    required bool selected,
+    bool selected = false,
     VoidCallback? onTap,
   }) {
     return Material(
@@ -358,15 +294,48 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
     );
   }
 
-  /// Contenedor blanco reutilizable para cada sección.
-  Widget _sectionCard({required String titulo, required Widget child}) {
+  Widget _tabScroll(List<Widget> children) => RefreshIndicator(
+    onRefresh: _cfg.cargar,
+    child: ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 28),
+      children: children,
+    ),
+  );
+
+  Widget _intro({required String title, required String description}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: AppColors.textDark,
+              fontSize: 21,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            description,
+            style: const TextStyle(color: AppColors.textGray, fontSize: 13),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _panel({required String title, required Widget child}) {
     return Container(
       width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.cardWhite,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: <BoxShadow>[
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 10,
@@ -378,11 +347,11 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            titulo,
+            title,
             style: const TextStyle(
+              color: AppColors.textDark,
               fontSize: 15,
               fontWeight: FontWeight.w700,
-              color: AppColors.textDark,
             ),
           ),
           const SizedBox(height: 12),
@@ -392,600 +361,471 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
     );
   }
 
-  /// Campo de texto + botón "Agregar".
-  ///
-  /// [onAgregar] en `null` deja el botón deshabilitado: es lo que necesitan las
-  /// tarjetas que todavia no tienen persistencia (Marcas, Grupos), para que se
-  /// vea igual que antes pero sin un botón que finja guardar y no guarde.
-  Widget _buildCampoAgregar({
-    required TextEditingController controller,
-    required String hint,
-    VoidCallback? onAgregar,
-  }) {
-    return Row(
+  Widget _addButton(String label, VoidCallback onPressed) => SizedBox(
+    width: double.infinity,
+    child: OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: const Icon(Icons.add),
+      label: Text(label),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: AppColors.orangePrimary,
+        side: const BorderSide(color: AppColors.orangePrimary),
+        padding: const EdgeInsets.symmetric(vertical: 13),
+      ),
+    ),
+  );
+
+  Widget _empty(String message) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 24),
+    child: Column(
       children: [
-        Expanded(
-          child: TextField(
-            controller: controller,
-            decoration: _decoracionInput(hint),
-          ),
+        const Icon(
+          Icons.inbox_outlined,
+          size: 36,
+          color: AppColors.placeholderGray,
         ),
-        const SizedBox(width: 8),
-        ElevatedButton(
-          onPressed: onAgregar,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.orangePrimary,
-            foregroundColor: Colors.white,
-            elevation: 0,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-          child: const Text(
-            'Agregar',
-            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-          ),
+        const SizedBox(height: 8),
+        Text(
+          message,
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: AppColors.textGray, fontSize: 13),
         ),
       ],
-    );
-  }
+    ),
+  );
 
-  InputDecoration _decoracionInput(String hint) {
-    return InputDecoration(
-      hintText: hint,
-      hintStyle: const TextStyle(
-        color: AppColors.placeholderGray,
-        fontSize: 13,
+  Widget _fila({
+    required String nombre,
+    required String? detalle,
+    required IconData icon,
+    required VoidCallback editar,
+    required VoidCallback eliminar,
+  }) {
+    return Card(
+      color: AppColors.cardWhite,
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(
+        side: const BorderSide(color: Color(0xFFE9EBEF)),
+        borderRadius: BorderRadius.circular(10),
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: AppColors.inputBorder),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(
-          color: AppColors.orangePrimary,
-          width: 1.5,
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: AppColors.orangePrimary.withValues(alpha: 0.12),
+          child: Icon(icon, color: AppColors.orangePrimary, size: 20),
+        ),
+        title: Text(
+          nombre,
+          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+        ),
+        subtitle: detalle == null ? null : Text(detalle),
+        trailing: Wrap(
+          spacing: 2,
+          children: [
+            IconButton(
+              tooltip: 'Editar $nombre',
+              onPressed: editar,
+              icon: const Icon(Icons.edit_outlined),
+              color: AppColors.textGray,
+            ),
+            IconButton(
+              tooltip: 'Eliminar $nombre',
+              onPressed: eliminar,
+              icon: const Icon(Icons.delete_outline),
+              color: Colors.redAccent,
+            ),
+          ],
         ),
       ),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
     );
   }
 
-  // ---------------------------------------------------------------------
-  // "Tipos de Servicio" — el formulario y el listado salen de SQLite.
-  // ---------------------------------------------------------------------
-
-  Widget _buildTiposDeServicioCard() {
-    return _sectionCard(
-      titulo: 'Tipos de Servicio',
+  Widget _buildServiciosTab() => _tabScroll([
+    _intro(
+      title: 'Servicios y precios',
+      description: 'Administra lo que ofrece el taller y el precio vigente.',
+    ),
+    _panel(
+      title: 'Catálogo de servicios',
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          TextField(
-            controller: _nombreServicioController,
-            decoration: _decoracionInput('Ej: Cambio de frenos'),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _precioServicioController,
-                  keyboardType: TextInputType.number,
-                  decoration: _decoracionInput('Precio RD\$'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              ElevatedButton(
-                onPressed: _agregarTipoServicio,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.orangePrimary,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                child: const Text(
-                  'Agregar',
-                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                ),
-              ),
-            ],
-          ),
+          _addButton('Agregar servicio', () => unawaited(_editarServicio())),
           const SizedBox(height: 12),
           if (_cfg.tiposServicio.isEmpty)
-            const _AvisoSinRegistros()
+            _empty('Aún no hay servicios configurados para este taller.')
           else
             for (final servicio in _cfg.tiposServicio)
-              _filaItemDemo(
+              _fila(
                 nombre: servicio.nombre,
-                precio: _cfg.formatearPrecio(servicio.precio),
-                onEliminar: () => _confirmarEliminar(
-                  'el servicio',
-                  servicio.nombre,
-                  () => _cfg.eliminarTipoServicio(servicio.id!),
+                detalle: _cfg.formatearPrecio(servicio.precio),
+                icon: Icons.build_outlined,
+                editar: () => unawaited(_editarServicio(servicio)),
+                eliminar: () => unawaited(
+                  _confirmarEliminar(
+                    nombre: servicio.nombre,
+                    accion: () => _cfg.eliminarTipoServicio(servicio.id!),
+                  ),
                 ),
               ),
         ],
       ),
-    );
-  }
+    ),
+  ]);
 
-  // ---------------------------------------------------------------------
-  // Secciones simples: Técnicos y Marcas de Vehículo.
-  //
-  // Cada item es un record `(nombre, id)` y el id es nullable por dos motivos:
-  // las tarjetas en pausa (Marcas) traen datos de demo que no tienen id, y una
-  // entidad recien insertada todavia no lo tiene. El id viaja con el nombre en
-  // vez de buscarse: recorrer los catalogos para deducir cual fila se esta
-  // borrando borra la equivocada en cuanto dos comparten nombre ('Frenos' puede
-  // ser un tecnico y un tipo de servicio).
-  //
-  // `onAgregar` y `onEliminar` en `null` dejan la tarjeta en modo lectura, que
-  // es lo que queda para Marcas mientras se decide su dueno.
-  //
-  // El `id` es `String?` desde la v7 (UUID), no `int?`. Ver
-  // `lib/core/utils/uuid.dart`.
-  // ---------------------------------------------------------------------
-
-  Widget _buildListaSimpleCard({
-    required String titulo,
-    required String hint,
-    required TextEditingController controller,
-    required List<({String nombre, String? id})> items,
-    VoidCallback? onAgregar,
-    Future<bool> Function(String id)? onEliminar,
-  }) {
-    return _sectionCard(
-      titulo: titulo,
+  Widget _buildTecnicosTab() => _tabScroll([
+    _intro(
+      title: 'Personal técnico',
+      description: 'Mantén actualizado el equipo disponible para las citas.',
+    ),
+    _panel(
+      title: 'Técnicos',
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildCampoAgregar(
-            controller: controller,
-            hint: hint,
-            onAgregar: onAgregar,
-          ),
+          _addButton('Agregar técnico', () => unawaited(_editarTecnico())),
           const SizedBox(height: 12),
-          if (items.isEmpty)
-            const _AvisoSinRegistros()
+          if (_cfg.tecnicos.isEmpty)
+            _empty('Aún no hay técnicos configurados para este taller.')
           else
-            for (final item in items)
-              _filaItemDemo(
-                nombre: item.nombre,
-                onEliminar: (onEliminar == null || item.id == null)
-                    ? null
-                    : () => _confirmarEliminar(
-                        'el elemento',
-                        item.nombre,
-                        () => onEliminar(item.id!),
-                      ),
+            for (final tecnico in _cfg.tecnicos)
+              _fila(
+                nombre: tecnico.nombre,
+                detalle: tecnico.activo ? 'Disponible' : 'No disponible',
+                icon: Icons.engineering_outlined,
+                editar: () => unawaited(_editarTecnico(tecnico)),
+                eliminar: () => unawaited(
+                  _confirmarEliminar(
+                    nombre: tecnico.nombre,
+                    accion: () => _cfg.eliminarTecnico(tecnico.id!),
+                  ),
+                ),
               ),
         ],
       ),
-    );
-  }
+    ),
+  ]);
 
-  Widget _filaItemDemo({
-    required String nombre,
-    String? precio,
-    VoidCallback? onEliminar,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFFF0F1F3))),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget _buildCatalogosTab() => _tabScroll([
+    _intro(
+      title: 'Catálogos del taller',
+      description: 'Organiza las marcas de vehículos y los grupos de servicio.',
+    ),
+    _panel(
+      title: 'Marcas de vehículo',
+      child: Column(
         children: [
-          Text(
-            nombre,
-            style: const TextStyle(fontSize: 13, color: AppColors.textDark),
-          ),
-          Row(
-            children: [
-              if (precio != null) ...[
-                Text(
-                  precio,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: AppColors.textGray,
+          _addButton('Agregar marca', () => unawaited(_editarMarca())),
+          const SizedBox(height: 12),
+          if (_cfg.marcas.isEmpty)
+            _empty('Aún no hay marcas registradas.')
+          else
+            for (final marca in _cfg.marcas)
+              _fila(
+                nombre: marca.nombre,
+                detalle: null,
+                icon: Icons.directions_car_outlined,
+                editar: () => unawaited(_editarMarca(marca)),
+                eliminar: () => unawaited(
+                  _confirmarEliminar(
+                    nombre: marca.nombre,
+                    accion: () => _cfg.eliminarMarca(marca.id!),
                   ),
                 ),
-                const SizedBox(width: 10),
-              ],
-              // El `X` sigue siendo el mismo icono del diseno: lo unico que
-              // cambio es que ahora es tocable. Sin `onEliminar` (tarjetas en
-              // pausa) se muestra igual, pero sin gesto, para no alterar la fila.
-              if (onEliminar == null)
-                const Icon(Icons.close, size: 16, color: Colors.redAccent)
-              else
-                InkWell(
-                  onTap: onEliminar,
-                  borderRadius: BorderRadius.circular(4),
-                  child: const Padding(
-                    padding: EdgeInsets.all(2),
-                    child: Icon(Icons.close, size: 16, color: Colors.redAccent),
-                  ),
-                ),
-            ],
-          ),
+              ),
         ],
       ),
+    ),
+    _panel(
+      title: 'Grupos de servicios',
+      child: Column(
+        children: [
+          _addButton('Agregar grupo', () => unawaited(_editarGrupo())),
+          const SizedBox(height: 12),
+          if (_cfg.gruposServicio.isEmpty)
+            _empty('Aún no hay grupos de servicios.')
+          else
+            for (final grupo in _cfg.gruposServicio)
+              _fila(
+                nombre: grupo.nombre,
+                detalle: null,
+                icon: Icons.folder_outlined,
+                editar: () => unawaited(_editarGrupo(grupo)),
+                eliminar: () => unawaited(
+                  _confirmarEliminar(
+                    nombre: grupo.nombre,
+                    accion: () => _cfg.eliminarGrupoServicio(grupo.id!),
+                  ),
+                ),
+              ),
+        ],
+      ),
+    ),
+  ]);
+
+  Future<void> _editarServicio([TipoServicio? servicio]) async {
+    final guardado = await _mostrarEditor(
+      titulo: servicio == null ? 'Nuevo servicio' : 'Editar servicio',
+      nombreInicial: servicio?.nombre ?? '',
+      precioInicial: servicio?.precio.toString() ?? '',
+      requierePrecio: true,
+      guardar: (nombre, precio) => servicio == null
+          ? _cfg.guardarTipoServicio(nombre, precio)
+          : _cfg.editarTipoServicio(servicio.id!, nombre, precio),
     );
-  }
-
-  // ---------------------------------------------------------------------
-  // Acciones de las tarjetas con persistencia.
-  //
-  // Todas pasan por un `_guardar` comun: el controller devuelve `bool` y deja el
-  // motivo en `error`. El `if (!mounted)` despues de cada `await` es
-  // OBLIGATORIO, no opcional: entre el await y el `setState` el usuario puede
-  // haber salido de la pantalla, y `context` sobre un State muerto revienta la
-  // app con "setState() called after dispose()".
-  //
-  // NOTA v7: la accion de agregar ESTADOS se elimino con el catalogo. El estado
-  // de una cita es el enum `EstadoCita`, cerrado y no editable; la seccion de
-  // estados ya no existe ni en el diseno.
-  // ---------------------------------------------------------------------
-
-  Future<void> _agregarTecnico() async {
-    final nombre = _tecnicoController.text;
-    final ok = await _cfg.guardarTecnico(nombre);
-    if (!mounted) return;
-    if (ok) {
-      _tecnicoController.clear();
-    } else {
-      _mostrarError();
+    if (guardado) {
+      _mostrarExito(
+        servicio == null ? 'Servicio guardado.' : 'Servicio actualizado.',
+      );
     }
   }
 
-  Future<void> _agregarTipoServicio() async {
-    final ok = await _cfg.guardarTipoServicio(
-      _nombreServicioController.text,
-      _precioServicioController.text,
+  Future<void> _editarTecnico([Tecnico? tecnico]) async {
+    final guardado = await _mostrarEditor(
+      titulo: tecnico == null ? 'Nuevo técnico' : 'Editar técnico',
+      nombreInicial: tecnico?.nombre ?? '',
+      guardar: (nombre, _) => tecnico == null
+          ? _cfg.guardarTecnico(nombre)
+          : _cfg.editarTecnico(tecnico.id!, nombre),
     );
-    if (!mounted) return;
-    if (ok) {
-      _nombreServicioController.clear();
-      _precioServicioController.clear();
-    } else {
-      _mostrarError();
+    if (guardado) {
+      _mostrarExito(
+        tecnico == null ? 'Técnico guardado.' : 'Técnico actualizado.',
+      );
     }
   }
 
-  /// Alta de marca (punto 6). Mismo patron que [agregarTecnico]: limpia el campo si
-  /// la escritura salio, muestra el error del controller si no.
-  ///
-  /// El mensaje de error lo pone `ConfiguracionController._validarNombre`, asi que
-  /// aca no se distingue "campo vacio" de "ya existe": el controller ya sabe decir
-  /// cual de las dos fue y el SnackBar lo muestra tal cual.
-  Future<void> _agregarMarca() async {
-    final ok = await _cfg.guardarMarca(_marcaController.text);
-    if (!mounted) return;
-    if (ok) {
-      _marcaController.clear();
-    } else {
-      _mostrarError();
+  Future<void> _editarMarca([Marca? marca]) async {
+    final guardado = await _mostrarEditor(
+      titulo: marca == null ? 'Nueva marca' : 'Editar marca',
+      nombreInicial: marca?.nombre ?? '',
+      guardar: (nombre, _) => marca == null
+          ? _cfg.guardarMarca(nombre)
+          : _cfg.editarMarca(marca.id!, nombre),
+    );
+    if (guardado) {
+      _mostrarExito(marca == null ? 'Marca guardada.' : 'Marca actualizada.');
     }
   }
 
-  /// Confirmación antes de borrar.
-  ///
-  /// El `X` estaba en el diseno sin confirmar nada, y eso no era problema cuando la
-  /// fila era de prueba: un tap y se iba. Ahora la fila es una fila de verdad,
-  /// asi que se pide confirmacion. El dialogo es un `AlertDialog` nativo, sin
-  /// estilos propios, para no inventar un componente que el diseno no tiene.
-  Future<void> _confirmarEliminar(
-    String queEs,
-    String nombre,
-    Future<bool> Function() accion,
-  ) async {
-    final ok = await showDialog<bool>(
+  Future<void> _editarGrupo([GrupoServicio? grupo]) async {
+    final guardado = await _mostrarEditor(
+      titulo: grupo == null ? 'Nuevo grupo' : 'Editar grupo',
+      nombreInicial: grupo?.nombre ?? '',
+      guardar: (nombre, _) => grupo == null
+          ? _cfg.guardarGrupoServicio(nombre)
+          : _cfg.editarGrupoServicio(grupo.id!, nombre),
+    );
+    if (guardado) {
+      _mostrarExito(grupo == null ? 'Grupo guardado.' : 'Grupo actualizado.');
+    }
+  }
+
+  Future<bool> _mostrarEditor({
+    required String titulo,
+    required String nombreInicial,
+    String precioInicial = '',
+    required Future<bool> Function(String nombre, String? precio) guardar,
+    bool requierePrecio = false,
+  }) async {
+    final resultado = await showDialog<bool>(
+      context: context,
+      builder: (_) => _CatalogoEditorDialog(
+        titulo: titulo,
+        nombreInicial: nombreInicial,
+        precioInicial: precioInicial,
+        requierePrecio: requierePrecio,
+        errorActual: () => _cfg.error,
+        guardar: guardar,
+      ),
+    );
+    return resultado == true;
+  }
+
+  Future<void> _confirmarEliminar({
+    required String nombre,
+    required Future<bool> Function() accion,
+  }) async {
+    final confirmar = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Eliminar'),
-        content: Text('¿Estás seguro de eliminar $queEs "$nombre"?'),
+        icon: const Icon(Icons.warning_amber_rounded, color: Colors.redAccent),
+        title: const Text('Confirmar eliminación'),
+        content: Text(
+          '¿Estás seguro de que deseas eliminar "$nombre"? '
+          'Las citas históricas no se verán afectadas.',
+        ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text(
-              'Cancelar',
-              style: TextStyle(color: AppColors.textGray),
-            ),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.redAccent,
-              foregroundColor: Colors.white,
-              elevation: 0,
-            ),
+          FilledButton.tonal(
+            style: FilledButton.styleFrom(foregroundColor: Colors.redAccent),
+            onPressed: () => Navigator.pop(context, true),
             child: const Text('Eliminar'),
           ),
         ],
       ),
     );
-
-    if (ok != true || !mounted) return;
-
+    if (confirmar != true || !mounted) return;
     final eliminado = await accion();
     if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          eliminado
-              ? 'Se eliminó "$nombre".'
-              : _cfg.error ?? 'No se pudo eliminar.',
-        ),
-        backgroundColor: eliminado ? null : Colors.red.shade700,
-      ),
-    );
-  }
-
-  void _mostrarError() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(_cfg.error ?? 'No se pudo completar la operación.'),
-        backgroundColor: Colors.red.shade700,
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------
-  // "Grupos de Servicios" (punto 6)
-  //
-  // QUÉ ESTÁ CONECTADO Y QUÉ NO:
-  //
-  // - El alta y la lista de GRUPOS sí están conectados: `_cfg.gruposServicio`
-  //   viene de la tabla `grupos_servicio` y `_agregarGrupo` escribe en ella.
-  // - El ACORDEÓN DE SERVICIOS sigue siendo el de `demoGruposServiciosAdmin`.
-  //   Es lo único de esta tarjeta que NO toca la base, y a proposito: la relación
-  //   grupo -> servicios necesita una tabla puente y la decisión de si un
-  //   servicio puede estar en varios grupos, y esa decisión no está tomada. El
-  //   doc de `GrupoServicio` la explica.
-  //
-  // Cuando se decida, el orden es: (1) tabla puente en la v8, (2) `obtenerServiciosDelGrupo`
-  // en `GrupoServicioRepository`, (3) reemplazar `_grupoDemoExpandido` por el id del
-  // grupo real y leer de ahi. Ese dia la lista de arriba y el acordeón pasan a
-  // ser la misma fila.
-  //
-  // Por ahora el acordeón muestra `demoGruposServiciosAdmin.first` en vez del
-  // primer grupo real, para que no se note el empalme: es la MISMA tarjeta con el
-  // mismo texto que la v6 mostraba.
-  // ---------------------------------------------------------------------
-
-  Widget _buildGruposDeServiciosCard() {
-    return _sectionCard(
-      titulo: 'Grupos de Servicios',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildCampoAgregar(
-            controller: _grupoController,
-            hint: 'Ej: Electricidad',
-            onAgregar: _agregarGrupo,
-          ),
-          const SizedBox(height: 12),
-          // Los grupos reales. El `X` los borra de verdad (con confirmacion,
-          // igual que las marcas).
-          for (final grupo in _cfg.gruposServicio)
-            _filaItemDemo(
-              nombre: grupo.nombre,
-              onEliminar: () => _confirmarEliminar(
-                'grupo de servicios',
-                grupo.nombre,
-                () => _cfg.eliminarGrupoServicio(grupo.id!),
-              ),
-            ),
-          // El estado vacio se escribe en vez de dejar la tarjeta en blanco: un
-          // espacio sin texto se lee como "la app fallo", y con la base recien
-          // creada ese es un resultado legitimo.
-          if (_cfg.gruposServicio.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                'Todavía no hay grupos de servicios.',
-                style: TextStyle(
-                  color: AppColors.textGray,
-                  fontSize: 13,
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-            ),
-          const SizedBox(height: 12),
-          _buildGrupoDemoAcordeon(),
-        ],
-      ),
-    );
-  }
-
-  /// Alta de grupo de servicios. Sin precio: un grupo agrupa, no se cobra.
-  Future<void> _agregarGrupo() async {
-    final ok = await _cfg.guardarGrupoServicio(_grupoController.text);
-    if (!mounted) return;
-    if (ok) {
-      _grupoController.clear();
+    if (eliminado) {
+      _mostrarExito('Se eliminó "$nombre".');
     } else {
-      _mostrarError();
+      _mostrarError(_cfg.error ?? 'No se pudo eliminar el registro.');
     }
   }
 
-  Widget _buildGrupoDemoAcordeon() {
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        children: [
-          ListTile(
-            title: Text(
-              demoGruposServiciosAdmin.first.nombre,
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-            ),
-            leading: InkWell(
-              onTap: () =>
-                  setState(() => _grupoDemoExpandido = !_grupoDemoExpandido),
-              child: AnimatedRotation(
-                turns: _grupoDemoExpandido ? 0.5 : 0,
-                duration: const Duration(milliseconds: 200),
-                child: const Icon(
-                  Icons.keyboard_arrow_down,
-                  color: AppColors.textGray,
-                ),
-              ),
-            ),
-            trailing: const Icon(
-              Icons.close,
-              size: 18,
-              color: Colors.redAccent,
-            ),
-          ),
-          if (_grupoDemoExpandido) ...[
-            for (final servicio in demoGruposServiciosAdmin.first.servicios)
-              _filaItemDemo(nombre: servicio.nombre, precio: servicio.precio),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-              child: SizedBox(
-                width: double.infinity,
-                child: TextButton.icon(
-                  onPressed: _abrirSelectorDeServiciosDemo,
-                  icon: const Icon(
-                    Icons.add,
-                    size: 16,
-                    color: AppColors.orangePrimary,
-                  ),
-                  label: const Text(
-                    'Agregar Servicio',
-                    style: TextStyle(
-                      color: AppColors.orangePrimary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
+  void _mostrarExito(String mensaje) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(mensaje)));
   }
 
-  /// Modal de ejemplo "Seleccionar Servicios" — los checkboxes se pueden
-  /// marcar/desmarcar (interacción básica), pero "Confirmar" solo cierra
-  /// el modal, no guarda nada.
-  void _abrirSelectorDeServiciosDemo() {
-    final Set<String> seleccionados = {};
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return Dialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 420),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Seleccionar Servicios',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.textDark,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      ...demoServiciosAdmin.map((servicio) {
-                        final marcado = seleccionados.contains(servicio.nombre);
-                        return CheckboxListTile(
-                          value: marcado,
-                          onChanged: (checked) {
-                            setDialogState(() {
-                              if (checked == true) {
-                                seleccionados.add(servicio.nombre);
-                              } else {
-                                seleccionados.remove(servicio.nombre);
-                              }
-                            });
-                          },
-                          controlAffinity: ListTileControlAffinity.leading,
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(
-                            servicio.nombre,
-                            style: const TextStyle(fontSize: 14),
-                          ),
-                        );
-                      }),
-                      const SizedBox(height: 12),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          TextButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            child: const Text(
-                              'Cancelar',
-                              style: TextStyle(color: AppColors.textGray),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          ElevatedButton(
-                            onPressed: () => Navigator.of(context)
-                                .pop(), // Solo cierra, no guarda.
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.orangePrimary,
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                            ),
-                            child: const Text('Confirmar'),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
+  void _mostrarError(String mensaje) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(mensaje), backgroundColor: Colors.red.shade700),
+      );
   }
 }
 
-/// Texto que se muestra cuando una tarjeta no tiene filas.
-///
-/// No estaba en el diseno porque con data demo siempre habia algo que listar.
-/// Sin el, la tarjeta se queda en blanco y no se distingue de una que todavia no
-/// cargo: el usuario no sabe si fallo o si realmente no hay nada.
-class _AvisoSinRegistros extends StatelessWidget {
-  const _AvisoSinRegistros();
+class _CatalogoEditorDialog extends StatefulWidget {
+  const _CatalogoEditorDialog({
+    required this.titulo,
+    required this.nombreInicial,
+    required this.precioInicial,
+    required this.requierePrecio,
+    required this.errorActual,
+    required this.guardar,
+  });
+
+  final String titulo;
+  final String nombreInicial;
+  final String precioInicial;
+  final bool requierePrecio;
+  final String? Function() errorActual;
+  final Future<bool> Function(String nombre, String? precio) guardar;
+
+  @override
+  State<_CatalogoEditorDialog> createState() => _CatalogoEditorDialogState();
+}
+
+class _CatalogoEditorDialogState extends State<_CatalogoEditorDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _nombreController;
+  late final TextEditingController _precioController;
+  bool _guardando = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _nombreController = TextEditingController(text: widget.nombreInicial);
+    _precioController = TextEditingController(text: widget.precioInicial);
+  }
+
+  @override
+  void dispose() {
+    _nombreController.dispose();
+    _precioController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 8),
-      child: Text(
-        'Sin registros',
-        style: TextStyle(fontSize: 13, color: AppColors.placeholderGray),
+    return AlertDialog(
+      title: Text(widget.titulo),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: _nombreController,
+                autofocus: true,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(
+                  labelText: 'Nombre',
+                  prefixIcon: Icon(Icons.label_outline),
+                ),
+                validator: (valor) => valor?.trim().isNotEmpty == true
+                    ? null
+                    : 'El nombre es obligatorio.',
+              ),
+              if (widget.requierePrecio) ...[
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: _precioController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    signed: true,
+                    decimal: false,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Precio (RD\$)',
+                    prefixIcon: Icon(Icons.payments_outlined),
+                    helperText: 'Usa un monto entero igual o mayor que cero.',
+                  ),
+                  validator: (valor) =>
+                      ConfiguracionController.leerPrecio(valor) == null
+                      ? 'Ingresa un precio válido, no negativo.'
+                      : null,
+                ),
+              ],
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(color: Colors.redAccent),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
+      actions: [
+        TextButton(
+          onPressed: _guardando ? null : () => Navigator.pop(context, false),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          onPressed: _guardando ? null : _guardar,
+          icon: _guardando
+              ? const SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.save_outlined, size: 18),
+          label: const Text('Guardar'),
+        ),
+      ],
     );
+  }
+
+  Future<void> _guardar() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    setState(() {
+      _guardando = true;
+      _error = null;
+    });
+    final guardado = await widget.guardar(
+      _nombreController.text.trim(),
+      widget.requierePrecio ? _precioController.text : null,
+    );
+    if (!mounted) return;
+    if (guardado) {
+      Navigator.pop(context, true);
+    } else {
+      setState(() {
+        _guardando = false;
+        _error = widget.errorActual() ?? 'No se pudo guardar el registro.';
+      });
+    }
   }
 }

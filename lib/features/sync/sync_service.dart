@@ -4,12 +4,14 @@ import 'package:flutter/foundation.dart';
 import 'package:autofix/core/auth/sesion_admin.dart';
 import 'package:autofix/core/auth/sesion_cliente.dart';
 import 'package:autofix/core/connectivity/connectivity_service.dart';
+import 'package:autofix/core/database/database_helper.dart';
 import 'package:autofix/core/utils/borrado_logico.dart';
 import 'package:autofix/features/citas/data/cita_repository.dart';
 import 'package:autofix/features/citas/models/cita.dart';
 import 'package:autofix/features/citas/models/codigo_de_cita.dart';
 import 'package:autofix/features/cliente/data/cambios_password_repository.dart';
 import 'package:autofix/features/cliente/data/cliente_repository.dart';
+import 'package:autofix/features/sync/catalogo_taller_sync_repository.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'dart:async';
@@ -25,17 +27,19 @@ import 'dart:async';
 ///   Hace upsert en SQLite: inserta si no existe, actualiza si cambio,
 ///   respeta el borrado logico (si viene `eliminado_en` lo aplica).
 ///
-/// Ademas de las citas, drenan DOS colas independientes de perfil, las tres
-/// en orden y sin que una pueda cortar a las demas:
+/// Además de las citas, drena colas independientes de perfil y catálogos sin
+/// que el fallo de una pueda impedir que se intenten las otras:
 ///
 /// - `clientes`: el perfil que `Editar Perfil` guarda offline (v12).
 /// - `cambios_password`: metadata de un cambio de contraseña que no pudo
 ///   aplicarse; el secreto en si nunca pasa por aca ni por Firestore.
+/// - `tecnicos`, `servicios`, `marcas` y `grupos_servicio`: datos del taller,
+///   filtrados por `taller_id`; sus tombstones se publican como updates.
 ///
 /// REGLAS DE CONFLICTO (simples v1):
 /// - `actualizado_en` gana: el documento con timestamp mas reciente persiste.
-/// - Borrado logico: si la nube trae `eliminado_en` y local no lo tiene, se
-///   marca borrado localmente; si local tiene borrado y la nube no, gana local.
+/// - Borrado lógico de catálogos: el tombstone remoto prevalece ante una copia
+///   local viva y también se comprueba antes de subir una edición pendiente.
 /// - `codigo_visible`: una vez asignado por la nube, NUNCA se sobrescribe
 ///   localmente (es inmutable tras confirmacion).
 /// - `clientes` es la EXCEPCION a "actualizado_en gana": ahi gana el local
@@ -47,6 +51,8 @@ import 'dart:async';
 ///   no depende de quien entre.
 /// - LAS CITAS no: bajan justo DESPUES del login, filtradas por la sesión
 ///   (taller del admin / owner UID o correo del cliente). Ver [start].
+/// - Los catálogos operativos bajan con listener filtrado por `taller_id` al
+///   iniciar sesión Admin o al seleccionar taller en el flujo cliente.
 /// - El PERFIL cliente baja con su propio listener, solo si hay sesión de
 ///   cliente. Ver [_iniciarListenerDePerfil].
 class SyncService extends ChangeNotifier {
@@ -56,6 +62,22 @@ class SyncService extends ChangeNotifier {
 
   final CitaRepository _repo = CitaRepository.instance;
   final ClienteRepository _repoClientes = ClienteRepository();
+  final CatalogoTallerSyncRepository _repoCatalogos =
+      CatalogoTallerSyncRepository();
+  static const List<CatalogoTallerSyncDefinition> _catalogosTaller =
+      <CatalogoTallerSyncDefinition>[
+        CatalogoTallerSyncDefinition(tabla: 'tecnicos', coleccion: 'tecnicos'),
+        CatalogoTallerSyncDefinition(
+          tabla: 'tipos_servicio',
+          coleccion: 'servicios',
+          tienePrecio: true,
+        ),
+        CatalogoTallerSyncDefinition(tabla: 'marcas', coleccion: 'marcas'),
+        CatalogoTallerSyncDefinition(
+          tabla: 'grupos_servicio',
+          coleccion: 'grupos_servicio',
+        ),
+      ];
   FirebaseFirestore? _firestoreOverride;
   String? _uidOverride;
   FirebaseFirestore get _db => _firestoreOverride ?? FirebaseFirestore.instance;
@@ -93,6 +115,12 @@ class SyncService extends ChangeNotifier {
   _snapshotCorreoSubscription;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
   _clientesSubscription;
+  final List<StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>
+  _catalogosAdminSubscriptions =
+      <StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>[];
+  final List<StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>
+  _catalogosClienteSubscriptions =
+      <StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>[];
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   bool _isPushing = false;
 
@@ -104,6 +132,8 @@ class SyncService extends ChangeNotifier {
   /// devolvia temprano dejando al usuario nuevo mirando las citas del
   /// anterior hasta el proximo arranque de la app.
   String? _firmaDelFiltro;
+  String? _tallerCatalogosAdmin;
+  String? _tallerCatalogosCliente;
 
   /// Filtros Firestore de citas que le tocan a la sesión actual.
   ///
@@ -161,6 +191,8 @@ class SyncService extends ChangeNotifier {
       await _snapshotSubscription?.cancel();
       await _snapshotCorreoSubscription?.cancel();
       await _clientesSubscription?.cancel();
+      await _cancelarSuscripcionesCatalogos(_catalogosAdminSubscriptions);
+      await _cancelarSuscripcionesCatalogos(_catalogosClienteSubscriptions);
       _snapshotSubscription = null;
       _snapshotCorreoSubscription = null;
       _clientesSubscription = null;
@@ -188,6 +220,11 @@ class SyncService extends ChangeNotifier {
           );
     }
     _firmaDelFiltro = firma;
+
+    final tallerAdmin = SesionAdmin.instance.tallerId;
+    if (tallerAdmin != null) {
+      await sincronizarCatalogosDeTaller(tallerAdmin);
+    }
 
     await _iniciarListenerDePerfil();
 
@@ -220,11 +257,106 @@ class SyncService extends ChangeNotifier {
     await _snapshotCorreoSubscription?.cancel();
     await _clientesSubscription?.cancel();
     await _connectivitySubscription?.cancel();
+    await _cancelarSuscripcionesCatalogos(_catalogosAdminSubscriptions);
+    await _cancelarSuscripcionesCatalogos(_catalogosClienteSubscriptions);
     _snapshotSubscription = null;
     _snapshotCorreoSubscription = null;
     _clientesSubscription = null;
     _connectivitySubscription = null;
     _firmaDelFiltro = null;
+    _tallerCatalogosAdmin = null;
+    _tallerCatalogosCliente = null;
+  }
+
+  /// Escucha los catálogos locales del taller elegido por un cliente.
+  ///
+  /// El administrador llama a esta misma operación desde [start] y queda
+  /// limitado a su taller de sesión. Un cliente solo puede abrir el listener
+  /// cuando tiene sesión autenticada y se limita al taller seleccionado.
+  Future<void> sincronizarCatalogosDeTaller(String tallerId) async {
+    final esAdmin = SesionAdmin.instance.tallerId == tallerId;
+    final esCliente =
+        !SesionAdmin.instance.activa && SesionCliente.instance.activa;
+    if (!esAdmin && !esCliente) return;
+
+    final suscripciones = esAdmin
+        ? _catalogosAdminSubscriptions
+        : _catalogosClienteSubscriptions;
+    final actual = esAdmin ? _tallerCatalogosAdmin : _tallerCatalogosCliente;
+    if (actual == tallerId && suscripciones.length == _catalogosTaller.length) {
+      return;
+    }
+
+    await _cancelarSuscripcionesCatalogos(suscripciones);
+    if (esAdmin) {
+      _tallerCatalogosAdmin = tallerId;
+    } else {
+      _tallerCatalogosCliente = tallerId;
+    }
+
+    for (final catalogo in _catalogosTaller) {
+      final consulta = _db
+          .collection(catalogo.coleccion)
+          .where('taller_id', isEqualTo: tallerId);
+      suscripciones.add(
+        consulta.snapshots().listen(
+          (snapshot) => _onSnapshotCatalogo(
+            snapshot,
+            catalogo: catalogo,
+            tallerId: tallerId,
+          ),
+          onError: (Object error) {
+            debugPrint(
+              '[SyncService] Error escuchando ${catalogo.coleccion} '
+              'del taller $tallerId: $error',
+            );
+          },
+        ),
+      );
+    }
+  }
+
+  Future<void> _cancelarSuscripcionesCatalogos(
+    List<StreamSubscription<QuerySnapshot<Map<String, dynamic>>>> suscripciones,
+  ) async {
+    for (final suscripcion in suscripciones) {
+      await suscripcion.cancel();
+    }
+    suscripciones.clear();
+  }
+
+  Future<void> _onSnapshotCatalogo(
+    QuerySnapshot<Map<String, dynamic>> snapshot, {
+    required CatalogoTallerSyncDefinition catalogo,
+    required String tallerId,
+  }) async {
+    var huboCambios = false;
+    for (final cambio in snapshot.docChanges) {
+      // Un removed de una consulta significa que ya no cumple el filtro, o que
+      // se borró desde consola. Ninguno de esos casos autoriza un DELETE local:
+      // las bajas oficiales llegan como un documento con `eliminado_en`.
+      if (cambio.type == DocumentChangeType.removed) continue;
+      final datos = cambio.doc.data();
+      if (datos == null) continue;
+      if (datos['taller_id'] != tallerId) continue;
+      try {
+        huboCambios =
+            await _repoCatalogos.aplicarDesdeNube(
+              definition: catalogo,
+              id: cambio.doc.id,
+              tallerId: tallerId,
+              data: datos,
+            ) ||
+            huboCambios;
+      } catch (error) {
+        // Una fila mal formada no debe impedir que se apliquen las demás.
+        debugPrint(
+          '[SyncService] No se pudo aplicar ${catalogo.coleccion}/'
+          '${cambio.doc.id}: $error',
+        );
+      }
+    }
+    if (huboCambios) notifyListeners();
   }
 
   /// Sube la cola `pending` y reintenta fallos anteriores sin dejar que la
@@ -322,6 +454,89 @@ class SyncService extends ChangeNotifier {
   Future<void> _drenarColas() async {
     await _sinDejarQueCorte('el perfil de cliente', _pushPerfilesPendientes);
     await _sinDejarQueCorte('cambios de contraseña', _drenarCambiosPassword);
+    await _sinDejarQueCorte('catálogos del taller', _pushCatalogosPendientes);
+  }
+
+  /// Publica solo los catálogos pendientes del taller Admin autenticado.
+  ///
+  /// El tombstone viaja como cualquier otro campo del documento: no se omiten
+  /// filas con `eliminado_en` y Firestore no recibe nunca un borrado físico.
+  Future<void> _pushCatalogosPendientes() async {
+    final tallerId = SesionAdmin.instance.tallerId;
+    if (tallerId == null || tallerId.isEmpty) return;
+
+    for (final catalogo in _catalogosTaller) {
+      late final List<Map<String, Object?>> pendientes;
+      try {
+        pendientes = await _repoCatalogos.pendientes(catalogo, tallerId);
+      } catch (error) {
+        debugPrint(
+          '[SyncService] No se pudo leer la cola de ${catalogo.coleccion}: '
+          '$error',
+        );
+        continue;
+      }
+      for (final fila in pendientes) {
+        final id = fila[DatabaseHelper.colId] as String?;
+        final actualizadoEn = fila[DatabaseHelper.colActualizadoEn] as String?;
+        if (id == null || actualizadoEn == null) continue;
+
+        try {
+          final referencia = _db.collection(catalogo.coleccion).doc(id);
+          final bajaLocal = fila[DatabaseHelper.colEliminadoEn];
+          final bajaRemota = await _db.runTransaction<Map<String, dynamic>?>((
+            transaccion,
+          ) async {
+            final remoto = await transaccion.get(referencia);
+            final datosRemotos = remoto.data();
+            if (datosRemotos != null &&
+                datosRemotos[DatabaseHelper.colEliminadoEn] != null &&
+                bajaLocal == null) {
+              return datosRemotos;
+            }
+            transaccion.set(
+              referencia,
+              _repoCatalogos.aFirestore(catalogo, fila),
+            );
+            return null;
+          });
+          if (bajaRemota != null) {
+            // Una fila borrada en otro dispositivo no se puede resucitar con
+            // una edición local que llevaba tiempo offline. La lectura y el
+            // posible push ocurrieron en una transacción para cerrar la carrera.
+            final aplicado = await _repoCatalogos.aplicarDesdeNube(
+              definition: catalogo,
+              id: id,
+              tallerId: tallerId,
+              data: bajaRemota,
+            );
+            if (aplicado) notifyListeners();
+            continue;
+          }
+
+          final marcado = await _repoCatalogos.marcarSincronizado(
+            definition: catalogo,
+            id: id,
+            actualizadoEn: actualizadoEn,
+          );
+          if (!marcado) {
+            // Se editó durante el push: permanece pending y el siguiente ciclo
+            // enviará la versión más reciente.
+            debugPrint(
+              '[SyncService] ${catalogo.coleccion}/$id cambió durante el push; '
+              'queda pendiente',
+            );
+          }
+          notifyListeners();
+        } catch (error) {
+          // Los reintentos son por fila: el resto del catálogo continúa y esta
+          // fila permanece pending para la próxima sincronización.
+          debugPrint(
+            '[SyncService] Falló el push de ${catalogo.coleccion}/$id: $error',
+          );
+        }
+      }
+    }
   }
 
   Future<void> _sinDejarQueCorte(
@@ -716,7 +931,7 @@ class SyncService extends ChangeNotifier {
   /// Convierte documento Firestore a `Cita`.
   /// Las fechas llegan como String ISO (aIsoUtc), no como Timestamp.
   Cita _mapToCita(String id, Map<String, dynamic> data) {
-    DateTime? _parseDate(Object? val) {
+    DateTime? parseDate(Object? val) {
       if (val == null) return null;
       if (val is String) return DateTime.tryParse(val)?.toUtc();
       // Por si algun documento antiguo tiene Timestamp real de Firestore:
@@ -738,16 +953,16 @@ class SyncService extends ChangeNotifier {
       servicios: Cita.leerServicios(data['servicios']),
       tecnico: data['tecnico'] as String? ?? '',
       descripcion: data['descripcion'] as String? ?? '',
-      fechaCita: _parseDate(data['fecha_cita']) ?? DateTime.now().toUtc(),
+      fechaCita: parseDate(data['fecha_cita']) ?? DateTime.now().toUtc(),
       estado: _estadoFromString(data['estado'] as String? ?? 'pendiente'),
       tallerId: data['taller_id'] as String?,
-      creadoEn: _parseDate(data['creado_en']),
-      actualizadoEn: _parseDate(data['actualizado_en']),
+      creadoEn: parseDate(data['creado_en']),
+      actualizadoEn: parseDate(data['actualizado_en']),
       total: (data['total'] as num?)?.toInt() ?? 0,
       trazabilidad: Trazabilidad(
-        eliminadoEn: _parseDate(data['eliminado_en']),
+        eliminadoEn: parseDate(data['eliminado_en']),
         eliminadoPor: data['eliminado_por'] as String?,
-        restauradoEn: _parseDate(data['restaurado_en']),
+        restauradoEn: parseDate(data['restaurado_en']),
       ),
       syncStatus: (data['sync_status'] as String?) ?? 'synced',
     );

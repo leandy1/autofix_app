@@ -2,6 +2,7 @@ import 'package:sqflite/sqflite.dart';
 
 import 'package:autofix/core/data/base_repository.dart';
 import 'package:autofix/core/database/database_helper.dart';
+import 'package:autofix/core/database/semilla_inicial.dart';
 import 'package:autofix/core/utils/reloj.dart';
 import 'package:autofix/core/utils/uuid.dart';
 import 'package:autofix/features/configuracion/models/marca.dart';
@@ -51,6 +52,9 @@ class MarcaRepository implements BaseRepository<Marca> {
     final conId = marca.copyWith(
       id: marca.id ?? Uuid.instancia.generar(),
       creadoEn: marca.creadoEn ?? Reloj.instancia.ahora(),
+      tallerId: marca.tallerId ?? SemillaInicial.talleres.first.id,
+      eliminadoEn: null,
+      syncStatus: 'pending',
     );
     final db = await _helper.base;
     await db.insert(
@@ -69,7 +73,8 @@ class MarcaRepository implements BaseRepository<Marca> {
     final db = await _helper.base;
     final filas = await db.query(
       tabla,
-      where: '${DatabaseHelper.colTallerId} = ?',
+      where:
+          '${DatabaseHelper.colTallerId} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[tallerId],
       orderBy: '${DatabaseHelper.colNombre} COLLATE NOCASE ASC',
     );
@@ -81,7 +86,7 @@ class MarcaRepository implements BaseRepository<Marca> {
     final filas = await db.query(
       tabla,
       where:
-          '${DatabaseHelper.colTallerId} = ? AND ${DatabaseHelper.colActivo} = ?',
+          '${DatabaseHelper.colTallerId} = ? AND ${DatabaseHelper.colActivo} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[tallerId, 1],
       orderBy: '${DatabaseHelper.colNombre} COLLATE NOCASE ASC',
     );
@@ -93,7 +98,7 @@ class MarcaRepository implements BaseRepository<Marca> {
     final filas = await db.query(
       tabla,
       where:
-          '${DatabaseHelper.colNombre} = ? COLLATE NOCASE AND ${DatabaseHelper.colTallerId} = ?',
+          '${DatabaseHelper.colNombre} = ? COLLATE NOCASE AND ${DatabaseHelper.colTallerId} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[nombre.trim(), tallerId],
       limit: 1,
     );
@@ -107,6 +112,7 @@ class MarcaRepository implements BaseRepository<Marca> {
       tabla,
       // `COLLATE NOCASE` en el ORDER y no solo en el indice: asi "toyota"
       // aparece junto a "Toyota" en vez de en otra punta de la lista.
+      where: '${DatabaseHelper.colEliminadoEn} IS NULL',
       orderBy: '${DatabaseHelper.colNombre} COLLATE NOCASE ASC',
     );
     return filas.map(Marca.fromMap).toList();
@@ -122,7 +128,8 @@ class MarcaRepository implements BaseRepository<Marca> {
     final db = await _helper.base;
     final filas = await db.query(
       tabla,
-      where: '${DatabaseHelper.colActivo} = ?',
+      where:
+          '${DatabaseHelper.colActivo} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[1],
       orderBy: '${DatabaseHelper.colNombre} COLLATE NOCASE ASC',
     );
@@ -134,7 +141,8 @@ class MarcaRepository implements BaseRepository<Marca> {
     final db = await _helper.base;
     final filas = await db.query(
       tabla,
-      where: '${DatabaseHelper.colId} = ?',
+      where:
+          '${DatabaseHelper.colId} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[id],
       limit: 1,
     );
@@ -151,7 +159,8 @@ class MarcaRepository implements BaseRepository<Marca> {
     final db = await _helper.base;
     final filas = await db.query(
       tabla,
-      where: '${DatabaseHelper.colNombre} = ? COLLATE NOCASE',
+      where:
+          '${DatabaseHelper.colNombre} = ? COLLATE NOCASE AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[nombre.trim()],
       limit: 1,
     );
@@ -169,21 +178,25 @@ class MarcaRepository implements BaseRepository<Marca> {
     final db = await _helper.base;
     return db.update(
       tabla,
-      marca.copyWith(actualizadoEn: Reloj.instancia.ahora()).toMap(),
-      where: '${DatabaseHelper.colId} = ?',
+      marca
+          .copyWith(
+            actualizadoEn: Reloj.instancia.ahora(),
+            syncStatus: 'pending',
+          )
+          .toMap(),
+      where:
+          '${DatabaseHelper.colId} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[id],
       conflictAlgorithm: ConflictAlgorithm.abort,
     );
   }
 
-  /// Da de baja una marca sin borrarla: es la operacion que la UI deberia usar
-  /// en vez de [eliminar].
+  /// Desactiva una marca sin borrarla. Para retirar completamente el catálogo
+  /// de los listados se usa [eliminar], que conserva y sincroniza su tombstone.
   ///
   /// Razon: las citas viejas guardan la marca como TEXTO (`citas.marca`), y ese
-  /// texto es lo que el cliente ve en su historial. Borrar la fila no rompe
-  /// technically ese texto, pero deja una marca que el admin puede volver a crear
-  /// con OTRO id y las dos conviven sin que nada avise. Con `activo = 0` la
-  /// marca desaparece de los desplegables y sigue consultable por historial.
+  /// texto es lo que el cliente ve en su historial. Con `activo = 0` la marca
+  /// desaparece de los desplegables y sigue disponible para consulta.
   Future<int> darDeBaja(String id) async {
     final marca = await obtenerPorId(id);
     if (marca == null) {
@@ -194,24 +207,20 @@ class MarcaRepository implements BaseRepository<Marca> {
 
   // ------------------------------ DELETE ------------------------------
 
-  /// Borrado fisico.
-  ///
-  /// Un `MARCA` NO lleva `eliminado_en` (a diferencia de `citas`) y es
-  /// deliberado: [activo] ya es la baja logica del catalogo, y lo que se ve en
-  /// las citas viejas es el texto, no el id. Agregarle tombstone seria una segunda
-  /// bandera para el mismo significado, y el dia que alguien olvide una de las dos
-  /// el desplegable muestra una marca dada de baja.
-  ///
-  /// Este metodo existe porque el punto 6 pide "eliminar" explicitamente en la API
-  /// del catalogo, y hay un flujo donde el borrado fisico es lo correcto: dar de
-  /// alta una marca equivocada desde Modo Desarrollador, donde no hay historial que
-  /// preservar.
+  /// Baja lógica sincronizable. La marca permanece disponible para el historial.
   @override
   Future<int> eliminar(String id) async {
     final db = await _helper.base;
-    return db.delete(
+    final ahora = Reloj.instancia.ahora();
+    return db.update(
       tabla,
-      where: '${DatabaseHelper.colId} = ?',
+      <String, Object?>{
+        DatabaseHelper.colEliminadoEn: ahora.toIso8601String(),
+        DatabaseHelper.colActualizadoEn: ahora.toIso8601String(),
+        DatabaseHelper.colSyncStatus: 'pending',
+      },
+      where:
+          '${DatabaseHelper.colId} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[id],
     );
   }

@@ -171,11 +171,21 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
     _prellenarDesdeElPerfil();
     _cargarTalleres();
     _cargarServicios();
+    SyncService.instance.addListener(_alCambiarSync);
     unawaited(_cargarVehiculosRegistrados());
     unawaited(_cargarPosicionSiHayPermiso());
     // Igual que el mapa: el pull del arranque puede bajar los talleres
     // DESPUES de que ya se pinto la lista de este formulario.
     TallerRepository.instance.addListener(_alCambiarElCatalogo);
+  }
+
+  @override
+  void didUpdateWidget(covariant AgendarCitaClienteSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.tallerSeleccionadoId != widget.tallerSeleccionadoId) {
+      _serviciosSeleccionados.clear();
+      unawaited(_cargarServicios());
+    }
   }
 
   @override
@@ -501,14 +511,32 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
   /// tabla para las citas viejas que lo nombran, igual que los talleres, pero no
   /// se ofrece a un cliente nuevo.
   Future<void> _cargarServicios() async {
-    final todos = await TipoServicioRepository.instance.obtenerTodas();
+    final tallerId = widget.tallerSeleccionadoId;
+    if (tallerId == null || tallerId.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _serviciosDisponibles = const <TipoServicio>[];
+        _cargandoServicios = false;
+      });
+      return;
+    }
+    final todos = await TipoServicioRepository.instance.obtenerTodasPorTaller(
+      tallerId,
+    );
     if (!mounted) return;
+    if (widget.tallerSeleccionadoId != tallerId) return;
     setState(() {
       _serviciosDisponibles = todos
           .where((s) => s.activo)
           .toList(growable: false);
       _cargandoServicios = false;
     });
+  }
+
+  void _alCambiarSync() {
+    if (mounted && widget.tallerSeleccionadoId != null) {
+      unawaited(_cargarServicios());
+    }
   }
 
   /// Total estimado de la cita, con los precios que el admin tiene cargados.
@@ -518,6 +546,7 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
   @override
   void dispose() {
     TallerRepository.instance.removeListener(_alCambiarElCatalogo);
+    SyncService.instance.removeListener(_alCambiarSync);
     _servicioConectividad?.removeListener(_alCambiarConectividad);
     _catalogoVehiculos.close();
     _clienteController.dispose();

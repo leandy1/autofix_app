@@ -1,6 +1,8 @@
 import 'package:autofix/core/data/base_repository.dart';
 import 'package:autofix/core/utils/reloj.dart';
 
+const Object _grupoServicioSinCambio = Object();
+
 /// GRUPO de servicios: "Carrocería", "Mecánica general", "Eléctrico".
 ///
 /// Entidad de dominio pura, con la misma forma que [Tecnico], [TipoServicio] y
@@ -52,6 +54,8 @@ class GrupoServicio implements EntidadPersistida {
     this.creadoEn,
     this.actualizadoEn,
     this.tallerId,
+    this.eliminadoEn,
+    this.syncStatus = 'pending',
   });
 
   static const String _kId = 'id';
@@ -60,6 +64,8 @@ class GrupoServicio implements EntidadPersistida {
   static const String _kCreadoEn = 'creado_en';
   static const String _kActualizadoEn = 'actualizado_en';
   static const String _kTallerId = 'taller_id';
+  static const String _kEliminadoEn = 'eliminado_en';
+  static const String _kSyncStatus = 'sync_status';
 
   /// UUID v4 de la fila, o `null` si todavia no se guardo.
   ///
@@ -80,6 +86,12 @@ class GrupoServicio implements EntidadPersistida {
   /// ID del taller al que pertenece este catalogo (v9)
   final String? tallerId;
 
+  /// Tombstone del registro. Las consultas operativas excluyen filas con valor.
+  final DateTime? eliminadoEn;
+
+  /// `pending` hasta que SyncService confirme el push a Firestore.
+  final String syncStatus;
+
   GrupoServicio copyWith({
     String? id,
     String? nombre,
@@ -87,6 +99,8 @@ class GrupoServicio implements EntidadPersistida {
     DateTime? creadoEn,
     DateTime? actualizadoEn,
     String? tallerId,
+    Object? eliminadoEn = _grupoServicioSinCambio,
+    String? syncStatus,
   }) {
     return GrupoServicio(
       id: id ?? this.id,
@@ -95,6 +109,10 @@ class GrupoServicio implements EntidadPersistida {
       creadoEn: creadoEn ?? this.creadoEn,
       actualizadoEn: actualizadoEn ?? this.actualizadoEn,
       tallerId: tallerId ?? this.tallerId,
+      eliminadoEn: identical(eliminadoEn, _grupoServicioSinCambio)
+          ? this.eliminadoEn
+          : eliminadoEn as DateTime?,
+      syncStatus: syncStatus ?? this.syncStatus,
     );
   }
 
@@ -111,6 +129,8 @@ class GrupoServicio implements EntidadPersistida {
       // El reloj solo se usa si no hay marca previa. Ver la nota de `Marca.toMap`.
       _kActualizadoEn: aIsoUtc(actualizadoEn ?? Reloj.instancia.ahora()),
       if (tallerId != null) _kTallerId: tallerId,
+      _kEliminadoEn: eliminadoEn == null ? null : aIsoUtc(eliminadoEn!),
+      _kSyncStatus: syncStatus,
     };
   }
 
@@ -122,6 +142,8 @@ class GrupoServicio implements EntidadPersistida {
       creadoEn: desdeIso(map[_kCreadoEn]),
       actualizadoEn: desdeIso(map[_kActualizadoEn]),
       tallerId: map[_kTallerId]?.toString(),
+      eliminadoEn: desdeIso(map[_kEliminadoEn]),
+      syncStatus: (map[_kSyncStatus] as String?) ?? 'pending',
     );
   }
 }

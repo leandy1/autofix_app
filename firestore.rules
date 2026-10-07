@@ -145,6 +145,145 @@ service cloud.firestore {
       allow create, update, delete: if isDev();
     }
 
+    function catalogoBaseValido(data, documentoId) {
+      return data.keys().hasAll([
+          'id',
+          'taller_id',
+          'nombre',
+          'activo',
+          'creado_en',
+          'actualizado_en',
+          'sync_status',
+          'eliminado_en'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'taller_id',
+          'nombre',
+          'activo',
+          'creado_en',
+          'actualizado_en',
+          'sync_status',
+          'eliminado_en'
+        ])
+        && data.id == documentoId
+        && data.taller_id is string
+        && data.nombre is string
+        && data.nombre.size() > 0
+        && data.activo is bool
+        && data.creado_en is string
+        && data.actualizado_en is string
+        && data.sync_status == 'synced'
+        && (data.eliminado_en == null || data.eliminado_en is string);
+    }
+
+    function servicioValido(data, documentoId) {
+      return data.keys().hasAll([
+          'id',
+          'taller_id',
+          'nombre',
+          'precio',
+          'activo',
+          'creado_en',
+          'actualizado_en',
+          'sync_status',
+          'eliminado_en'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'taller_id',
+          'nombre',
+          'precio',
+          'activo',
+          'creado_en',
+          'actualizado_en',
+          'sync_status',
+          'eliminado_en'
+        ])
+        && data.id == documentoId
+        && data.taller_id is string
+        && data.nombre is string
+        && data.nombre.size() > 0
+        && data.precio is int
+        && data.precio >= 0
+        && data.activo is bool
+        && data.creado_en is string
+        && data.actualizado_en is string
+        && data.sync_status == 'synced'
+        && (data.eliminado_en == null || data.eliminado_en is string);
+    }
+
+    function adminPuedeCrearCatalogo(data, documentoId) {
+      return catalogoBaseValido(data, documentoId)
+        && adminOfWorkshop(data.taller_id);
+    }
+
+    function adminPuedeEditarCatalogo(datosAnteriores, datosNuevos, documentoId) {
+      return catalogoBaseValido(datosNuevos, documentoId)
+        && datosAnteriores.taller_id == datosNuevos.taller_id
+        && adminOfWorkshop(datosAnteriores.taller_id)
+        && adminOfWorkshop(datosNuevos.taller_id);
+    }
+
+    function adminPuedeCrearServicio(data, documentoId) {
+      return servicioValido(data, documentoId)
+        && adminOfWorkshop(data.taller_id);
+    }
+
+    function adminPuedeEditarServicio(datosAnteriores, datosNuevos, documentoId) {
+      return servicioValido(datosNuevos, documentoId)
+        && datosAnteriores.taller_id == datosNuevos.taller_id
+        && adminOfWorkshop(datosAnteriores.taller_id)
+        && adminOfWorkshop(datosNuevos.taller_id);
+    }
+
+    // Lectura autenticada para configuración y agendamiento. La consulta del
+    // cliente filtra taller_id; la app oculta tombstones en sus repositorios.
+    // Toda baja se escribe como update con eliminado_en, nunca como delete.
+    match /tecnicos/{catalogoId} {
+      allow get, list: if signedIn();
+      allow create: if adminPuedeCrearCatalogo(request.resource.data, catalogoId);
+      allow update: if adminPuedeEditarCatalogo(
+        resource.data,
+        request.resource.data,
+        catalogoId
+      );
+      allow delete: if false;
+    }
+
+    match /servicios/{catalogoId} {
+      allow get, list: if signedIn();
+      allow create: if adminPuedeCrearServicio(request.resource.data, catalogoId);
+      allow update: if adminPuedeEditarServicio(
+        resource.data,
+        request.resource.data,
+        catalogoId
+      );
+      allow delete: if false;
+    }
+
+    match /marcas/{catalogoId} {
+      allow get, list: if signedIn();
+      allow create: if adminPuedeCrearCatalogo(request.resource.data, catalogoId);
+      allow update: if adminPuedeEditarCatalogo(
+        resource.data,
+        request.resource.data,
+        catalogoId
+      );
+      allow delete: if false;
+    }
+
+    match /grupos_servicio/{catalogoId} {
+      allow get, list: if signedIn();
+      allow create: if adminPuedeCrearCatalogo(request.resource.data, catalogoId);
+      allow update: if adminPuedeEditarCatalogo(
+        resource.data,
+        request.resource.data,
+        catalogoId
+      );
+      allow delete: if false;
+    }
+
     // Contador transaccional usado para asignar codigo_visible. Solo permite
     // crear su valor inicial y avanzar de uno en uno; nunca decrementar ni
     // alterar otros campos.

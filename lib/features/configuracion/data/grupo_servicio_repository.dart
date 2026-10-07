@@ -2,6 +2,7 @@ import 'package:sqflite/sqflite.dart';
 
 import 'package:autofix/core/data/base_repository.dart';
 import 'package:autofix/core/database/database_helper.dart';
+import 'package:autofix/core/database/semilla_inicial.dart';
 import 'package:autofix/core/utils/reloj.dart';
 import 'package:autofix/core/utils/uuid.dart';
 import 'package:autofix/features/configuracion/models/grupo_servicio.dart';
@@ -41,6 +42,9 @@ class GrupoServicioRepository implements BaseRepository<GrupoServicio> {
     final conId = grupo.copyWith(
       id: grupo.id ?? Uuid.instancia.generar(),
       creadoEn: grupo.creadoEn ?? Reloj.instancia.ahora(),
+      tallerId: grupo.tallerId ?? SemillaInicial.talleres.first.id,
+      eliminadoEn: null,
+      syncStatus: 'pending',
     );
     final db = await _helper.base;
     await db.insert(
@@ -57,7 +61,8 @@ class GrupoServicioRepository implements BaseRepository<GrupoServicio> {
     final db = await _helper.base;
     final filas = await db.query(
       tabla,
-      where: '${DatabaseHelper.colTallerId} = ?',
+      where:
+          '${DatabaseHelper.colTallerId} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[tallerId],
       orderBy: '${DatabaseHelper.colNombre} COLLATE NOCASE ASC',
     );
@@ -72,7 +77,7 @@ class GrupoServicioRepository implements BaseRepository<GrupoServicio> {
     final filas = await db.query(
       tabla,
       where:
-          '${DatabaseHelper.colNombre} = ? COLLATE NOCASE AND ${DatabaseHelper.colTallerId} = ?',
+          '${DatabaseHelper.colNombre} = ? COLLATE NOCASE AND ${DatabaseHelper.colTallerId} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[nombre.trim(), tallerId],
       limit: 1,
     );
@@ -84,6 +89,7 @@ class GrupoServicioRepository implements BaseRepository<GrupoServicio> {
     final db = await _helper.base;
     final filas = await db.query(
       tabla,
+      where: '${DatabaseHelper.colEliminadoEn} IS NULL',
       orderBy: '${DatabaseHelper.colNombre} COLLATE NOCASE ASC',
     );
     return filas.map(GrupoServicio.fromMap).toList();
@@ -95,7 +101,8 @@ class GrupoServicioRepository implements BaseRepository<GrupoServicio> {
     final db = await _helper.base;
     final filas = await db.query(
       tabla,
-      where: '${DatabaseHelper.colActivo} = ?',
+      where:
+          '${DatabaseHelper.colActivo} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[1],
       orderBy: '${DatabaseHelper.colNombre} COLLATE NOCASE ASC',
     );
@@ -107,7 +114,8 @@ class GrupoServicioRepository implements BaseRepository<GrupoServicio> {
     final db = await _helper.base;
     final filas = await db.query(
       tabla,
-      where: '${DatabaseHelper.colId} = ?',
+      where:
+          '${DatabaseHelper.colId} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[id],
       limit: 1,
     );
@@ -118,7 +126,8 @@ class GrupoServicioRepository implements BaseRepository<GrupoServicio> {
     final db = await _helper.base;
     final filas = await db.query(
       tabla,
-      where: '${DatabaseHelper.colNombre} = ? COLLATE NOCASE',
+      where:
+          '${DatabaseHelper.colNombre} = ? COLLATE NOCASE AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[nombre.trim()],
       limit: 1,
     );
@@ -138,8 +147,14 @@ class GrupoServicioRepository implements BaseRepository<GrupoServicio> {
     final db = await _helper.base;
     return db.update(
       tabla,
-      grupo.copyWith(actualizadoEn: Reloj.instancia.ahora()).toMap(),
-      where: '${DatabaseHelper.colId} = ?',
+      grupo
+          .copyWith(
+            actualizadoEn: Reloj.instancia.ahora(),
+            syncStatus: 'pending',
+          )
+          .toMap(),
+      where:
+          '${DatabaseHelper.colId} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[id],
       conflictAlgorithm: ConflictAlgorithm.abort,
     );
@@ -156,13 +171,20 @@ class GrupoServicioRepository implements BaseRepository<GrupoServicio> {
 
   // ------------------------------ DELETE ------------------------------
 
-  /// Borrado fisico, con la misma justificacion que en `MarcaRepository`.
+  /// Baja lógica sincronizable. La fila se conserva para el historial.
   @override
   Future<int> eliminar(String id) async {
     final db = await _helper.base;
-    return db.delete(
+    final ahora = Reloj.instancia.ahora();
+    return db.update(
       tabla,
-      where: '${DatabaseHelper.colId} = ?',
+      <String, Object?>{
+        DatabaseHelper.colEliminadoEn: ahora.toIso8601String(),
+        DatabaseHelper.colActualizadoEn: ahora.toIso8601String(),
+        DatabaseHelper.colSyncStatus: 'pending',
+      },
+      where:
+          '${DatabaseHelper.colId} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[id],
     );
   }

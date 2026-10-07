@@ -1,6 +1,8 @@
 import 'package:autofix/core/data/base_repository.dart';
 import 'package:autofix/core/utils/reloj.dart';
 
+const Object _tecnicoSinCambio = Object();
+
 /// Tecnico del taller: la persona a la que se le asigna una cita.
 ///
 /// Entidad de dominio pura. No importa sqflite ni el helper de base: las claves de
@@ -8,10 +10,8 @@ import 'package:autofix/core/utils/reloj.dart';
 /// contra SQLite, contra Postgres o contra un Map de test. El test de esquema
 /// (PRAGMA table_info) avisa si el CREATE TABLE se desincroniza.
 ///
-/// `activo` esta en 1 en toda la app: se dejo para el futuro, cuando haya baja
-/// logica de tecnicos. Borrarlos de verdad dejaria citas viejas apuntando a
-/// un id que ya no existe, y ese nombre es justo lo que se muestra en el
-/// historial.
+/// `activo` representa disponibilidad del técnico. Las bajas de catálogo se
+/// conservan además mediante `eliminado_en`, para sincronizar sin perder historia.
 ///
 /// CAMBIO v7: `id` paso de `int?` (autoincremento) a `String?` (UUID v4). El
 /// catalogo de tecnicos se sincroniza entre dispositivos, y un contador local
@@ -25,6 +25,8 @@ class Tecnico implements EntidadPersistida {
     this.creadoEn,
     this.actualizadoEn,
     this.tallerId,
+    this.eliminadoEn,
+    this.syncStatus = 'pending',
   });
 
   static const String _kId = 'id';
@@ -33,6 +35,8 @@ class Tecnico implements EntidadPersistida {
   static const String _kCreadoEn = 'creado_en';
   static const String _kActualizadoEn = 'actualizado_en';
   static const String _kTallerId = 'taller_id';
+  static const String _kEliminadoEn = 'eliminado_en';
+  static const String _kSyncStatus = 'sync_status';
 
   @override
   final String? id;
@@ -50,6 +54,12 @@ class Tecnico implements EntidadPersistida {
   /// ID del taller al que pertenece este catalogo (v9)
   final String? tallerId;
 
+  /// Tombstone del registro. Las consultas operativas excluyen filas con valor.
+  final DateTime? eliminadoEn;
+
+  /// `pending` hasta que SyncService confirme el push a Firestore.
+  final String syncStatus;
+
   Tecnico copyWith({
     String? id,
     String? nombre,
@@ -57,6 +67,8 @@ class Tecnico implements EntidadPersistida {
     DateTime? creadoEn,
     DateTime? actualizadoEn,
     String? tallerId,
+    Object? eliminadoEn = _tecnicoSinCambio,
+    String? syncStatus,
   }) {
     return Tecnico(
       id: id ?? this.id,
@@ -65,6 +77,10 @@ class Tecnico implements EntidadPersistida {
       creadoEn: creadoEn ?? this.creadoEn,
       actualizadoEn: actualizadoEn ?? this.actualizadoEn,
       tallerId: tallerId ?? this.tallerId,
+      eliminadoEn: identical(eliminadoEn, _tecnicoSinCambio)
+          ? this.eliminadoEn
+          : eliminadoEn as DateTime?,
+      syncStatus: syncStatus ?? this.syncStatus,
     );
   }
 
@@ -86,6 +102,8 @@ class Tecnico implements EntidadPersistida {
       // dos pelearian por la misma fila para siempre.
       _kActualizadoEn: aIsoUtc(actualizadoEn ?? Reloj.instancia.ahora()),
       if (tallerId != null) _kTallerId: tallerId,
+      _kEliminadoEn: eliminadoEn == null ? null : aIsoUtc(eliminadoEn!),
+      _kSyncStatus: syncStatus,
     };
   }
 
@@ -97,6 +115,8 @@ class Tecnico implements EntidadPersistida {
       creadoEn: desdeIso(map[_kCreadoEn]),
       actualizadoEn: desdeIso(map[_kActualizadoEn]),
       tallerId: map[_kTallerId]?.toString(),
+      eliminadoEn: desdeIso(map[_kEliminadoEn]),
+      syncStatus: (map[_kSyncStatus] as String?) ?? 'pending',
     );
   }
 }
