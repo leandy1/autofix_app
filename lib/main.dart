@@ -1,4 +1,5 @@
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -34,8 +35,19 @@ Future<void> main() async {
   // Las DOS sesiones: la del admin (taller) y la del cliente. Solo una puede
   // estar activa por arranque y la ruta inicial decide; si alguien cerro
   // sesion en la app que sea, esa quedo apagada y no interfiere.
-  await SesionAdmin.instance.restaurar();
-  await SesionCliente.instance.restaurar();
+  final adminRestaurado = await SesionAdmin.instance.restaurar();
+  final clienteRestaurado = await SesionCliente.instance.restaurar();
+  if (!adminRestaurado && !clienteRestaurado) {
+    // Firebase Auth conserva su propio usuario entre ejecuciones. Sin una
+    // sesión local marcada por Recuérdame, ese token no debe convertirse en
+    // un bypass implícito: el usuario volverá al login y tendrá que validar
+    // credenciales con internet.
+    try {
+      await FirebaseAuth.instance.signOut();
+    } catch (e) {
+      debugPrint('Firebase Auth previo no se pudo cerrar ($e)');
+    }
+  }
 
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(

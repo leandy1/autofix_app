@@ -9,13 +9,16 @@ import 'package:autofix/core/utils/uuid.dart';
 class CambioPasswordPendiente {
   const CambioPasswordPendiente({
     required this.id,
-    required this.correoCliente,
+    required this.correoCuenta,
     required this.syncStatus,
     required this.creadoEn,
   });
 
   final String id;
-  final String correoCliente;
+  final String correoCuenta;
+
+  /// Nombre histórico del campo, mantenido para el drenado existente.
+  String get correoCliente => correoCuenta;
 
   /// `'pending'` (hay que aplicar) o `'synced'` (ya se aplico). Mismo vocabulario
   /// que `citas.sync_status` para que `SyncService` hable un solo idioma.
@@ -62,9 +65,9 @@ class CambiosPasswordRepository {
   /// Encola un cambio pendiente. Devuelve `false` si no se pudo guardar.
   Future<bool> encolar({
     required String contrasena,
-    required String correoCliente,
+    required String correoCuenta,
   }) async {
-    final correo = correoCliente.trim();
+    final correo = correoCuenta.trim();
     if (correo.isEmpty) return false;
     final id = Uuid.instancia.generar();
 
@@ -104,7 +107,7 @@ class CambiosPasswordRepository {
         .map(
           (fila) => CambioPasswordPendiente(
             id: fila[DatabaseHelper.colId] as String,
-            correoCliente:
+            correoCuenta:
                 fila[DatabaseHelper.colCorreoCambioPassword] as String? ?? '',
             syncStatus: fila[DatabaseHelper.colSyncStatus] as String,
             creadoEn:

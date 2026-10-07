@@ -17,6 +17,7 @@ class RecordarmePrefs {
   RecordarmePrefs._();
 
   static const String _kPorDefecto = 'recordarme.habilitadoPorDefecto';
+  static const String _kUltimoRol = 'recordarme.ultimoRol';
 
   /// La preferencia "traer habilitado por defecto el Recuérdame".
   ///
@@ -38,6 +39,29 @@ class RecordarmePrefs {
       await prefs.setBool(_kPorDefecto, valor);
     } catch (e) {
       debugPrint('RecordarmePrefs: no se pudo escribir por defecto ($e)');
+    }
+  }
+
+  /// Rol que debe aparecer seleccionado en el login. Admin es el valor de
+  /// migración para instalaciones anteriores que todavía no guardaban rol.
+  static Future<String> ultimoRol() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final valor = prefs.getString(_kUltimoRol);
+      return valor == 'cliente' ? 'cliente' : 'admin';
+    } catch (e) {
+      debugPrint('RecordarmePrefs: no se pudo leer el último rol ($e)');
+      return 'admin';
+    }
+  }
+
+  static Future<void> setUltimoRol(String rol) async {
+    if (rol != 'admin' && rol != 'cliente') return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kUltimoRol, rol);
+    } catch (e) {
+      debugPrint('RecordarmePrefs: no se pudo guardar el último rol ($e)');
     }
   }
 }

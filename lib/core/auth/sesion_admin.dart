@@ -58,17 +58,30 @@ class SesionAdmin {
     required String adminUid,
     String? tallerNombre,
     String? adminEmail,
+    bool persistir = true,
   }) async {
     _tallerId = tallerId;
     _adminUid = adminUid;
     _tallerNombre = tallerNombre;
     _adminEmail = adminEmail;
+    if (persistir) {
+      await persistirActual();
+    } else {
+      await SesionCache.borrar();
+    }
+  }
+
+  /// Persiste la sesión activa tras una decisión explícita de Recuérdame.
+  Future<void> persistirActual() async {
+    final tallerId = _tallerId;
+    final adminUid = _adminUid;
+    if (tallerId == null || adminUid == null) return;
     await SesionCache.guardar(
       SesionPersistida(
         tallerId: tallerId,
         adminUid: adminUid,
-        tallerNombre: tallerNombre,
-        adminEmail: adminEmail,
+        tallerNombre: _tallerNombre,
+        adminEmail: _adminEmail,
       ),
     );
   }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:autofix/core/auth/sesion_cliente.dart';
+import 'package:autofix/core/auth/sesion_admin.dart';
 import 'package:autofix/features/admin/screens/dashboard_admin_screen.dart';
 import 'package:autofix/features/auth/controllers/login_controller.dart';
 import 'package:autofix/features/cliente/screens/dashboard_cliente_screen.dart';
@@ -47,8 +48,10 @@ class _LoginScreenState extends State<LoginScreen> {
     final porDefecto = usuario == null
         ? await _loginController.recordarmePorDefecto()
         : true;
+    final rol = await _loginController.rolRecordado();
     if (!mounted) return;
 
+    _loginController.selectRole(rol);
     setState(() {
       _hayRecordamiento = usuario != null;
       _recordarme = porDefecto;
@@ -67,6 +70,8 @@ class _LoginScreenState extends State<LoginScreen> {
         contrasena: '',
         activo: false,
       );
+      await SesionAdmin.instance.cerrar();
+      await SesionCliente.instance.cerrar();
       if (!mounted) return;
       setState(() {
         _recordarme = false;
@@ -116,10 +121,16 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
 
     if (_loginController.esAccesoDev(usuario, contrasena)) {
+      // La rama DEV no conserva sesión ni credenciales aunque el switch esté
+      // marcado (también limpia una eventual entrada DEV de una versión vieja).
+      await _loginController.persistirRecordamiento(
+        usuario: usuario,
+        contrasena: contrasena,
+        activo: true,
+      );
+      if (!mounted) return;
       Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => const TalleresAfiliadosScreen(),
-        ),
+        MaterialPageRoute(builder: (_) => const TalleresAfiliadosScreen()),
       );
       return;
     }
@@ -141,10 +152,33 @@ class _LoginScreenState extends State<LoginScreen> {
         );
         return;
       }
+      // Primero valida Auth y permisos. La sesión queda en memoria, pero no en
+      // disco; solo se persiste después de la confirmación explícita.
       final ok = await _loginController.loginAdmin(usuario, contrasena);
       if (!mounted) return;
       if (ok) {
-        await _guardarRecordamiento(usuario, contrasena);
+        var recordarSesion = false;
+        if (_recordarme) {
+          recordarSesion = await _confirmarPersistenciaSesionAdmin() ?? false;
+        }
+        if (recordarSesion) {
+          await SesionAdmin.instance.persistirActual();
+          await _loginController.persistirRecordamiento(
+            usuario: usuario,
+            contrasena: contrasena,
+            activo: true,
+          );
+        } else {
+          await _loginController.persistirRecordamiento(
+            usuario: '',
+            contrasena: '',
+            activo: false,
+          );
+          if (_recordarme) {
+            setState(() => _recordarme = false);
+          }
+        }
+        await _loginController.persistirRol(LoginRole.admin);
         if (!mounted) return;
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => const DashboardScreen()),
@@ -160,31 +194,75 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    // Cliente: acceso directo (sin autenticación por ahora).
-    //
-    // Aun asi abre sesion: sin esto, "Mis citas", el saludo del AppBar y el
-    // prellenado del formulario no tendrian de donde leer la proxima vez que
-    // se abra la app. Solo se completan campos VACIOS del perfil para no
-    // pisar lo que el cliente ya cargo en Editar Perfil.
-    final esCorreo = usuario.contains('@');
-    final sesion = SesionCliente.instance;
-    await sesion.iniciar(
-      nombre: sesion.nombre ?? (esCorreo ? null : usuario.trim()),
-      correo: sesion.correo ?? (esCorreo ? usuario.trim() : null),
+    if (usuario.trim().isEmpty || contrasena.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ingresa correo y contraseña.')),
+      );
+      return;
+    }
+
+    final perfil = await _loginController.loginCliente(
+      usuario,
+      contrasena,
+      persistirSesion: _recordarme,
     );
-    await _guardarRecordamiento(usuario, contrasena);
+    if (!mounted) return;
+    if (perfil == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_loginController.error ?? 'No se pudo iniciar sesión.'),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+      return;
+    }
+    if (_recordarme) {
+      await _loginController.persistirRecordamiento(
+        usuario: usuario,
+        contrasena: contrasena,
+        activo: true,
+      );
+    } else {
+      await _loginController.persistirRecordamiento(
+        usuario: '',
+        contrasena: '',
+        activo: false,
+      );
+    }
+    await _loginController.persistirRol(LoginRole.cliente);
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const DashboardClienteScreen()),
     );
   }
 
-  /// Persiste la decision del switch. Se llama SOLO tras un login exitoso.
-  Future<void> _guardarRecordamiento(String usuario, String contrasena) async {
-    await _loginController.persistirRecordamiento(
-      usuario: usuario,
-      contrasena: contrasena,
-      activo: _recordarme,
+  Future<bool?> _confirmarPersistenciaSesionAdmin() => showDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (contexto) => AlertDialog(
+      title: const Text('Mantener sesión activa'),
+      content: const Text(
+        '¿Estás seguro de mantener la sesión activa luego de cerrar la app? '
+        '(Se recomienda solo en dispositivos personales)',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(contexto).pop(false),
+          child: const Text('NO'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(contexto).pop(true),
+          child: const Text('SÍ'),
+        ),
+      ],
+    ),
+  );
+
+  void _entrarComoInvitado() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const DashboardClienteScreen(invitado: true),
+      ),
     );
   }
 
@@ -194,23 +272,36 @@ class _LoginScreenState extends State<LoginScreen> {
       useRootNavigator: true,
       builder: (dialogContext) => _CrearCuentaClienteDialog(
         onAccountCreated: (nombre, correo, telefono, contrasena) async {
-          // El registro es donde por primera vez se conocen los tres datos
-          // que el prellenado del formulario de citas va a necesitar: se abren
-          // la sesion y se guardan el perfil aca, no en la pantalla siguiente.
-          await SesionCliente.instance.iniciar(
+          final perfil = await _loginController.registrarCliente(
             nombre: nombre,
             correo: correo,
             telefono: telefono,
+            contrasena: contrasena,
           );
-          // Y si "Recuérdame" esta marcado, esta cuenta es la que queda
-          // guardada, igual que si hubiera entrado por el boton Ingresar.
-          await _guardarRecordamiento(correo, contrasena);
+          if (perfil == null) {
+            return _loginController.error ?? 'No se pudo crear la cuenta.';
+          }
+
+          await SesionAdmin.instance.cerrar();
+          await SesionCliente.instance.iniciar(
+            nombre: perfil.nombre,
+            correo: perfil.correo,
+            telefono: perfil.telefono,
+            persistir: _recordarme,
+          );
+          await _loginController.persistirRol(LoginRole.cliente);
+          await _loginController.persistirRecordamiento(
+            usuario: correo,
+            contrasena: contrasena,
+            activo: _recordarme,
+          );
+          return null;
+        },
+        onSuccess: () {
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                '¡Cuenta creada exitosamente! Bienvenido, $nombre.',
-              ),
+            const SnackBar(
+              content: Text('Cuenta creada y sincronizada con Firebase.'),
               behavior: SnackBarBehavior.floating,
               backgroundColor: AppColors.headerNavy,
             ),
@@ -313,9 +404,10 @@ class _LoginScreenState extends State<LoginScreen> {
           const SizedBox(height: 18),
 
           _buildLabeledField(
-            label: 'Usuario',
-            hint: 'Ingrese su usuario',
+            label: 'Correo electrónico / Usuario DEV',
+            hint: 'nombre@ejemplo.com o dev',
             controller: _userController,
+            keyboardType: TextInputType.emailAddress,
             // Con recordamiento el campo es SOLO lectura y muestra `san***`:
             // el usuario no reescribe su propio correo para entrar, y que
             // pudiera editarlo sin poder verlo completo solo genera ruido.
@@ -345,8 +437,9 @@ class _LoginScreenState extends State<LoginScreen> {
               if (_loginController.selectedRole != LoginRole.cliente) {
                 return const SizedBox.shrink();
               }
-              return Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+              return Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   const Text(
                     '¿No tienes cuenta?',
@@ -366,6 +459,13 @@ class _LoginScreenState extends State<LoginScreen> {
                 ],
               );
             },
+          ),
+          const SizedBox(height: 12),
+
+          OutlinedButton.icon(
+            onPressed: _entrarComoInvitado,
+            icon: const Icon(Icons.map_outlined),
+            label: const Text('Entrar como Invitado / Ver Mapa'),
           ),
           const SizedBox(height: 12),
 
@@ -458,6 +558,7 @@ class _LoginScreenState extends State<LoginScreen> {
     bool obscureText = false,
     bool enabled = true,
     bool readOnly = false,
+    TextInputType? keyboardType,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -474,6 +575,7 @@ class _LoginScreenState extends State<LoginScreen> {
         TextField(
           controller: controller,
           obscureText: obscureText,
+          keyboardType: keyboardType,
           enabled: enabled,
           readOnly: readOnly,
           style: const TextStyle(fontSize: 15),
@@ -527,15 +629,19 @@ class _LoginScreenState extends State<LoginScreen> {
 }
 
 class _CrearCuentaClienteDialog extends StatefulWidget {
-  const _CrearCuentaClienteDialog({required this.onAccountCreated});
+  const _CrearCuentaClienteDialog({
+    required this.onAccountCreated,
+    required this.onSuccess,
+  });
 
-  final Future<void> Function(
+  final Future<String?> Function(
     String nombre,
     String correo,
     String telefono,
     String contrasena,
   )
   onAccountCreated;
+  final VoidCallback onSuccess;
 
   @override
   State<_CrearCuentaClienteDialog> createState() =>
@@ -552,6 +658,7 @@ class _CrearCuentaClienteDialogState extends State<_CrearCuentaClienteDialog> {
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   bool _creando = false;
+  String? _error;
   final _formKey = GlobalKey<FormState>();
 
   @override
@@ -606,20 +713,29 @@ class _CrearCuentaClienteDialogState extends State<_CrearCuentaClienteDialog> {
     );
   }
 
-  void _submitForm() {
+  Future<void> _submitForm() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
-    setState(() => _creando = true);
-
-    Future<void>.delayed(const Duration(milliseconds: 500), () async {
-      if (!mounted) return;
-      final nombre = _nombreController.text.trim();
-      final correo = _correoController.text.trim();
-      final telefono = _telefonoController.text.trim();
-      final contrasena = _passwordController.text;
-      Navigator.of(context).pop();
-      await widget.onAccountCreated(nombre, correo, telefono, contrasena);
+    setState(() {
+      _creando = true;
+      _error = null;
     });
+    final error = await widget.onAccountCreated(
+      _nombreController.text.trim(),
+      _correoController.text.trim(),
+      _telefonoController.text.trim(),
+      _passwordController.text,
+    );
+    if (!mounted) return;
+    if (error != null) {
+      setState(() {
+        _creando = false;
+        _error = error;
+      });
+      return;
+    }
+    Navigator.of(context).pop();
+    widget.onSuccess();
   }
 
   @override
@@ -673,6 +789,21 @@ class _CrearCuentaClienteDialogState extends State<_CrearCuentaClienteDialog> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      if (_error != null) ...[
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFDECEC),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            _error!,
+                            style: const TextStyle(color: Colors.red),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
                       TextFormField(
                         controller: _nombreController,
                         textCapitalization: TextCapitalization.words,

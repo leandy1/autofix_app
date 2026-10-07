@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import 'package:autofix/core/auth/sesion_admin.dart';
+import 'package:autofix/core/auth/credenciales_seguras.dart';
 import 'package:autofix/features/admin/widgets/solicitudes_citas_admin_section.dart';
 import 'package:autofix/features/auth/screens/login_screen.dart';
 import 'package:autofix/features/citas/models/cita.dart' as cita_data;
@@ -14,6 +15,7 @@ import 'package:autofix/shared/theme/app_colors.dart';
 import 'dashboard_admin_screen.dart';
 import 'configuracion_admin_screen.dart';
 import 'impresoras_bluetooth_screen.dart';
+import 'editar_perfil_admin_screen.dart';
 
 const Map<String, Color> kColorPorEstado = {
   'ATRASADAS': AppColors.atrasadas,
@@ -1810,6 +1812,16 @@ class _CitasScreenState extends State<CitasScreen> {
                 MaterialPageRoute(builder: (_) => const ConfiguracionScreen()),
               ),
             ),
+            _drawerItem(
+              icon: Icons.manage_accounts_outlined,
+              label: 'Editar Perfil',
+              selected: false,
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const EditarPerfilAdminScreen(),
+                ),
+              ),
+            ),
             const Spacer(),
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 20),
@@ -1819,6 +1831,7 @@ class _CitasScreenState extends State<CitasScreen> {
                   // local de sesion: sin este orden el proximo arranque entraria
                   // solo al Dashboard y pareceria que el logout no sirvio.
                   await SesionAdmin.instance.cerrar();
+                  await CredencialesSeguras.borrar();
                   await SyncService.instance.stop();
                   try {
                     await FirebaseAuth.instance.signOut();

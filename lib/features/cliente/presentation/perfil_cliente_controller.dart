@@ -140,7 +140,7 @@ class PerfilClienteController extends ChangeNotifier {
     }
     final guardado = await _cola.encolar(
       contrasena: contrasena,
-      correoCliente: correoCliente,
+      correoCuenta: correoCliente,
     );
     if (!guardado) {
       return 'No se pudo guardar el cambio de contraseña.';

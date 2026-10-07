@@ -1,4 +1,5 @@
 import 'package:autofix/core/database/database_helper.dart';
+import 'package:autofix/core/auth/credenciales_seguras.dart';
 import 'package:autofix/features/auth/screens/login_screen.dart';
 import 'package:autofix/features/devMode/screens/talleres_afiliados_screen.dart';
 import 'package:flutter/material.dart';
@@ -24,6 +25,8 @@ void main() {
 
   setUp(() async {
     await DatabaseHelper.resetParaPruebas();
+    CredencialesSeguras.usarAlmacenParaPruebas(AlmacenSeguroEnMemoria());
+    addTearDown(() => CredencialesSeguras.usarAlmacenParaPruebas(null));
     // ABRIR la base aqui, fuera del `FakeAsync` de `testWidgets`: la primera
     // apertura adentro del test cuelga en vez de fallar.
     await DatabaseHelper.instance.base;
@@ -34,6 +37,8 @@ void main() {
 
     await tester.enterText(find.byType(TextField).at(0), 'dev');
     await tester.enterText(find.byType(TextField).at(1), '1234');
+    await tester.ensureVisible(find.text('Ingresar'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Ingresar'));
     await tester.pumpAndSettle();
 
@@ -46,6 +51,8 @@ void main() {
 
     await tester.enterText(find.byType(TextField).at(0), 'dev');
     await tester.enterText(find.byType(TextField).at(1), 'incorrecta');
+    await tester.ensureVisible(find.text('Ingresar'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Ingresar'));
     await tester.pump();
 
@@ -54,5 +61,26 @@ void main() {
       find.text('La contraseña de desarrollador no es válida.'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('dev/1234 también funciona desde Cliente y nunca se recuerda', (
+    tester,
+  ) async {
+    final almacen = AlmacenSeguroEnMemoria();
+    CredencialesSeguras.usarAlmacenParaPruebas(almacen);
+    addTearDown(() => CredencialesSeguras.usarAlmacenParaPruebas(null));
+    await tester.pumpWidget(const MaterialApp(home: LoginScreen()));
+
+    await tester.tap(find.text('Cliente'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).at(0), 'dev');
+    await tester.enterText(find.byType(TextField).at(1), '1234');
+    await tester.ensureVisible(find.text('Ingresar'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Ingresar'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(TalleresAfiliadosScreen), findsOneWidget);
+    expect(await CredencialesSeguras.leer(), isNull);
   });
 }

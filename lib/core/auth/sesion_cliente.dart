@@ -66,10 +66,15 @@ class SesionCliente {
     String? nombre,
     String? correo,
     String? telefono,
+    bool persistir = true,
   }) async {
     _activa = true;
     _aplicar(nombre: nombre, correo: correo, telefono: telefono);
-    await _persistir();
+    if (persistir) {
+      await _persistir();
+    } else {
+      await _borrarPersistenciaSesion();
+    }
   }
 
   /// Actualiza el perfil desde la pantalla de Editar Perfil.
@@ -151,6 +156,15 @@ class SesionCliente {
       await _escribirOQuitar(prefs, _kTelefono, _telefono);
     } catch (e) {
       debugPrint('SesionCliente: no se pudo persistir ($e)');
+    }
+  }
+
+  Future<void> _borrarPersistenciaSesion() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_kActiva);
+    } catch (e) {
+      debugPrint('SesionCliente: no se pudo borrar la sesión guardada ($e)');
     }
   }
 
