@@ -764,8 +764,5 @@ class SyncService extends ChangeNotifier {
     }
   }
 
-  EstadoCita _estadoFromString(String s) => EstadoCita.values.firstWhere(
-    (e) => e.name == s,
-    orElse: () => EstadoCita.pendiente,
-  );
+  EstadoCita _estadoFromString(String s) => EstadoCita.desdeNombre(s);
 }

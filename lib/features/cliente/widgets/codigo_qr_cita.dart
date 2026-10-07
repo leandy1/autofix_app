@@ -12,18 +12,21 @@ class CodigoQrCita extends StatelessWidget {
   final double size;
 
   @override
-  Widget build(BuildContext context) => QrImageView(
-    data: codigoVisible,
-    version: QrVersions.auto,
-    size: size,
-    backgroundColor: Colors.white,
-    eyeStyle: const QrEyeStyle(
-      eyeShape: QrEyeShape.square,
-      color: AppColors.headerNavy,
-    ),
-    dataModuleStyle: const QrDataModuleStyle(
-      dataModuleShape: QrDataModuleShape.square,
-      color: AppColors.headerNavy,
+  Widget build(BuildContext context) => SizedBox.square(
+    dimension: size,
+    child: QrImageView(
+      data: codigoVisible,
+      version: QrVersions.auto,
+      size: size,
+      backgroundColor: Colors.white,
+      eyeStyle: const QrEyeStyle(
+        eyeShape: QrEyeShape.square,
+        color: AppColors.headerNavy,
+      ),
+      dataModuleStyle: const QrDataModuleStyle(
+        dataModuleShape: QrDataModuleShape.square,
+        color: AppColors.headerNavy,
+      ),
     ),
   );
 }

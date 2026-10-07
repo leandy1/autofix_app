@@ -26,10 +26,15 @@ enum EstadoCita {
 
   /// Se persiste `.name` y no la etiqueta: `.name` es estable aunque el diseño
   /// renombre el texto visible.
-  static EstadoCita desdeNombre(String valor) => EstadoCita.values.firstWhere(
-    (e) => e.name == valor,
-    orElse: () => EstadoCita.pendiente,
-  );
+  static EstadoCita desdeNombre(String valor) {
+    for (final estado in EstadoCita.values) {
+      if (estado.name == valor ||
+          estado.etiqueta.toLowerCase() == valor.toLowerCase()) {
+        return estado;
+      }
+    }
+    return EstadoCita.pendiente;
+  }
 
   static EstadoCita desdeEtiqueta(String valor) => EstadoCita.values.firstWhere(
     (e) => e.etiqueta == valor,

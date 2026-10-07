@@ -96,6 +96,11 @@ void main() {
       expect(EstadoCita.desdeNombre('inventado'), EstadoCita.pendiente);
     });
 
+    test('recupera también etiquetas antiguas de estado recibidas de la nube', () {
+      expect(EstadoCita.desdeNombre('Aceptada'), EstadoCita.aceptada);
+      expect(EstadoCita.desdeNombre('RECHAZADA'), EstadoCita.rechazada);
+    });
+
     test('la etiqueta coincide con la llave de kColorPorEstado de Leandy', () {
       // Si esto falla, el color del acordeon de Leandy deja de matchear.
       expect(EstadoCita.pendiente.etiqueta, 'Pendiente');
