@@ -20,6 +20,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _userController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final LoginController _loginController = LoginController();
+  late final Future<void> _cargaInicial;
 
   /// Estado del switch "Recuérdame".
   bool _recordarme = true;
@@ -28,11 +29,12 @@ class _LoginScreenState extends State<LoginScreen> {
   /// el usuario escriba nada: es el estado en el que el usuario ve `san***`
   /// y la contraseña deshabilitada.
   bool _hayRecordamiento = false;
+  bool _preferenciasCargadas = false;
 
   @override
   void initState() {
     super.initState();
-    _cargarRecordamiento();
+    _cargaInicial = _cargarRecordamiento();
   }
 
   /// Carga lo que decide como se ve el formulario al abrir.
@@ -55,6 +57,7 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() {
       _hayRecordamiento = usuario != null;
       _recordarme = porDefecto;
+      _preferenciasCargadas = true;
       if (usuario != null) _userController.text = usuario;
     });
   }
@@ -104,6 +107,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _handleLogin() async {
+    await _cargaInicial;
+    if (!mounted) return;
     var usuario = _userController.text;
     var contrasena = _passwordController.text;
 
@@ -267,6 +272,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _abrirRegistroCliente() {
+    if (!_preferenciasCargadas) return;
     showDialog<void>(
       context: context,
       useRootNavigator: true,
@@ -446,7 +452,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     style: TextStyle(fontSize: 13, color: AppColors.textGray),
                   ),
                   TextButton(
-                    onPressed: _abrirRegistroCliente,
+                    onPressed: _preferenciasCargadas
+                        ? _abrirRegistroCliente
+                        : null,
                     child: const Text(
                       'Crear una aquí',
                       style: TextStyle(
@@ -509,9 +517,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ],
               selected: {_loginController.selectedRole},
-              onSelectionChanged: (selection) {
-                _loginController.selectRole(selection.first);
-              },
+              onSelectionChanged: _preferenciasCargadas
+                  ? (selection) => _loginController.selectRole(selection.first)
+                  : null,
             ),
           ),
         ],
@@ -529,7 +537,7 @@ class _LoginScreenState extends State<LoginScreen> {
       children: [
         Switch(
           value: _recordarme,
-          onChanged: _alternarRecordarme,
+          onChanged: _preferenciasCargadas ? _alternarRecordarme : null,
           activeThumbColor: AppColors.orangePrimary,
         ),
         const SizedBox(width: 6),
@@ -610,7 +618,9 @@ class _LoginScreenState extends State<LoginScreen> {
       width: double.infinity,
       height: 50,
       child: ElevatedButton(
-        onPressed: _handleLogin,
+        onPressed: _preferenciasCargadas && !_loginController.cargando
+            ? _handleLogin
+            : null,
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.orangePrimary,
           foregroundColor: Colors.white,

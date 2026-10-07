@@ -8,12 +8,11 @@ import 'package:autofix/core/auth/nombre_amigable.dart';
 /// ---------------------------------------------------------------
 /// POR QUE UNA CLAVE Y NO DOS
 /// ---------------------------------------------------------------
-/// El cliente no tiene autenticación real en la app (entra en "acceso directo"
-/// o desde el registro, que por ahora es local), asi que no existe un
-/// `FirebaseAuth.currentUser` del cual colgar su nombre, correo y teléfono.
+/// El cliente valida su identidad en Firebase Auth. Este singleton mantiene
+/// una copia local del perfil y la decisión de Recuérdame para que el dashboard
+/// y el formulario de citas puedan abrir sin red tras una sesión recordada.
 /// Sin este singleton, el saludo del AppBar ("¡Hola, Maria!"), el prellenado
-/// del formulario de citas y la pantalla de Editar Perfil no tendrian de dónde
-/// leer y cada uno inventaria su propia persistencia.
+/// del formulario de citas y Editar Perfil no tendrian una fuente local común.
 ///
 /// Guarda el PERFIL (nombre/correo/teléfono) y la bandera de SESIÓN activa en
 /// la misma tanda de claves porque se escriben juntos siempre; pero son dos
@@ -57,11 +56,11 @@ class SesionCliente {
   String get nombreVisible =>
       nombreAmigable(_nombre ?? _correo, reserva: 'cliente');
 
-  /// Abre sesión y guarda lo que ya se del cliente.
+  /// Abre sesión en memoria y, si [persistir] es `true`, la guarda localmente.
   ///
   /// Los parametros son `String?` y `null` significa "no se, no toques": el
-  /// acceso directo conoce el usuario que se escribio en el login pero no su
-  /// teléfono, y pisar el teléfono con `null` dejaria un perfil a medias.
+  /// `null` significa que la fuente no trae ese dato y no debe borrar un valor
+  /// anterior del perfil local.
   Future<void> iniciar({
     String? nombre,
     String? correo,

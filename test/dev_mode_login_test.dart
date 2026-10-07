@@ -4,6 +4,7 @@ import 'package:autofix/features/auth/screens/login_screen.dart';
 import 'package:autofix/features/devMode/screens/talleres_afiliados_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
@@ -24,6 +25,7 @@ void main() {
   });
 
   setUp(() async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
     await DatabaseHelper.resetParaPruebas();
     CredencialesSeguras.usarAlmacenParaPruebas(AlmacenSeguroEnMemoria());
     addTearDown(() => CredencialesSeguras.usarAlmacenParaPruebas(null));

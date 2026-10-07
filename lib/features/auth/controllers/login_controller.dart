@@ -172,10 +172,8 @@ class LoginController extends ChangeNotifier {
                 taller?.nombre ??
                 doc.data()?['tallerNombre'] as String? ??
                 'Taller';
-            // `await` y no fire-and-forget: la sesion tiene que estar EN DISCO
-            // antes de que la pantalla navegue al Dashboard. Sin esto, cerrar la
-            // app en el instante siguiente al login arrancaria la proxima vez en
-            // el login, que es exactamente el caso offline que estamos cerrando.
+            // `await` y no fire-and-forget: la sesión en memoria y su decisión
+            // de persistencia deben terminar antes de navegar al Dashboard.
             await SesionCliente.instance.cerrar();
             await SesionAdmin.instance.iniciar(
               tallerId: tallerId,

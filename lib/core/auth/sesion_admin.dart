@@ -9,10 +9,12 @@ import 'package:autofix/core/auth/sesion_cache.dart';
 /// ---------------------------------------------------------------
 /// PERSISTENCIA (Modo "Recuérdame" / arranque offline)
 /// ---------------------------------------------------------------
-/// La sesión vive en memoria (rapida, sincronica) Y en disco ([SesionCache]).
+/// La sesión vive en memoria (rapida, sincronica) y se guarda en disco
+/// ([SesionCache]) solo cuando el usuario acepta Recuérdame.
 /// El flujo completo es:
 ///
-///   1. Login con internet -> [iniciar] llena la memoria y persiste.
+///   1. Login con internet -> [iniciar] llena la memoria y, según la decisión
+///      de Recuérdame, persiste o borra la caché anterior.
 ///   2. Siguiente arranque sin internet -> `main()` llama a [restaurar] ANTES
 ///      de montar la primera pantalla, la memoria ya tiene el `tallerId` y la
 ///      ruta inicial entra directo al Dashboard sin tocar Firebase.
@@ -48,7 +50,7 @@ class SesionAdmin {
   /// `true` si hay un admin logueado con taller asignado.
   bool get activa => _tallerId != null;
 
-  /// Abre sesión en memoria y la deja persistida en disco.
+  /// Abre sesión en memoria y la persiste solo si [persistir] es `true`.
   ///
   /// El caller (LoginController) debe `await` esto para que el login recien
   /// entonces navegue al Dashboard: si no, una app cerrada a mitad del guardado
