@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:autofix/core/auth/sesion_cliente.dart';
+import 'package:autofix/core/auth/sesion_admin.dart';
 import 'package:autofix/features/admin/screens/dashboard_admin_screen.dart';
 import 'package:autofix/features/auth/controllers/login_controller.dart';
 import 'package:autofix/features/cliente/screens/dashboard_cliente_screen.dart';
@@ -18,6 +20,82 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _userController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final LoginController _loginController = LoginController();
+  late final Future<void> _cargaInicial;
+
+  /// Estado del switch "Recuérdame".
+  bool _recordarme = true;
+
+  /// `true` cuando hay credenciales guardadas y el login puede entrar sin que
+  /// el usuario escriba nada: es el estado en el que el usuario ve `san***`
+  /// y la contraseña deshabilitada.
+  bool _hayRecordamiento = false;
+  bool _preferenciasCargadas = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargaInicial = _cargarRecordamiento();
+  }
+
+  /// Carga lo que decide como se ve el formulario al abrir.
+  ///
+  /// Arranca en el estado "normal" (`_recordarme = true`, sin recordamiento)
+  /// para que el PRIMER frame ya sea usable: si se esperara a leer el
+  /// keystore, el formulario apareceria vacio y luego saltaria al estado
+  /// recordado, que en pantalla se lee como un parpadeo.
+  Future<void> _cargarRecordamiento() async {
+    final usuario = await _loginController.usuarioRecordado();
+    // Si hay credenciales guardadas, el switch esta MARcado por definicion:
+    // no puede haber algo guardado con la casilla apagada.
+    final porDefecto = usuario == null
+        ? await _loginController.recordarmePorDefecto()
+        : true;
+    final rol = await _loginController.rolRecordado();
+    if (!mounted) return;
+
+    _loginController.selectRole(rol);
+    setState(() {
+      _hayRecordamiento = usuario != null;
+      _recordarme = porDefecto;
+      _preferenciasCargadas = true;
+      if (usuario != null) _userController.text = usuario;
+    });
+  }
+
+  /// Alterna la casilla. Ver `login_screen.dart` para la regla de negocio.
+  Future<void> _alternarRecordarme(bool valor) async {
+    if (!valor) {
+      // Desmarcar BORRA lo guardado y devuelve el formulario a su estado
+      // editable. Dejar el usuario ahi seria seguir usando el recordamiento
+      // aunque el usuario pidio no tenerlo.
+      await _loginController.persistirRecordamiento(
+        usuario: '',
+        contrasena: '',
+        activo: false,
+      );
+      await SesionAdmin.instance.cerrar();
+      await SesionCliente.instance.cerrar();
+      if (!mounted) return;
+      setState(() {
+        _recordarme = false;
+        _hayRecordamiento = false;
+        _userController.clear();
+        _passwordController.clear();
+      });
+      return;
+    }
+
+    // Marcado de nuevo: todavia NO se guarda nada. Se guardara la cuenta que
+    // el usuario ingrese a continuacion, al validarla. Por eso no hay llamada
+    // al controlador aca: "recordarme esta activo" se deduce de que HAY
+    // credenciales en el keystore, y mientras no las haya no hay nada que
+    // prender.
+    if (!mounted) return;
+    setState(() {
+      _recordarme = true;
+      _hayRecordamiento = false;
+    });
+  }
 
   @override
   void dispose() {
@@ -29,13 +107,35 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _handleLogin() async {
-    final usuario = _userController.text;
-    final contrasena = _passwordController.text;
+    await _cargaInicial;
+    if (!mounted) return;
+    var usuario = _userController.text;
+    var contrasena = _passwordController.text;
+
+    // Con credenciales guardadas, el boton entra CON ESAS: por eso el campo
+    // de usuario muestra la mascara y el de contraseña esta deshabilitado.
+    // Si el keystore estuviera roto (devuelve null), se cae al texto de los
+    // campos y el usuario puede escribir a mano.
+    if (_hayRecordamiento) {
+      final guardadas = await _loginController.credencialesRecordadas();
+      if (guardadas != null) {
+        usuario = guardadas.usuario;
+        contrasena = guardadas.contrasena;
+      }
+    }
+    if (!mounted) return;
+
     if (_loginController.esAccesoDev(usuario, contrasena)) {
+      // La rama DEV no conserva sesión ni credenciales aunque el switch esté
+      // marcado (también limpia una eventual entrada DEV de una versión vieja).
+      await _loginController.persistirRecordamiento(
+        usuario: usuario,
+        contrasena: contrasena,
+        activo: true,
+      );
+      if (!mounted) return;
       Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => const TalleresAfiliadosScreen(),
-        ),
+        MaterialPageRoute(builder: (_) => const TalleresAfiliadosScreen()),
       );
       return;
     }
@@ -57,9 +157,34 @@ class _LoginScreenState extends State<LoginScreen> {
         );
         return;
       }
+      // Primero valida Auth y permisos. La sesión queda en memoria, pero no en
+      // disco; solo se persiste después de la confirmación explícita.
       final ok = await _loginController.loginAdmin(usuario, contrasena);
       if (!mounted) return;
       if (ok) {
+        var recordarSesion = false;
+        if (_recordarme) {
+          recordarSesion = await _confirmarPersistenciaSesionAdmin() ?? false;
+        }
+        if (recordarSesion) {
+          await SesionAdmin.instance.persistirActual();
+          await _loginController.persistirRecordamiento(
+            usuario: usuario,
+            contrasena: contrasena,
+            activo: true,
+          );
+        } else {
+          await _loginController.persistirRecordamiento(
+            usuario: '',
+            contrasena: '',
+            activo: false,
+          );
+          if (_recordarme) {
+            setState(() => _recordarme = false);
+          }
+        }
+        await _loginController.persistirRol(LoginRole.admin);
+        if (!mounted) return;
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => const DashboardScreen()),
         );
@@ -74,24 +199,115 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    // Cliente: acceso directo (sin autenticación por ahora).
+    if (usuario.trim().isEmpty || contrasena.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ingresa correo y contraseña.')),
+      );
+      return;
+    }
+
+    final perfil = await _loginController.loginCliente(
+      usuario,
+      contrasena,
+      persistirSesion: _recordarme,
+    );
+    if (!mounted) return;
+    if (perfil == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_loginController.error ?? 'No se pudo iniciar sesión.'),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+      return;
+    }
+    if (_recordarme) {
+      await _loginController.persistirRecordamiento(
+        usuario: usuario,
+        contrasena: contrasena,
+        activo: true,
+      );
+    } else {
+      await _loginController.persistirRecordamiento(
+        usuario: '',
+        contrasena: '',
+        activo: false,
+      );
+    }
+    await _loginController.persistirRol(LoginRole.cliente);
+    if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const DashboardClienteScreen()),
     );
   }
 
+  Future<bool?> _confirmarPersistenciaSesionAdmin() => showDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (contexto) => AlertDialog(
+      title: const Text('Mantener sesión activa'),
+      content: const Text(
+        '¿Estás seguro de mantener la sesión activa luego de cerrar la app? '
+        '(Se recomienda solo en dispositivos personales)',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(contexto).pop(false),
+          child: const Text('NO'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(contexto).pop(true),
+          child: const Text('SÍ'),
+        ),
+      ],
+    ),
+  );
+
+  void _entrarComoInvitado() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const DashboardClienteScreen(invitado: true),
+      ),
+    );
+  }
+
   void _abrirRegistroCliente() {
+    if (!_preferenciasCargadas) return;
     showDialog<void>(
       context: context,
       useRootNavigator: true,
       builder: (dialogContext) => _CrearCuentaClienteDialog(
-        onAccountCreated: (nombre) {
+        onAccountCreated: (nombre, correo, telefono, contrasena) async {
+          final perfil = await _loginController.registrarCliente(
+            nombre: nombre,
+            correo: correo,
+            telefono: telefono,
+            contrasena: contrasena,
+          );
+          if (perfil == null) {
+            return _loginController.error ?? 'No se pudo crear la cuenta.';
+          }
+
+          await SesionAdmin.instance.cerrar();
+          await SesionCliente.instance.iniciar(
+            nombre: perfil.nombre,
+            correo: perfil.correo,
+            telefono: perfil.telefono,
+            persistir: _recordarme,
+          );
+          await _loginController.persistirRol(LoginRole.cliente);
+          await _loginController.persistirRecordamiento(
+            usuario: correo,
+            contrasena: contrasena,
+            activo: _recordarme,
+          );
+          return null;
+        },
+        onSuccess: () {
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                '¡Cuenta creada exitosamente! Bienvenido, $nombre.',
-              ),
+            const SnackBar(
+              content: Text('Cuenta creada y sincronizada con Firebase.'),
               behavior: SnackBarBehavior.floating,
               backgroundColor: AppColors.headerNavy,
             ),
@@ -194,9 +410,14 @@ class _LoginScreenState extends State<LoginScreen> {
           const SizedBox(height: 18),
 
           _buildLabeledField(
-            label: 'Usuario',
-            hint: 'Ingrese su usuario',
+            label: 'Correo electrónico / Usuario DEV',
+            hint: 'nombre@ejemplo.com o dev',
             controller: _userController,
+            keyboardType: TextInputType.emailAddress,
+            // Con recordamiento el campo es SOLO lectura y muestra `san***`:
+            // el usuario no reescribe su propio correo para entrar, y que
+            // pudiera editarlo sin poder verlo completo solo genera ruido.
+            readOnly: _hayRecordamiento,
           ),
           const SizedBox(height: 18),
 
@@ -205,7 +426,12 @@ class _LoginScreenState extends State<LoginScreen> {
             hint: 'Ingrese su contraseña',
             controller: _passwordController,
             obscureText: true,
+            // La contraseña esta DESHABILITADA: la que se usa es la guardada.
+            enabled: !_hayRecordamiento,
           ),
+          const SizedBox(height: 14),
+
+          _buildRecordarme(),
           const SizedBox(height: 26),
 
           _buildLoginButton(),
@@ -217,15 +443,18 @@ class _LoginScreenState extends State<LoginScreen> {
               if (_loginController.selectedRole != LoginRole.cliente) {
                 return const SizedBox.shrink();
               }
-              return Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+              return Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   const Text(
                     '¿No tienes cuenta?',
                     style: TextStyle(fontSize: 13, color: AppColors.textGray),
                   ),
                   TextButton(
-                    onPressed: _abrirRegistroCliente,
+                    onPressed: _preferenciasCargadas
+                        ? _abrirRegistroCliente
+                        : null,
                     child: const Text(
                       'Crear una aquí',
                       style: TextStyle(
@@ -238,6 +467,13 @@ class _LoginScreenState extends State<LoginScreen> {
                 ],
               );
             },
+          ),
+          const SizedBox(height: 12),
+
+          OutlinedButton.icon(
+            onPressed: _entrarComoInvitado,
+            icon: const Icon(Icons.map_outlined),
+            label: const Text('Entrar como Invitado / Ver Mapa'),
           ),
           const SizedBox(height: 12),
 
@@ -281,13 +517,44 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ],
               selected: {_loginController.selectedRole},
-              onSelectionChanged: (selection) {
-                _loginController.selectRole(selection.first);
-              },
+              onSelectionChanged: _preferenciasCargadas
+                  ? (selection) => _loginController.selectRole(selection.first)
+                  : null,
             ),
           ),
         ],
       ),
+    );
+  }
+
+  /// La casilla "Recuérdame".
+  ///
+  /// El texto de la derecha cambia segun el estado para que se entienda que
+  /// pasaría si se desmarca: no es decoracion, es lo que explica por qué la
+  /// contraseña esta gris.
+  Widget _buildRecordarme() {
+    return Row(
+      children: [
+        Switch(
+          value: _recordarme,
+          onChanged: _preferenciasCargadas ? _alternarRecordarme : null,
+          activeThumbColor: AppColors.orangePrimary,
+        ),
+        const SizedBox(width: 6),
+        const Text(
+          'Recuérdame',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: AppColors.labelDark,
+          ),
+        ),
+        const Spacer(),
+        Text(
+          _hayRecordamiento ? 'Sesión guardada' : '',
+          style: const TextStyle(fontSize: 12, color: AppColors.textGray),
+        ),
+      ],
     );
   }
 
@@ -297,6 +564,9 @@ class _LoginScreenState extends State<LoginScreen> {
     required String hint,
     required TextEditingController controller,
     bool obscureText = false,
+    bool enabled = true,
+    bool readOnly = false,
+    TextInputType? keyboardType,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -313,6 +583,9 @@ class _LoginScreenState extends State<LoginScreen> {
         TextField(
           controller: controller,
           obscureText: obscureText,
+          keyboardType: keyboardType,
+          enabled: enabled,
+          readOnly: readOnly,
           style: const TextStyle(fontSize: 15),
           decoration: InputDecoration(
             hintText: hint,
@@ -345,7 +618,9 @@ class _LoginScreenState extends State<LoginScreen> {
       width: double.infinity,
       height: 50,
       child: ElevatedButton(
-        onPressed: _handleLogin,
+        onPressed: _preferenciasCargadas && !_loginController.cargando
+            ? _handleLogin
+            : null,
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.orangePrimary,
           foregroundColor: Colors.white,
@@ -364,9 +639,19 @@ class _LoginScreenState extends State<LoginScreen> {
 }
 
 class _CrearCuentaClienteDialog extends StatefulWidget {
-  const _CrearCuentaClienteDialog({required this.onAccountCreated});
+  const _CrearCuentaClienteDialog({
+    required this.onAccountCreated,
+    required this.onSuccess,
+  });
 
-  final Function(String nombre) onAccountCreated;
+  final Future<String?> Function(
+    String nombre,
+    String correo,
+    String telefono,
+    String contrasena,
+  )
+  onAccountCreated;
+  final VoidCallback onSuccess;
 
   @override
   State<_CrearCuentaClienteDialog> createState() =>
@@ -383,6 +668,7 @@ class _CrearCuentaClienteDialogState extends State<_CrearCuentaClienteDialog> {
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   bool _creando = false;
+  String? _error;
   final _formKey = GlobalKey<FormState>();
 
   @override
@@ -437,17 +723,29 @@ class _CrearCuentaClienteDialogState extends State<_CrearCuentaClienteDialog> {
     );
   }
 
-  void _submitForm() {
+  Future<void> _submitForm() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
-    setState(() => _creando = true);
-
-    Future<void>.delayed(const Duration(milliseconds: 500), () {
-      if (!mounted) return;
-      final nombre = _nombreController.text.trim();
-      Navigator.of(context).pop();
-      widget.onAccountCreated(nombre);
+    setState(() {
+      _creando = true;
+      _error = null;
     });
+    final error = await widget.onAccountCreated(
+      _nombreController.text.trim(),
+      _correoController.text.trim(),
+      _telefonoController.text.trim(),
+      _passwordController.text,
+    );
+    if (!mounted) return;
+    if (error != null) {
+      setState(() {
+        _creando = false;
+        _error = error;
+      });
+      return;
+    }
+    Navigator.of(context).pop();
+    widget.onSuccess();
   }
 
   @override
@@ -501,6 +799,21 @@ class _CrearCuentaClienteDialogState extends State<_CrearCuentaClienteDialog> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      if (_error != null) ...[
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFDECEC),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            _error!,
+                            style: const TextStyle(color: Colors.red),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
                       TextFormField(
                         controller: _nombreController,
                         textCapitalization: TextCapitalization.words,

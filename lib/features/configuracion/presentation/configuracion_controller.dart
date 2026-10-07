@@ -238,14 +238,20 @@ class ConfiguracionController extends ChangeNotifier {
     );
   }
 
+  // Los cuatro `eliminar*` releen con `obtenerTodasPorTaller(tallerId)`, igual
+  // que los `guardar*`. Releer con `obtenerTodas()` (sin filtro) dejaba en la
+  // lista en memoria los catalogos de OTROS talleres: al borrar un tecnico, el
+  // admin de un taller veia en pantalla los tecnicos de todos los talleres
+  // guardados en el dispositivo (fuga de multitenencia en la UI).
   Future<bool> eliminarTecnico(String id) => _escribir(
     () => _repoTecnicos.eliminar(id),
-    () async => _tecnicos = await _repoTecnicos.obtenerTodas(),
+    () async => _tecnicos = await _repoTecnicos.obtenerTodasPorTaller(tallerId),
   );
 
   Future<bool> eliminarTipoServicio(String id) => _escribir(
     () => _repoServicios.eliminar(id),
-    () async => _tiposServicio = await _repoServicios.obtenerTodas(),
+    () async =>
+        _tiposServicio = await _repoServicios.obtenerTodasPorTaller(tallerId),
   );
 
   /// Borrado fisico de la marca. Para una baja que deba conservar el historial
@@ -253,12 +259,13 @@ class ConfiguracionController extends ChangeNotifier {
   /// cual de los dos usar y el controller no lo esconde.
   Future<bool> eliminarMarca(String id) => _escribir(
     () => _repoMarcas.eliminar(id),
-    () async => _marcas = await _repoMarcas.obtenerTodas(),
+    () async => _marcas = await _repoMarcas.obtenerTodasPorTaller(tallerId),
   );
 
   Future<bool> eliminarGrupoServicio(String id) => _escribir(
     () => _repoGrupos.eliminar(id),
-    () async => _gruposServicio = await _repoGrupos.obtenerTodas(),
+    () async =>
+        _gruposServicio = await _repoGrupos.obtenerTodasPorTaller(tallerId),
   );
 
   // ---------------------------------------------------------------------

@@ -25,7 +25,11 @@ void main() {
     await DatabaseHelper.resetParaPruebas();
   });
 
-  ConfiguracionController nuevo() => ConfiguracionController(tallerId: SemillaInicial.talleres.first.id);
+  // tallerId obligatorio desde el aislamiento por taller: los catalogos de la
+  // semilla se siembran con el id del primer taller de SemillaInicial, asi que
+  // hay que pedirlos con ese mismo id para que `cargar()` los encuentre.
+  ConfiguracionController nuevo() =>
+      ConfiguracionController(tallerId: SemillaInicial.talleres.first.id);
 
   group('cargar', () {
     test('arranca con los catalogos de la semilla y sin error', () async {

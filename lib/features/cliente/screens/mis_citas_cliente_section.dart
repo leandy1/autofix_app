@@ -1,208 +1,302 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import 'package:autofix/features/cliente/presentation/mis_citas_controller.dart';
 import 'package:autofix/features/cliente/widgets/cliente_section_widgets.dart';
-import 'package:autofix/shared/models/cliente_dashboard_data.dart';
-import 'package:autofix/shared/models/demo_cliente_data.dart';
-import 'package:autofix/shared/models/solicitud_cita_cliente.dart';
+import 'package:autofix/features/citas/models/cita.dart';
 import 'package:autofix/shared/theme/app_colors.dart';
 
-class MisCitasClienteSection extends StatelessWidget {
+/// Colores por etiqueta de estado, con las MISMAS llaves y colores que
+/// `kColorPorEstado` de la pantalla de citas del admin.
+///
+/// Va en la vista y no en el controller porque el color es una decision de
+/// diseno: el controller devuelve texto ('Pendiente', 'ATRASADAS') y quien
+/// decide que color le corresponde es la pantalla. Duplicar el mapa aqui (en
+/// vez de importar el del archivo de admin) es deliberado tambien: importar un
+/// screen desde otro screen ataria este archivo a toda la pantalla de admin,
+/// su `firebase_auth` y su `SyncService`.
+const Map<String, Color> _colorPorEtiqueta = {
+  Cita.etiquetaAtrasadas: AppColors.atrasadas,
+  'Pendiente': AppColors.pendientes,
+  'Esperando Pieza': AppColors.esperandoPieza,
+  'En proceso': AppColors.enProceso,
+  'Completado': AppColors.completado,
+};
+
+/// "9:30 a. m." / "2:05 p. m." -- hora local sin depender de `intl`.
+///
+/// Top-level y publica a proposito, igual que `formatearPesosDR` en el
+/// formulario: es la que mas se rompe en silencio (una hora 00:30 que imprime
+/// "0:30 a. m." o un mediodia que dice "0:00 p. m.") y por eso se puede
+/// probar sin montar la pantalla.
+///
+/// No se usa `DateFormat('h:mm a', 'es')` porque el paquete `intl` solo trae
+/// los locales que se cargan a mano; sin datos de locale `es_DO` esa llamada
+/// revienta en runtime con un error de locale, no de formato. El sufijo en
+/// espanol se arma a mano por la misma razon que la lista de meses de
+/// `formatearFechaCliente`.
+String horaCliente(DateTime horaLocal) {
+  final hora12 = horaLocal.hour % 12 == 0 ? 12 : horaLocal.hour % 12;
+  final minutos = horaLocal.minute.toString().padLeft(2, '0');
+  final sufijo = horaLocal.hour < 12 ? 'a. m.' : 'p. m.';
+  return '$hora12:$minutos $sufijo';
+}
+
+/// "Mis citas" del cliente, alimentada por la base local del dispositivo.
+///
+/// Todo lo que pinta esta seccion viene de [MisCitasController], que a su vez
+/// lee SQLite: la pantalla funciona completa sin internet, que es el requisito
+/// de la unidad de sesion/offline. La unica cosa de red que toca es
+/// `SyncService.pushPending`, y la toca el formulario al crear la cita, no
+/// esta vista.
+class MisCitasClienteSection extends StatefulWidget {
   const MisCitasClienteSection({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        const TituloSeccionCliente(
-          eyebrow: 'TUS VISITAS',
-          title: 'Mis citas',
-          subtitle: 'Presenta el código QR al llegar al taller',
-        ),
-        const SizedBox(height: 18),
-        for (var index = 0; index < citasClienteDemo.length; index++) ...[
-          if (index > 0) const SizedBox(height: 14),
-          _AppointmentCard(cita: citasClienteDemo[index]),
-        ],
-        const SizedBox(height: 18),
-        const TituloSeccionCliente(
-          eyebrow: 'SOLICITUDES ENVIADAS',
-          title: 'Seguimiento de citas',
-          subtitle: 'Datos de demostración; las respuestas no se guardan.',
-        ),
-        const SizedBox(height: 12),
-        _SolicitudCitaClienteCard(solicitud: demoSeguimientoCitaCliente),
-      ],
-    );
-  }
+  State<MisCitasClienteSection> createState() =>
+      _MisCitasClienteSectionState();
 }
 
-class _SolicitudCitaClienteCard extends StatelessWidget {
-  const _SolicitudCitaClienteCard({required this.solicitud});
+class _MisCitasClienteSectionState extends State<MisCitasClienteSection> {
+  late final MisCitasController _controller;
 
-  final SolicitudCitaCliente solicitud;
+  @override
+  void initState() {
+    super.initState();
+    _controller = MisCitasController();
+    // Sin `await`: el spinner de carga es el estado que ya arranca en `true`.
+    unawaited(_controller.cargar());
+  }
+
+  @override
+  void dispose() {
+    // Sin esto cada vez que el cliente cambia de pestana la seccion acumula un
+    // ChangeNotifier vivo que sigue notificando a nadie.
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final propuesta = solicitud.estado == EstadoSolicitudCita.fechaPropuesta;
-    final aceptada = solicitud.estado == EstadoSolicitudCita.aceptada;
-    final rechazada = solicitud.estado == EstadoSolicitudCita.rechazada;
-    final estado = propuesta
-        ? 'Nueva fecha propuesta'
-        : aceptada
-        ? 'Cita aceptada'
-        : rechazada
-        ? 'Cita rechazada'
-        : 'Esperando respuesta del taller';
-    final colorEstado = propuesta
-        ? AppColors.blueAccent
-        : aceptada
-        ? AppColors.greenAccent
-        : rechazada
-        ? AppColors.atrasadas
-        : AppColors.pendientes;
+    // Escucha SOLO el controller de esta seccion: un `setState` del estado
+    // reconstruiria la pestana entera del dashboard, y notificar a nivel de
+    // dashboard haria que las otras dos pestanas se repintaran tambien.
+    return ListenableBuilder(
+      listenable: _controller,
+      builder: (context, _) {
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            const TituloSeccionCliente(
+              eyebrow: 'TUS VISITAS',
+              title: 'Mis citas',
+              subtitle: 'Presenta el código QR al llegar al taller',
+            ),
+            const SizedBox(height: 14),
+            if (_controller.hayPendientes) ...[
+              _AvisoDeCola(pendientes: _controller.pendientesDeSync),
+              const SizedBox(height: 14),
+            ],
+            ..._contenido(),
+          ],
+        );
+      },
+    );
+  }
 
+  List<Widget> _contenido() {
+    if (_controller.cargando) {
+      return const [
+        Padding(
+          padding: EdgeInsets.symmetric(vertical: 40),
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      ];
+    }
+
+    final error = _controller.error;
+    if (error != null) {
+      return [
+        _EstadoVacio(
+          icono: Icons.error_outline,
+          titulo: 'No pudimos abrir tus citas',
+          detalle: error,
+          boton: _BotonSecundarioCliente(
+            etiqueta: 'Reintentar',
+            onPressed: () => unawaited(_controller.cargar()),
+          ),
+        ),
+      ];
+    }
+
+    if (!_controller.hayCitas) {
+      return const [
+        _EstadoVacio(
+          icono: Icons.confirmation_number_outlined,
+          titulo: 'Aún no tienes citas',
+          detalle:
+              'Agenda tu primera visita desde la pestaña "Agendar" y verás '
+              'aquí su código QR, con o sin conexión.',
+        ),
+      ];
+    }
+
+    final items = _controller.items;
+    return [
+      for (var index = 0; index < items.length; index++) ...[
+        if (index > 0) const SizedBox(height: 14),
+        _TarjetaCita(item: items[index]),
+      ],
+    ];
+  }
+}
+
+/// Aviso general de que hay citas esperando subir.
+///
+/// Es el aviso que le da confianza al usuario en modo avion: sin estas lineas,
+/// una cita creada sin internet parece idéntica a una perdida.
+class _AvisoDeCola extends StatelessWidget {
+  const _AvisoDeCola({required this.pendientes});
+
+  final int pendientes;
+
+  @override
+  Widget build(BuildContext context) {
+    final una = pendientes == 1;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: AppColors.cardWhite,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(
-          color: propuesta ? AppColors.blueAccent : AppColors.inputBorder,
-        ),
-        boxShadow: clienteCardShadow,
+        color: AppColors.orangePrimary.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.orangePrimary.withValues(alpha: 0.35)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Solicitud enviada al taller',
-                  style: TextStyle(
-                    color: AppColors.labelDark,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              _StatusBadge(label: estado, color: colorEstado),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            solicitud.taller,
-            style: const TextStyle(
-              color: AppColors.labelDark,
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            solicitud.servicios.join(', '),
-            style: const TextStyle(color: AppColors.textGray, fontSize: 12),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              const Icon(
-                Icons.directions_car_outlined,
-                size: 16,
-                color: AppColors.textGray,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  solicitud.vehiculo,
-                  style: const TextStyle(
-                    color: AppColors.labelDark,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              const Icon(
-                Icons.calendar_month_outlined,
-                size: 16,
-                color: AppColors.textGray,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                '${formatearFechaCortaCliente(solicitud.fecha)} · ${solicitud.hora.format(context)}',
-                style: const TextStyle(
-                  color: AppColors.labelDark,
-                  fontSize: 12,
-                ),
-              ),
-            ],
-          ),
-          if (propuesta) ...[
-            const SizedBox(height: 12),
-            const Text(
-              'El taller propone este nuevo horario. ¿Te funciona?',
-              style: TextStyle(
-                color: AppColors.blueAccent,
+          const Icon(Icons.cloud_upload_outlined, size: 18, color: AppColors.orangePrimary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              una
+                  ? '1 cita en cola: se enviará al taller cuando vuelva la conexión.'
+                  : '$pendientes citas en cola: se enviarán al taller cuando vuelva la conexión.',
+              style: const TextStyle(
+                color: AppColors.labelDark,
                 fontSize: 12,
-                fontWeight: FontWeight.w600,
+                height: 1.35,
               ),
             ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                OutlinedButton(
-                  onPressed: () => _mostrarAvisoDemo(context),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.atrasadas,
-                    side: BorderSide(
-                      color: AppColors.atrasadas.withValues(alpha: 0.4),
-                    ),
-                  ),
-                  child: const Text('No me funciona'),
-                ),
-                ElevatedButton.icon(
-                  onPressed: () => _mostrarAvisoDemo(context),
-                  icon: const Icon(Icons.check, size: 16),
-                  label: const Text('Aceptar horario'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.greenAccent,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                  ),
-                ),
-              ],
-            ),
-          ],
+          ),
         ],
-      ),
-    );
-  }
-
-  void _mostrarAvisoDemo(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Vista de demostración: la respuesta no se guarda.'),
-        behavior: SnackBarBehavior.floating,
       ),
     );
   }
 }
 
-class _AppointmentCard extends StatelessWidget {
-  const _AppointmentCard({required this.cita});
+/// Estado sin datos (vacio o error). Un solo widget para los dos porque el
+/// diseno es el mismo y lo único que cambia es el icono, el texto y si hay
+/// boton.
+class _EstadoVacio extends StatelessWidget {
+  const _EstadoVacio({
+    required this.icono,
+    required this.titulo,
+    required this.detalle,
+    this.boton,
+  });
 
-  final CitaClienteDemo cita;
+  final IconData icono;
+  final String titulo;
+  final String detalle;
+  final Widget? boton;
 
   @override
   Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(20, 32, 20, 28),
+      decoration: BoxDecoration(
+        color: AppColors.cardWhite,
+        borderRadius: BorderRadius.circular(15),
+        boxShadow: clienteCardShadow,
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: AppColors.orangePrimary.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icono, size: 28, color: AppColors.orangePrimary),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            titulo,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppColors.labelDark,
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            detalle,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppColors.textGray,
+              fontSize: 12,
+              height: 1.45,
+            ),
+          ),
+          if (boton != null) ...[const SizedBox(height: 16), boton!],
+        ],
+      ),
+    );
+  }
+}
+
+class _BotonSecundarioCliente extends StatelessWidget {
+  const _BotonSecundarioCliente({required this.etiqueta, required this.onPressed});
+
+  final String etiqueta;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: AppColors.orangePrimary,
+        side: const BorderSide(color: AppColors.orangePrimary, width: 1.4),
+      ),
+      child: Text(etiqueta),
+    );
+  }
+}
+
+class _TarjetaCita extends StatelessWidget {
+  const _TarjetaCita({required this.item});
+
+  final CitaClienteItem item;
+
+  Cita get cita => item.cita;
+
+  @override
+  Widget build(BuildContext context) {
+    final fechaLocal = cita.fechaCita.toLocal();
+    final colorEstado =
+        _colorPorEtiqueta[item.etiqueta] ?? AppColors.pendientes;
+    final servicios = cita.servicios.isEmpty
+        ? 'Servicio por definir'
+        : cita.servicios.join(', ');
+    final placa = cita.placa.trim();
+    final vehiculo = placa.isEmpty
+        ? cita.vehiculo
+        : '${cita.vehiculo} · $placa';
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -217,7 +311,7 @@ class _AppointmentCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  formatearFechaCliente(cita.fecha),
+                  formatearFechaCliente(fechaLocal),
                   style: const TextStyle(
                     color: AppColors.textGray,
                     fontSize: 10,
@@ -226,9 +320,13 @@ class _AppointmentCard extends StatelessWidget {
                   ),
                 ),
               ),
-              _StatusBadge(label: cita.estado, color: cita.colorEstado),
+              _StatusBadge(label: item.etiqueta, color: colorEstado),
             ],
           ),
+          if (item.enCola) ...[
+            const SizedBox(height: 8),
+            const _BadgeEnCola(),
+          ],
           const SizedBox(height: 14),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -251,7 +349,7 @@ class _AppointmentCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      cita.taller,
+                      item.tallerNombre,
                       style: const TextStyle(
                         color: AppColors.labelDark,
                         fontSize: 16,
@@ -260,7 +358,7 @@ class _AppointmentCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      cita.servicio,
+                      servicios,
                       style: const TextStyle(
                         color: AppColors.textGray,
                         fontSize: 13,
@@ -268,7 +366,7 @@ class _AppointmentCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 7),
                     Text(
-                      cita.vehiculo,
+                      vehiculo,
                       style: const TextStyle(
                         color: AppColors.labelDark,
                         fontSize: 12,
@@ -293,7 +391,7 @@ class _AppointmentCard extends StatelessWidget {
               ),
               const SizedBox(width: 6),
               Text(
-                cita.hora,
+                horaCliente(fechaLocal),
                 style: const TextStyle(
                   color: AppColors.labelDark,
                   fontSize: 12,
@@ -302,7 +400,10 @@ class _AppointmentCard extends StatelessWidget {
               ),
               const Spacer(),
               Text(
-                'Código ${cita.codigo}',
+                // `identificadorParaPantalla` y no `id`: hasta que la nube
+                // asigne el numero, esto muestra 'PENDIENTE', que dice la
+                // verdad, en vez de un UUID de 36 caracteres.
+                'Código ${cita.identificadorParaPantalla}',
                 style: const TextStyle(color: AppColors.textGray, fontSize: 11),
               ),
             ],
@@ -313,7 +414,7 @@ class _AppointmentCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             child: InkWell(
               borderRadius: BorderRadius.circular(12),
-              onTap: () => _showQrPreview(context, cita),
+              onTap: () => _showQrPreview(context),
               child: Padding(
                 padding: const EdgeInsets.all(12),
                 child: Row(
@@ -359,7 +460,7 @@ class _AppointmentCard extends StatelessWidget {
     );
   }
 
-  void _showQrPreview(BuildContext context, CitaClienteDemo cita) {
+  void _showQrPreview(BuildContext context) {
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
@@ -377,7 +478,7 @@ class _AppointmentCard extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              cita.codigo,
+              cita.identificadorParaPantalla,
               style: const TextStyle(
                 color: AppColors.orangePrimary,
                 fontWeight: FontWeight.w700,
@@ -398,6 +499,42 @@ class _AppointmentCard extends StatelessWidget {
             child: const Text(
               'Cerrar',
               style: TextStyle(color: AppColors.orangePrimary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Insignia de "todavia no subio a la nube".
+///
+/// Va aparte del badge de estado a proposito: una cita 'Pendiente' que SI esta
+/// subida y una 'Pendiente' que aun no son el mismo texto con la misma
+/// respuesta y distintas consecuencias. Sin esta linea el usuario no sabe que
+/// hay algo esperando red.
+class _BadgeEnCola extends StatelessWidget {
+  const _BadgeEnCola();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: AppColors.blueAccent.withValues(alpha: 0.13),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.cloud_upload_outlined, size: 12, color: AppColors.blueAccent),
+          SizedBox(width: 5),
+          Text(
+            'En cola de envío',
+            style: TextStyle(
+              color: AppColors.blueAccent,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],

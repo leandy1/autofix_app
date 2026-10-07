@@ -294,7 +294,7 @@ class _CrearAdminDialogState extends State<_CrearAdminDialog> {
                             if (mounted) setState(() => _guardando = false);
                           },
                     style: ElevatedButton.styleFrom(backgroundColor: AppColors.orangePrimary),
-                    child: _guardando 
+                    child: _guardando
                         ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                         : const Text('Guardar', style: TextStyle(color: Colors.white)),
                   ),
@@ -307,4 +307,3 @@ class _CrearAdminDialogState extends State<_CrearAdminDialog> {
     );
   }
 }
-

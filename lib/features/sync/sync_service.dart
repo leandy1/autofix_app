@@ -5,6 +5,7 @@ import 'package:autofix/core/connectivity/connectivity_service.dart';
 import 'package:autofix/core/utils/borrado_logico.dart';
 import 'package:autofix/features/citas/data/cita_repository.dart';
 import 'package:autofix/features/citas/models/cita.dart';
+import 'package:autofix/features/cliente/data/cambios_password_repository.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'dart:async';
@@ -113,18 +114,89 @@ class SyncService {
     } catch (e) {
       print('[SyncService] Error en pushPending: $e');
     } finally {
-      _isPushing = false;
+      // Son colas independientes: si Firestore rechazó una cita, igual hay
+      // que intentar Auth, y viceversa. El secreto de contraseña nunca pasa
+      // por Firestore.
+      try {
+        await _drenarCambiosPassword();
+      } catch (e) {
+        print('[SyncService] Error drenando cambios de contraseña: $e');
+      } finally {
+        _isPushing = false;
+      }
+    }
+  }
+
+  /// Aplica la cola de cambios de contraseña cuando Auth tiene la cuenta
+  /// correspondiente abierta.
+  ///
+  /// La contraseña nunca se manda a Firestore. Se lee del almacenamiento
+  /// seguro y se aplica mediante Firebase Auth; si no hay sesión válida, o
+  /// Auth rechaza el cambio (por ejemplo, requiere reautenticación), la fila
+  /// permanece `pending` para un próximo intento. El correo de metadata evita
+  /// tocar la cuenta de admin si el cliente usa el acceso local.
+  Future<void> _drenarCambiosPassword() async {
+    final cola = CambiosPasswordRepository.instance;
+    final pendientes = await cola.pendientes();
+    for (final cambio in pendientes) {
+      final secreto = await cola.leerContrasena(cambio);
+      if (secreto == null || secreto.isEmpty) {
+        await cola.descartar(cambio.id);
+        continue;
+      }
+
+      final usuario = FirebaseAuth.instance.currentUser;
+      final correoPendiente = cambio.correoCliente.trim().toLowerCase();
+      final correoAuth = usuario?.email?.trim().toLowerCase();
+      if (usuario == null ||
+          usuario.isAnonymous ||
+          correoPendiente.isEmpty ||
+          correoAuth != correoPendiente) {
+        // Todavía no hay una sesión del dueño de este cambio. Mantenerlo en la
+        // cola es crucial: no se puede aplicar a la cuenta Firebase activa
+        // solo porque pertenece a otro usuario.
+        return;
+      }
+
+      try {
+        await usuario.updatePassword(secreto);
+        await cola.marcarAplicada(cambio);
+      } on FirebaseAuthException catch (e) {
+        // Incluye `requires-recent-login`: el cambio sigue guardado de forma
+        // segura y se volverá a intentar al próximo push/reconexión.
+        print('[SyncService] Cambio de contraseña sigue pendiente (${e.code})');
+        return;
+      } catch (e) {
+        print('[SyncService] No se pudo aplicar cambio de contraseña: $e');
+        return;
+      }
     }
   }
 
   /// Sube una cita que YA tiene codigo_visible (solo update/merge).
   Future<void> _pushSimple(Cita cita) async {
+    final ref = _db.collection('citas').doc(cita.id);
     final data = _citaToMap(cita);
-    await _db
-        .collection('citas')
-        .doc(cita.id)
-        .set(data, SetOptions(merge: true));
+    _preservarDueno(data, (await ref.get()).data());
+    await ref.set(data, SetOptions(merge: true));
     await _repo.marcarSincronizada(cita.id!);
+  }
+
+  /// S2: no pisar el `ownerUid` que el documento ya tenga en la nube.
+  ///
+  /// `_citaToMap` sella `ownerUid = _currentUid()` sin mirar nada mas. Eso es
+  /// correcto en el ALTA (el creador es el dueno), pero en un push de un
+  /// SEGUNDO dispositivo reescribia al dueno original: p. ej. si el admin
+  /// edita una cita que agendo el cliente, la cita pasaba a tener el uid del
+  /// admin, salia del filtro `where('ownerUid', ...)` con el que el cliente
+  /// consulta y desaparecia de su app. El dueno lo pone quien crea la cita y
+  /// nadie mas lo cambia; el resto de campos se actualiza con normalidad.
+  void _preservarDueno(
+    Map<String, Object?> data,
+    Map<String, dynamic>? documentoPrevio,
+  ) {
+    final duenoPrevio = documentoPrevio?['ownerUid'] as String?;
+    if (duenoPrevio != null) data['ownerUid'] = duenoPrevio;
   }
 
   /// Sube una cita con 'PENDIENTE' usando transaccion en contador.
@@ -148,8 +220,13 @@ class SyncService {
 
       tx.set(counterRef, {'nextNumber': nuevo}, SetOptions(merge: true));
 
+      final ref = _db.collection('citas').doc(cita.id);
       final data = _citaToMap(cita)..['codigo_visible'] = codigo;
-      tx.set(_db.collection('citas').doc(cita.id), data);
+      // Misma proteccion que en _pushSimple: todas las lecturas de la
+      // transaccion van ANTES de los writes, asi que aca tambien se lee
+      // primero el documento para no pisar su dueno.
+      _preservarDueno(data, (await tx.get(ref)).data());
+      tx.set(ref, data);
     });
 
     // La nube ya escribio el codigo; el onSnapshot lo bajara y actualizara
@@ -230,6 +307,7 @@ class SyncService {
       id: id,
       codigoVisible: data['codigo_visible'] as String? ?? 'PENDIENTE',
       cliente: data['cliente'] as String? ?? '',
+      correoCliente: data['correo_cliente'] as String? ?? '',
       telefono: data['telefono'] as String? ?? '',
       vehiculo: data['vehiculo'] as String? ?? '',
       marca: data['marca'] as String? ?? '',

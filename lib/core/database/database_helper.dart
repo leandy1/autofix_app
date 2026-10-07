@@ -86,7 +86,7 @@ class DatabaseHelper {
   /// es lo que permite a un dispositivo que ya instalo la v1 seguir funcionando.
   /// En la v7 el `onUpgrade` hace `DROP TABLE`, asi que en ESTE caso si borra los
   /// datos, y es intencional (ver [_migrar]).
-  static const int _versionBase = 9;
+  static const int _versionBase = 11;
 
   /// Nombre del indice de [tablaCitas] por fecha.
   ///
@@ -118,6 +118,16 @@ class DatabaseHelper {
   static const String colCreadoEn = 'creado_en';
   static const String colActualizadoEn = 'actualizado_en';
   static const String colTotal = 'total';
+
+  /// Correo del contacto que agendo la cita (v10).
+  ///
+  /// Va en la cita y no solo en el perfil del cliente porque la cita es el
+  /// documento que el taller recibe: `telefono` ya estaba, y sin el correo el
+  /// admin no tiene como escribirle a un cliente que solo dejo su direccion.
+  ///
+  /// `TEXT NOT NULL DEFAULT ''` igual que `telefono`: las citas que ya existen
+  /// no tienen correo y no deben romper un SELECT.
+  static const String colCorreoCliente = 'correo_cliente';
 
   // ------------------------------------------------------------------
   // SINCRONIZACION (Fase 2)
@@ -170,6 +180,30 @@ class DatabaseHelper {
   /// Grupos de servicios ("Carroceria", "Mecanica general"). Alta en la v7.
   /// Ver `lib/features/configuracion/models/grupo_servicio.dart`.
   static const String tablaGruposServicio = 'grupos_servicio';
+
+  // ------------------------------------------------------------------
+  // COLA DE CAMBIOS DE CONTRASEÑA (v10)
+  //
+  // Cuando el cliente pide cambiar su contraseña sin internet, el cambio queda
+  // en esta tabla con `sync_status = 'pending'` y lo drena `SyncService` cuando
+  // vuelve la conexion, igual que con las citas.
+  //
+  // OJO con lo que NO esta aca: la contraseña. El secreto vive en
+  // `flutter_secure_storage` (ver `CambiosPasswordRepository`) y la fila es
+  // solo el indice de "queda un cambio por aplicar". Guardar una contraseña en
+  // SQLite en claro -- o peor, subirla a Firestore -- seria regalar la cuenta
+  // de alguien, por eso la cola guarda metadata y el secreto va al keystore.
+  // ------------------------------------------------------------------
+  static const String tablaCambiosPassword = 'cambios_password';
+  static const String colCorreoCambioPassword = 'correo_cliente';
+
+  /// Prefijo de la clave de `flutter_secure_storage` bajo la cual se guarda el
+  /// secreto de cada fila de la cola: `cambiosPassword.<id>`.
+  ///
+  /// Esta en `DatabaseHelper` y no adentro del repositorio porque es parte del
+  /// contrato entre los dos archivos: si uno cambia el prefijo y el otro no,
+  /// la cola queda con filas cuyo secreto nadie puede leer.
+  static const String prefijoSeguroCambiosPassword = 'cambiosPassword.';
 
   static const String colNombre = 'nombre';
   static const String colActivo = 'activo';
@@ -307,9 +341,43 @@ class DatabaseHelper {
     '$colRestauradoEn TEXT',
   ];
 
-  Database? _base;
+  /// La carrera de la PRIMERA apertura, no la conexion resuelta.
+  ///
+  /// Con la version vieja (`_base ??= await _abrir()`) dos primeras lecturas
+  /// simultaneas evaluaban la expresion a la vez, ambas veian `_base == null` y
+  /// las dos llamaban `_abrir()`: el archivo se abria dos veces, quedaban dos
+  /// conexiones compitiendo (riesgo de "database is locked") y una referencia
+  /// huérfana que nadie cerraba. Memoizar la Future de la apertura garantiza
+  /// una sola apertura compartida por todos los llamadores.
+  ///
+  /// OJO: la futura memoizada solo se expone mientras esta EN VUELO. Ya
+  /// resuelta, [base] devuelve `Future.value(_base)` creada en la zona del
+  /// llamador, igual que el getter viejo. Devolver la futura cacheada (creada
+  /// en la zona de quien abrio, p. ej. el `setUp` raiz) rompe los tests de
+  /// widgets: esperarla desde el `FakeAsync` de `testWidgets` deja la zona
+  /// invalida y el siguiente `tester.pump()` se cuelga para siempre.
+  Future<Database>? _aperturaEnCurso;
 
-  Future<Database> get base async => _base ??= await _abrir();
+  Future<Database> get base async {
+    final resuelta = _base;
+    if (resuelta != null) return resuelta;
+    return _aperturaEnCurso ??= _abrir().then(
+      (db) {
+        _aperturaEnCurso = null;
+        _base = db;
+        return db;
+      },
+      onError: (Object e, StackTrace s) {
+        // Una apertura fallida no se cachea: si se guardara el error, todos los
+        // accesos siguientes reutilizarian esa Future muerta y la app quedaria
+        // sin base hasta reiniciar. Se descarta y el proximo reintenta.
+        _aperturaEnCurso = null;
+        Error.throwWithStackTrace(e, s);
+      },
+    );
+  }
+
+  Database? _base;
 
   Future<Database> _abrir() async {
     // El archivo vive en el almacenamiento INTERNO de la app, no en externo:
@@ -368,6 +436,9 @@ class DatabaseHelper {
       // 'synced' = coincide con la nube.
       // Default 'pending' porque toda cita nueva nace local y hay que subirla.
       "$colSyncStatus TEXT NOT NULL DEFAULT 'pending'",
+      // v10: correo del contacto. Igual que `telefono`, texto y con default
+      // vacio para que las citas viejas no revienten un SELECT.
+      "$colCorreoCliente TEXT NOT NULL DEFAULT ''",
     ];
 
     await db.execute('CREATE TABLE $tablaCitas (${definiciones.join(', ')})');
@@ -400,8 +471,35 @@ class DatabaseHelper {
       'ON $tablaCitas ($colEliminadoEn, $colFechaCita)',
     );
 
+    await _crearCambiosPassword(db);
     await _crearCatalogos(db);
     await _sembrarCatalogos(db);
+  }
+
+  /// Crea la cola de cambios de contraseña pendientes (v10).
+  ///
+  /// `IF NOT EXISTS` por la misma razon que los catalogos y los talleres: esta
+  /// funcion la llaman los dos caminos (creacion nueva y migracion) y no
+  /// importa cual llegue primero.
+  ///
+  /// Sin indice de `sync_status`: la cola tiene como maximo un puñado de filas
+  /// (un cambio por cliente) y `WHERE sync_status = 'pending'` sobre eso no
+  /// gana nada. El indice de `citas` existe porque esa tabla crece; este no.
+  Future<void> _crearCambiosPassword(DatabaseExecutor db) async {
+    final definiciones = <String>[
+      _pkUuid,
+      // Metadatos, no el secreto: la contraseña va en el keystore. Ver el doc
+      // de `tablaCambiosPassword`.
+      "$colSyncStatus TEXT NOT NULL DEFAULT 'pending'",
+      "$colCorreoCambioPassword TEXT NOT NULL DEFAULT ''",
+      '$colCreadoEn TEXT NOT NULL',
+      '$colActualizadoEn TEXT NOT NULL DEFAULT \'\'',
+    ];
+
+    await db.execute(
+      'CREATE TABLE IF NOT EXISTS $tablaCambiosPassword '
+      '(${definiciones.join(', ')})',
+    );
   }
 
   /// Crea la tabla de talleres afiliados.
@@ -919,6 +1017,13 @@ class DatabaseHelper {
       if (versionAnterior < 9) {
         await _migrarAV9(txn);
       }
+
+      if (versionAnterior < 10) {
+        await _migrarAV10(txn);
+      }
+      if (versionAnterior < 11) {
+        await _migrarAV11(txn);
+      }
     });
   }
 
@@ -1064,8 +1169,63 @@ class DatabaseHelper {
     await _crearAdmins(txn);
   }
 
+  /// Paso 9 -> 10: perfil del cliente y cola de contraseñas (v10).
+  ///
+  /// Dos cosas aditivas y ninguna destructiva:
+  ///
+  /// 1. `citas.correo_cliente` con `ALTER TABLE ADD COLUMN` (mismo patron que
+  ///    la v8 y la v9), protegido por `PRAGMA table_info` para que correr dos
+  ///    veces -- o una v9 que ya la trajo -- no revierta la transaccion.
+  /// 2. La tabla `cambios_password`, nueva, con `CREATE TABLE IF NOT EXISTS`;
+  ///    si se creó antes de asociar cada secreto a un correo, se añade esa
+  ///    columna para no aplicar por accidente el cambio a otra cuenta.
+  ///
+  /// A diferencia de la v7, NO se dropea nada: el correo entra como columna
+  /// nueva con default vacio y las citas viejas quedan igual que antes.
+  Future<void> _migrarAV10(DatabaseExecutor txn) async {
+    final info = await txn.rawQuery('PRAGMA table_info($tablaCitas)');
+    if (!info.any((c) => c['name'] == colCorreoCliente)) {
+      await txn.execute(
+        "ALTER TABLE $tablaCitas ADD COLUMN $colCorreoCliente TEXT NOT NULL DEFAULT ''",
+      );
+    }
+
+    await _crearCambiosPassword(txn);
+  }
+
+  /// Paso 10 -> 11: asocia cada cambio en cola a la cuenta cliente correcta.
+  ///
+  /// El secreto sigue fuera de SQLite; solo se añade el correo como metadata
+  /// para impedir que SyncService aplique una contraseña pendiente a la cuenta
+  /// Firebase de otro usuario que haya iniciado sesión en este dispositivo.
+  Future<void> _migrarAV11(DatabaseExecutor txn) async {
+    final infoCambios = await txn.rawQuery(
+      'PRAGMA table_info($tablaCambiosPassword)',
+    );
+    if (!infoCambios.any((c) => c['name'] == colCorreoCambioPassword)) {
+      await txn.execute(
+        "ALTER TABLE $tablaCambiosPassword "
+        "ADD COLUMN $colCorreoCambioPassword TEXT NOT NULL DEFAULT ''",
+      );
+    }
+  }
+
   Future<void> cerrar() async {
-    await _base?.close();
+    final apertura = _aperturaEnCurso;
+    _aperturaEnCurso = null;
+    try {
+      if (apertura != null) {
+        // Habia una apertura en vuelo: esperarla y cerrar la conexion que
+        // llegue, para que no quede un archivo abierto huérfano.
+        final db = await apertura;
+        await db.close();
+      } else if (_base != null) {
+        await _base!.close();
+      }
+    } catch (_) {
+      // Si la apertura fallo (o nunca llego a completarse) no hay conexion
+      // que cerrar; el cache ya quedo limpio arriba.
+    }
     _base = null;
   }
 

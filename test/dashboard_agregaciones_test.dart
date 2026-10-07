@@ -402,10 +402,13 @@ void main() {
 
       expect(await indicesDeCitas(db), contains(DatabaseHelper.idxCitasFecha));
 
-      // Y la migracion NO puede perder la cita que ya estaba.
+      // La v7 (que corre en la misma apertura) purga la tabla a proposito:
+      // DROP + recreate para cambiar la PK de INTEGER a UUID sin dejar ids
+      // enteros disfrazados de texto. Mismo criterio que el test de migracion
+      // v3->v9 de talleres_test: la cita v5 NO sobrevive, pero el indice si,
+      // que es lo que este test garantiza.
       final citas = await repo.obtenerTodas();
-      expect(citas.length, 1);
-      expect(citas.first.cliente, 'Cliente V5');
+      expect(citas, isEmpty, reason: 'la v7 reinicia el esquema a proposito');
     });
 
     test('abrir dos veces no vuelve a intentar el indice', () async {

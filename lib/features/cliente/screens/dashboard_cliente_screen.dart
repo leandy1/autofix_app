@@ -1,16 +1,26 @@
+import 'dart:async';
+
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import 'package:autofix/core/auth/sesion_cliente.dart';
+import 'package:autofix/core/auth/credenciales_seguras.dart';
 import 'package:autofix/features/talleres/data/taller_repository.dart';
 import 'package:autofix/features/talleres/models/taller.dart';
+import 'package:autofix/features/sync/sync_service.dart';
 import 'package:autofix/shared/theme/app_colors.dart';
 import 'package:autofix/features/auth/screens/login_screen.dart';
 
 import 'agendar_cita_cliente_section.dart';
+import 'editar_perfil_cliente_screen.dart';
 import 'mis_citas_cliente_section.dart';
 import 'talleres_mapa_screen.dart';
 
 class DashboardClienteScreen extends StatefulWidget {
-  const DashboardClienteScreen({super.key});
+  const DashboardClienteScreen({this.invitado = false, super.key});
+
+  /// El invitado solo explora mapa/talleres; no tiene sesión ni puede agendar.
+  final bool invitado;
 
   @override
   State<DashboardClienteScreen> createState() => _DashboardClienteScreenState();
@@ -34,7 +44,19 @@ class _DashboardClienteScreenState extends State<DashboardClienteScreen> {
   @override
   void initState() {
     super.initState();
+    if (!widget.invitado) unawaited(_iniciarSyncEnSegundoPlano());
     _resolverTallerInicial();
+  }
+
+  /// Mantiene viva la escucha de conectividad también en la sesión cliente,
+  /// para que las citas y cambios de contraseña pendientes se reintenten al
+  /// recuperar red.
+  Future<void> _iniciarSyncEnSegundoPlano() async {
+    try {
+      await SyncService.instance.start();
+    } catch (e) {
+      debugPrint('DashboardCliente: SyncService no arrancó ($e)');
+    }
   }
 
   /// El nombre por defecto es 'AutoFix Central', pero el formulario necesita el
@@ -57,14 +79,72 @@ class _DashboardClienteScreenState extends State<DashboardClienteScreen> {
     setState(() {
       _selectedWorkshop = taller.nombre;
       _tallerSeleccionadoId = taller.id;
-      _selectedSection = 1;
+      _selectedSection = widget.invitado ? 0 : 1;
     });
+    if (widget.invitado) unawaited(_pedirSesionParaAgendar());
   }
 
-  void _cerrarSesion() {
-    Navigator.of(
-      context,
-    ).pushReplacement(MaterialPageRoute(builder: (_) => const LoginScreen()));
+  Future<void> _pedirSesionParaAgendar() async {
+    final iniciarSesion = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Inicia sesión para agendar'),
+        content: const Text(
+          'Como invitado puedes explorar talleres y el mapa. Para agendar una '
+          'cita, inicia sesión con tu cuenta o crea una.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Seguir viendo'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Iniciar sesión'),
+          ),
+        ],
+      ),
+    );
+    if (iniciarSesion == true && mounted) Navigator.of(context).pop();
+  }
+
+  Future<void> _cerrarSesion() async {
+    // La sesion se apaga ANTES de navegar: si se hiciera despues (o nunca),
+    // el proximo arranque entraria solo al dashboard y el usuario creeria que
+    // no cerro nada. El PERFIL se conserva a proposito, para que la proxima
+    // vez que entre el formulario de citas siga prellenado.
+    if (!widget.invitado) {
+      await SyncService.instance.stop();
+      await SesionCliente.instance.cerrar();
+      await CredencialesSeguras.borrar();
+      try {
+        await FirebaseAuth.instance.signOut();
+      } catch (e) {
+        debugPrint('DashboardCliente: no se pudo cerrar Firebase Auth ($e)');
+      }
+    }
+    if (!mounted) return;
+    if (widget.invitado) {
+      Navigator.of(context).pop();
+    } else {
+      Navigator.of(
+        context,
+      ).pushReplacement(MaterialPageRoute(builder: (_) => const LoginScreen()));
+    }
+  }
+
+  /// Abre Editar Perfil y, al volver, repinta el saludo.
+  ///
+  /// El `setState` no es cosmético: el nombre vive en un singleton que ya
+  /// cambio, pero `build` no se vuelve a llamar solo al hacer `pop`. Sin este
+  /// llamado, cambiar el nombre en el perfil dejaria el AppBar con el viejo
+  /// hasta el proximo cambio de seccion.
+  Future<void> _editarPerfil() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const EditarPerfilClienteScreen()),
+    );
+    if (!mounted) return;
+    setState(() {});
   }
 
   @override
@@ -89,10 +169,35 @@ class _DashboardClienteScreenState extends State<DashboardClienteScreen> {
           ],
         ),
         actions: [
+          // Saludo junto al cerrar sesion. Es texto y no un `ListTile`: el
+          // AppBar es una barra de 56px y lo que hace falta ahi es el nombre,
+          // no una tarjeta. `ellipsis` porque un nombre largo no puede empujar
+          // los dos botones fuera de pantalla.
+          if (!widget.invitado)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: Center(
+                child: Text(
+                  '¡Hola, ${SesionCliente.instance.nombreVisible}!',
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          if (!widget.invitado)
+            IconButton(
+              tooltip: 'Editar perfil',
+              onPressed: _editarPerfil,
+              icon: const Icon(Icons.manage_accounts_outlined),
+            ),
           IconButton(
-            tooltip: 'Cerrar sesión',
+            tooltip: widget.invitado ? 'Volver al login' : 'Cerrar sesión',
             onPressed: _cerrarSesion,
-            icon: const Icon(Icons.logout),
+            icon: Icon(widget.invitado ? Icons.login : Icons.logout),
           ),
         ],
       ),
@@ -139,29 +244,31 @@ class _DashboardClienteScreenState extends State<DashboardClienteScreen> {
           ),
         ),
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedSection,
-        onDestinationSelected: _changeSection,
-        backgroundColor: AppColors.cardWhite,
-        indicatorColor: AppColors.orangePrimary.withValues(alpha: 0.14),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.location_on_outlined),
-            selectedIcon: Icon(Icons.location_on),
-            label: 'Talleres',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.calendar_month_outlined),
-            selectedIcon: Icon(Icons.calendar_month),
-            label: 'Agendar',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.confirmation_number_outlined),
-            selectedIcon: Icon(Icons.confirmation_number),
-            label: 'Mis citas',
-          ),
-        ],
-      ),
+      bottomNavigationBar: widget.invitado
+          ? null
+          : NavigationBar(
+              selectedIndex: _selectedSection,
+              onDestinationSelected: _changeSection,
+              backgroundColor: AppColors.cardWhite,
+              indicatorColor: AppColors.orangePrimary.withValues(alpha: 0.14),
+              destinations: const [
+                NavigationDestination(
+                  icon: Icon(Icons.location_on_outlined),
+                  selectedIcon: Icon(Icons.location_on),
+                  label: 'Talleres',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.calendar_month_outlined),
+                  selectedIcon: Icon(Icons.calendar_month),
+                  label: 'Agendar',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.confirmation_number_outlined),
+                  selectedIcon: Icon(Icons.confirmation_number),
+                  label: 'Mis citas',
+                ),
+              ],
+            ),
     );
   }
 }

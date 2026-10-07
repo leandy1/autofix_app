@@ -1,9 +1,12 @@
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:autofix/app/conectividad_app.dart';
-import 'package:autofix/features/auth/screens/login_screen.dart';
+import 'package:autofix/app/ruta_inicial.dart';
+import 'package:autofix/core/auth/sesion_admin.dart';
+import 'package:autofix/core/auth/sesion_cliente.dart';
 import 'package:autofix/firebase_options.dart';
 
 Future<void> main() async {
@@ -18,6 +21,32 @@ Future<void> main() async {
     }
   } catch (e) {
     debugPrint('Firebase init skipped: $e');
+  }
+
+  // Restaura la sesion guardada (UID, correo, taller_id) ANTES de montar la
+  // primera pantalla. Va aca y no dentro de la ruta inicial porque la decision
+  // tiene que estar tomada en el PRIMER frame: si se leyera despues, el arranque
+  // offline parpadearia el login y recien ahi saltaria al Dashboard.
+  //
+  // Es una lectura local (SharedPreferences), no de la nube, por lo que funciona
+  // exactamente igual sin internet. Sin sesion guardada devuelve false y la app
+  // arranca en el login, como siempre.
+  //
+  // Las DOS sesiones: la del admin (taller) y la del cliente. Solo una puede
+  // estar activa por arranque y la ruta inicial decide; si alguien cerro
+  // sesion en la app que sea, esa quedo apagada y no interfiere.
+  final adminRestaurado = await SesionAdmin.instance.restaurar();
+  final clienteRestaurado = await SesionCliente.instance.restaurar();
+  if (!adminRestaurado && !clienteRestaurado) {
+    // Firebase Auth conserva su propio usuario entre ejecuciones. Sin una
+    // sesión local marcada por Recuérdame, ese token no debe convertirse en
+    // un bypass implícito: el usuario volverá al login y tendrá que validar
+    // credenciales con internet.
+    try {
+      await FirebaseAuth.instance.signOut();
+    } catch (e) {
+      debugPrint('Firebase Auth previo no se pudo cerrar ($e)');
+    }
   }
 
   SystemChrome.setSystemUIOverlayStyle(
@@ -43,7 +72,9 @@ class AutoFixApp extends StatelessWidget {
       // queda montado por encima de TODA ruta (login, dashboard, citas,
       // configuracion) y de los bottom sheets.
       builder: ConectividadApp.bannerBuilder,
-      home: const LoginScreen(),
+      // La ruta inicial decide entre Dashboard y Login con la sesion ya en
+      // memoria (la restauro `main`). Ver `lib/app/ruta_inicial.dart`.
+      home: const RutaInicial(),
     );
   }
 }

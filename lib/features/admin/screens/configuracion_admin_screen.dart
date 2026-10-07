@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import 'package:autofix/core/auth/sesion_admin.dart';
+import 'package:autofix/core/auth/credenciales_seguras.dart';
 import 'package:autofix/core/database/semilla_inicial.dart';
 import 'package:autofix/features/configuracion/presentation/configuracion_controller.dart';
 import 'package:autofix/features/sync/sync_service.dart';
@@ -10,6 +11,7 @@ import 'package:autofix/shared/theme/app_colors.dart';
 
 import 'dashboard_admin_screen.dart';
 import 'citas_admin_screen.dart';
+import 'editar_perfil_admin_screen.dart';
 
 import 'package:autofix/features/auth/screens/login_screen.dart';
 
@@ -261,12 +263,26 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
               label: 'Configuración',
               selected: true,
             ),
+            _drawerItem(
+              icon: Icons.manage_accounts_outlined,
+              label: 'Editar Perfil',
+              selected: false,
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const EditarPerfilAdminScreen(),
+                ),
+              ),
+            ),
             const Spacer(),
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 20),
               child: TextButton.icon(
                 onPressed: () async {
-                  SesionAdmin.instance.cerrar();
+                  // `await` porque cerrar sesion ahora tambien borra la caché
+                  // local de sesion: sin este orden el proximo arranque entraria
+                  // solo al Dashboard y pareceria que el logout no sirvio.
+                  await SesionAdmin.instance.cerrar();
+                  await CredencialesSeguras.borrar();
                   await SyncService.instance.stop();
                   try {
                     await FirebaseAuth.instance.signOut();

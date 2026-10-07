@@ -66,6 +66,7 @@ class Cita implements EntidadPersistida {
     this.codigoVisible = codigoCitaTemporal,
     required this.cliente,
     this.telefono = '',
+    this.correoCliente = '',
     required this.vehiculo,
     this.marca = '',
     this.modelo = '',
@@ -90,6 +91,7 @@ class Cita implements EntidadPersistida {
   static const String _kCodigoVisible = 'codigo_visible';
   static const String _kCliente = 'cliente';
   static const String _kTelefono = 'telefono';
+  static const String _kCorreoCliente = 'correo_cliente';
   static const String _kVehiculo = 'vehiculo';
   static const String _kMarca = 'marca';
   static const String _kModelo = 'modelo';
@@ -132,6 +134,11 @@ class Cita implements EntidadPersistida {
 
   final String cliente;
   final String telefono;
+
+  /// Correo del contacto. Viene del perfil del cliente que agenda (la app lo
+  /// prellena en el formulario) y es la segunda via de contacto del taller
+  /// junto con [telefono]. Columna de la v10.
+  final String correoCliente;
   final String vehiculo;
   final String marca;
   final String modelo;
@@ -225,6 +232,7 @@ class Cita implements EntidadPersistida {
     String? codigoVisible,
     String? cliente,
     String? telefono,
+    String? correoCliente,
     String? vehiculo,
     String? marca,
     String? modelo,
@@ -246,7 +254,13 @@ class Cita implements EntidadPersistida {
       id: id ?? this.id,
       codigoVisible: codigoVisible ?? this.codigoVisible,
       cliente: cliente ?? this.cliente,
-      telefono: telefono ?? this.cliente,
+      // Era `?? this.cliente`, un typo que hacia que cualquier `copyWith` sin
+      // telefono explicito (marcar borrada, cambiar estado, restaurar)
+      // sobrescribiera el telefono con el NOMBRE del cliente. Como esos
+      // `copyWith` alimentan un `UPDATE`, el telefono del cliente se perdia en
+      // la primera edicion de la cita.
+      telefono: telefono ?? this.telefono,
+      correoCliente: correoCliente ?? this.correoCliente,
       vehiculo: vehiculo ?? this.vehiculo,
       marca: marca ?? this.marca,
       modelo: modelo ?? this.modelo,
@@ -299,6 +313,7 @@ class Cita implements EntidadPersistida {
       _kCodigoVisible: codigoVisible,
       _kCliente: cliente,
       _kTelefono: telefono,
+      _kCorreoCliente: correoCliente,
       _kVehiculo: vehiculo,
       _kMarca: marca,
       _kModelo: modelo,
@@ -352,6 +367,7 @@ class Cita implements EntidadPersistida {
       codigoVisible: (map[_kCodigoVisible] as String?) ?? codigoCitaTemporal,
       cliente: map[_kCliente] as String,
       telefono: (map[_kTelefono] as String?) ?? '',
+      correoCliente: (map[_kCorreoCliente] as String?) ?? '',
       vehiculo: map[_kVehiculo] as String,
       marca: (map[_kMarca] as String?) ?? '',
       modelo: (map[_kModelo] as String?) ?? '',
