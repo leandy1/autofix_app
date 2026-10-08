@@ -1,279 +1,162 @@
-# AutoFix App
+# AutoFix — Gestión de Citas para Talleres Automotrices
 
-## Descripción general
+| | |
+|---|---|
+| **Proyecto** | ISW307 · Programación de Dispositivos Móviles · Grupo Q |
+| **Repositorio** | [github.com/leandy1/autofix_app](https://github.com/leandy1/autofix_app) |
+| **Plataforma** | Flutter (Android / iOS / Web / Desktop) |
+| **Almacenamiento** | SQLite (offline) + Cloud Firestore (sincronización) |
+| **Estado** | Funcional · Arquitectura Offline-First completada |
 
-Este proyecto es una app de gestión de citas para un taller automotriz. La funcionalidad principal es permitir registrar citas, guardar la información de forma persistente, editarlas, eliminarlas y organizarlas por estado para la vista administrativa.
+---
 
-La aplicación usa Flutter como framework y SQLite como almacenamiento local. La estructura está pensada para separar claramente la capa de dominio, la capa de datos y la capa de presentación.
+## 1. Visión General del Proyecto
 
-## Arquitectura del proyecto
+AutoFix es una aplicación móvil para la **gestión integral de citas de talleres automotrices**, con flujos coordinados para el **cliente**, que agenda y consulta sus servicios, y para el **administrador**, que opera su taller desde un panel aislado por tenant.
 
-La app está organizada por capas para mantener el código limpio y evitar que la interfaz toque SQLite directamente.
+El problema que resuelve es doble:
 
-### 1. Modelo de dominio
-Archivo principal:
-- `lib/features/citas/models/cita.dart`
+1. **Los talleres operan sin una red estable.** Una cita creada en recepción no puede perderse porque se cayó el internet. AutoFix funciona **Offline-First**: todo se escribe primero en SQLite local y la nube se pone al día cuando hay conectividad.
+2. **Un mismo taller necesita verse desde varios dispositivos.** La cita que crea el administrador en su panel debe aparecer al instante en el celular del cliente (y en el de otro dispositivo del mismo taller), sin que nadie se pise los datos.
 
-Este archivo define la entidad `Cita`, que representa una cita real que se va a persistir.
+El proyecto nació bajo la **visión, planificación y arquitectura base de Leandy**, quien estableció la estructura inicial de la aplicación y sus módulos. Sobre esa base, Sandy asumió el rol de **co-líder integrador**, evolucionando la arquitectura para resolver los desafíos de persistencia, sincronización y aislamiento de datos, además de cerrar cuellos de botella técnicos y completar funcionalidades en coordinación con Leandy.
 
-Incluye:
-- `id`
-- `cliente`
-- `telefono`
-- `vehiculo`
-- `marca`
-- `modelo`
-- `anio`
-- `placa`
-- `servicios`
-- `tecnico`
-- `descripcion`
-- `fechaCita`
-- `estado`
-- `creadoEn`
-- `actualizadoEn`
-- `total`
+Por eso, AutoFix no se limita a un CRUD conectado a la nube: implementa un **flujo de datos local-first con sincronización bidireccional** entre SQLite y Cloud Firestore, control de conflictos, separación multitenant y un ciclo de vida de datos que preserva la privacidad de las sesiones.
 
-También define:
-- `EstadoCita`, que representa los estados reales guardados en la base:
-  - `pendiente`
-  - `esperandoPieza`
-  - `enProceso`
-  - `completado`
-- `esAtrasada(DateTime ahora)`: determina si la cita está vencida según la fecha que se está revisando
-- `etiquetaUI(DateTime ahora)`: devuelve la etiqueta visual para la UI, como `ATRASADAS` o `Pendiente`
-- `toMap()` y `fromMap()`: convierten la entidad a JSON/Map para SQLite y viceversa
+> **Producto resultante:** historial completo de citas offline, agenda y mapa de talleres, generación local y sincronizada de códigos QR de confirmación (`CITA-XXXX`), catálogos de servicios/técnicos por taller, dashboard con números reales, sesión persistente y un Modo Desarrollador para la administración de talleres y cuentas.
 
-### 2. Repositorio de datos
-Archivo principal:
-- `lib/features/citas/data/cita_repository.dart`
+---
 
-Esta clase implementa la lógica de acceso a la base de datos. Es la capa que sabe cómo guardar, leer, editar y borrar citas.
+## 2. Arquitectura y Stack Tecnológico
 
-Funciones principales:
-- `crear(Cita cita)`
-  - inserta una nueva cita en SQLite
-- `obtenerTodas()`
-  - devuelve todas las citas ordenadas por fecha
-- `obtenerPorId(int id)`
-  - busca una cita concreta por su ID
-- `actualizar(Cita cita)`
-  - modifica una cita existente
-- `cambiarEstado(int id, EstadoCita estado)`
-  - actualiza solo el estado, sin tocar el resto de la fila
-- `eliminar(int id)`
-  - borra una cita de la base
-- `obtenerDelDia(DateTime fecha)`
-  - devuelve las citas de un día específico
+### Stack
 
-El repositorio no sabe nada de widgets ni de pantallas. Solo sabe sobre la entidad y la base de datos.
+- **Flutter / Dart** — SDK `^3.13.2`, Material Design.
+- **SQLite (`sqflite`)** — base local, migraciones por versión (esquema **v14** actual).
+- **Cloud Firestore + Firebase Auth** — sincronización y autenticación (credenciales del proyecto `autofix-6f844`).
+- **`connectivity_plus`** — detector de red en vivo (banner global de conectividad).
+- **`qr_flutter`** — generación local de códigos QR.
+- **`maplibre_gl` + `geolocator` + `url_launcher`** — mapa de talleres, ubicación y "Abrir en Maps".
+- **`http`** — consumo de la API pública **NHTSA vPIC** para catálogo de vehículos.
+- **`shared_preferences` + `flutter_secure_storage`** — sesión persistente ("Recuérdame") y cola segura de cambios de contraseña.
 
-### 3. Controlador de presentación
-Archivo principal:
-- `lib/features/citas/presentation/citas_controller.dart`
+### Arquitectura Offline-First
 
-`CitasController` es la capa que la UI usa para interactuar con las citas. Extiende de `ChangeNotifier`, lo cual permite que la pantalla reaccione automáticamente cuando cambia el estado de las citas.
+La persistencia se organiza alrededor de SQLite como **fuente de lectura y escritura inmediata para la interfaz**. Las operaciones del usuario se confirman localmente y quedan marcadas como pendientes; Firestore replica los cambios entre dispositivos cuando la sesión y la conectividad lo permiten. Los listeners contextuales aplican los cambios remotos a SQLite mediante upsert, evitando que las pantallas dependan de una llamada de red para mostrar o modificar información.
 
-Propiedades principales:
-- `citas`: lista actual de citas cargadas
-- `cargando`: si la carga está en proceso
-- `error`: último error que ocurrió
+La separación por capas mantiene las responsabilidades acotadas: las pantallas usan controladores, los controladores coordinan repositorios, los repositorios aplican el contrato de persistencia y `SyncService` coordina el intercambio con Firestore. El detector de conectividad activa reintentos y comunica el estado de red, pero la disponibilidad de la UI no depende de él.
 
-Métodos principales:
-- `cargar()`
-  - obtiene todas las citas desde el repositorio
-- `guardar(Cita cita)`
-  - crea o actualiza una cita según si tiene ID o no
-- `cambiarEstado(int id, EstadoCita estado)`
-  - cambia el estado de una cita
-- `eliminar(int id)`
-  - elimina una cita
-- `agruparPorEstado(DateTime fecha, {DateTime? ahora})`
-  - devuelve un mapa con las citas agrupadas en grupos como `ATRASADAS`, `Pendiente`, `Esperando Pieza`, etc.
-
-La idea es que la UI no haga consultas directas a SQLite ni manipule el repositorio. Todo pasa por este controlador.
-
-### 4. Base de datos SQLite
-Archivo principal:
-- `lib/core/database/database_helper.dart`
-
-Este archivo centraliza la conexión y el esquema de la base.
-
-#### Singleton
-La clase usa un patrón singleton:
-- `DatabaseHelper.instance`
-- solo hay una conexión activa para todo el app
-- esto evita conflictos cuando dos operaciones quieren escribir al mismo tiempo
-
-#### Esquema
-La tabla principal es:
-- `citas`
-
-Campos:
-- `id`
-- `cliente`
-- `vehiculo`
-- `telefono`
-- `marca`
-- `modelo`
-- `anio`
-- `placa`
-- `servicios`
-- `tecnico`
-- `descripcion`
-- `fecha_cita`
-- `estado`
-- `creado_en`
-- `actualizado_en`
-- `total`
-
-#### Migración de versión
-La base tiene versión controlada por:
-- `_versionBase = 3`
-
-Migraciones:
-- `v1 -> v2`: agrega teléfono, marca, modelo, año, placa, servicios, técnico y fecha de actualización
-- `v2 -> v3`: elimina el campo QR y agrega el campo `total`
-
-La app no borra datos antiguos. En vez de eso, usa `onUpgrade` para adaptar la estructura a la nueva versión.
-
-Esto es importante porque permite mantener citas ya creadas cuando se actualiza la app.
-
-### 5. Vista administrativa
-Archivo principal:
-- `lib/screens/admin/citas_admin_screen.dart`
-
-Aquí vive la pantalla principal para ver y administrar citas.
-
-Responsabilidades:
-- cargar la lista de citas
-- filtrar y agrupar por estado
-- abrir formulario para crear nueva cita
-- abrir edición para una cita existente
-- guardar cambios en la base
-- eliminar cita
-- mostrar detalle de la cita
-
-También hay conversiones entre la entidad real de la base y la entidad UI:
-- `CitaAdmin` se usa para la pantalla
-- `Cita` se usa para SQLite
-- la app convierte entre ambos modelos según sea necesario
-
-## Lógica de citas atrasadas
-
-La marcada de “atrasadas” se hace de forma derivada, no como un estado guardado en la base. Esto es importante porque atrasada no es un estado real; es una condición calculada.
-
-### Regla
-Una cita está atrasada cuando:
-- su estado no es `completado`
-- y la fecha de la cita es anterior al día que se está consultando
-
-### Importante
-No se compara por hora exacta. La regla es por fecha calendario.
-
-Ejemplo:
-
-- Si la cita es del 30/9 y la vista está en 1/10, aparece en `ATRASADAS`
-- Si la vista está en 30/9, esa cita sigue visible como normal
-- Si la cita está completada, no aparece como atrasada
-
-Esto se implementa con:
-- `Cita.esAtrasada(DateTime ahora)`
-- `Cita.etiquetaUI(DateTime ahora)`
-
-### Por qué se hace así
-Porque en la administración se revisan citas por día seleccionado. Un día concreto debe mostrar su estado real, y las citas de días anteriores aparecen como vencidas sin alterar su estado original de base.
-
-## Orden de la lista
-
-El repositorio ordena las citas por fecha de forma ascendente:
-
-```dart
-orderBy: '${DatabaseHelper.colFechaCita} ASC'
+```text
++----------------------------------+          +---------------------------------+
+|            Flutter App           |          |             Firebase            |
+|                                  |          |                                 |
+|  +----------------------------+  |   PUSH   |  +---------------------------+  |
+|  | SQLite autofix.db (v14)    |  | pending |  |      Cloud Firestore       |  |
+|  |                            |--+--------->|  |                           |  |
+|  | citas      · catalogos     |  |  queue  |  | citas    · talleres        |  |
+|  | talleres   · admins        |  |         |  | tecnicos · servicios       |  |
+|  | clientes   · vehiculos     |<-+----------|  | marcas   · grupos          |  |
+|  +----------------------------+  |   PULL   |  | counters/citas (QR)        |  |
+|                ▲                 |onSnapshot|  +---------------------------+  |
+|                | Ctrl+Repo       |          |                ▲                |
+|  +----------------------------+  |          |  +---------------------------+  |
+|  |        SyncService         |  |          |  |   Firebase Auth (roles)   |  |
+|  +----------------------------+  |          |  +---------------------------+  |
++----------------------------------+          +---------------------------------+
 ```
 
-Esto hace que las citas antiguas aparezcan primero cuando corresponde, por ejemplo en la vista de citas atrasadas y en la vista general del día.
+### Patrones y decisiones clave
 
-## Flujo completo de creación y lectura
+- **Esquema SQLite versionado (v14):** `DatabaseHelper` centraliza una conexión singleton, el esquema, sus índices y las migraciones. La versión actual incorpora citas, vehículos, perfiles y catálogos con los campos necesarios para sincronización y aislamiento por taller. Las migraciones se ejecutan por versión; la reconstrucción de identidad introducida en v7 fue una decisión del entorno académico que puede descartar datos locales legados. Para conservar datos de usuarios reales se requiere una migración con conversión y copia de filas antes de desplegar una actualización.
+- **Tombstones para bajas sincronizables:** las bajas funcionales de citas y catálogos se representan con `eliminado_en` y, cuando corresponde, `eliminado_por`/`restaurado_en` (`lib/core/utils/borrado_logico.dart`). Las consultas ordinarias excluyen filas marcadas y la sincronización replica la marca como una actualización; las reglas de Firestore rechazan el borrado físico de estas colecciones. Es distinto de la purga local de `LimpiezaLocal`, que elimina físicamente citas, perfil y vehículos temporales al cerrar o cambiar de sesión según la política de "Recuérdame".
+- **Identidad distribuida y código legible:** las entidades sincronizables usan UUID generados en el cliente como identidad estable, evitando colisiones de autoincrementos entre dispositivos. El código de cita visible (`CITA-XXXX`) es separado e inmutable una vez confirmado; su numeración se reserva mediante una **transacción atómica** sobre `counters/citas`.
+- **`SyncService` bidireccional:** `lib/features/sync/sync_service.dart` coordina las colas locales y los listeners de Firestore.
+  - **Push:** procesa registros `sync_status = 'pending'` para citas, perfiles y catálogos, con reintentos por fila. Los cambios de contraseña se reintentan mediante Firebase Auth; el secreto se conserva temporalmente en almacenamiento seguro y nunca se envía a Firestore. Los fallos de una cola no impiden procesar las demás.
+  - **Pull:** listeners `onSnapshot` aplican upserts a SQLite. Los filtros dependen de la sesión: `taller_id` para administración y `ownerUid`/correo para clientes. El listener se inicia al establecer el contexto de sesión, no con una descarga global de citas al abrir la app.
+  - **Conflictos:** las citas comparan `actualizado_en`; las bajas de catálogos tienen protección adicional para evitar que una edición local antigua las resucite. El `codigo_visible` se conserva una vez asignado. Para perfiles, un cambio local pendiente prevalece sobre una copia remota atrasada.
+- **Multitenencia por `taller_id`:** citas y catálogos operativos llevan el identificador del taller. SQLite aplica filtros e índices por tenant y limita la unicidad de nombres al taller; Firestore valida la pertenencia del administrador al taller en las escrituras. Los catálogos globales de talleres y cuentas de administrador tienen un flujo separado.
+- **Ciclo de vida de sesión y datos:** `lib/core/data/limpieza_local.dart` separa datos temporales del usuario (citas, perfil y vehículos locales) de los datos permanentes de plataforma. Al cambiar de cuenta limpia primero, detiene listeners y hace un intento acotado de enviar pendientes cuando hay conectividad.
+- **Reglas de seguridad en la nube:** `firestore.rules` valida estructura y tipos, propiedad del cliente, asociación del administrador con `taller_id`, protección de catálogos y avance monotónico del contador. El acceso no definido queda denegado por defecto.
 
-### Crear cita
-1. La pantalla admin abre un formulario
-2. recopila los datos del cliente, vehículo y servicios
-3. crea una instancia de `Cita`
-4. llama a `CitasController.guardar(cita)`
-5. el controller llama al repositorio
-6. el repositorio ejecuta `INSERT` en SQLite
-7. la lista se vuelve a cargar y la UI actualiza el listado
+---
 
-### Editar cita
-1. se abre el diálogo de edición
-2. se modifica el `CitaAdmin`
-3. se convierte a `Cita`
-4. se llama a `guardar()`
-5. el repositorio ejecuta `UPDATE` por `id`
-6. la lista en pantalla se refresca
+## 3. Módulos Principales
 
-### Eliminar cita
-1. se dispara la acción desde la card o detalle
-2. se llama a `CitasController.eliminar(id)`
-3. el repositorio ejecuta `DELETE` por `id`
-4. la UI vuelve a recargar la lista
+### Cliente
+Área de cliente respaldada por un perfil local persistente (`clientes`):
 
-### Leer citas
-1. el controller llama a `obtenerTodas()`
-2. el repositorio hace `SELECT * FROM citas`
-3. `Cita.fromMap()` convierte cada fila en una entidad
-4. la UI recibe la lista y la muestra por grupos
+- **Registro híbrido:** acceso por correo/contraseña (Firebase Auth) con **modo invitado** y validación **sin internet** contra credenciales seguras del keystore cuando "Recuérdame" está activo. Memoria de roles (`SesionAdmin`/`SesionCliente`) independientes.
+- **Gestión de vehículos:** registro local de vehículos en SQLite (v13) con autocompletado desde **NHTSA vPIC** y estrategia de caché + fallback offline.
+- **Agenda offline:** crear una cita con taller, vehículo, servicio y técnico del catálogo, fecha y hora; el guardado local no espera a que la sincronización termine.
+- **Historial de citas:** estados reales (pendiente, esperando pieza, en proceso, completada); lista "Mis Citas" alimentada por el listener contextual (por `ownerUid` y por `correo_cliente`).
+- **QR de confirmación local:** la cita aceptada muestra su código `CITA-XXXX` en un QR generado en el dispositivo, incluso sin red.
+- **Mapa de talleres:** red de afiliados (no talleres libres) con MapLibre, marcadores, distancia aproximada y "Abrir en Maps" vía `url_launcher`.
 
-## Relación entre modelos
+### Administrador
+Panel de gestión aislado por taller (`taller_id`):
 
-Hay dos representaciones de la cita:
+- **Gestión de solicitudes cruzadas:** el cliente agenda desde su celular y la solicitud nace en su dispositivo; el administrador la **acepta o rechaza** desde su panel y el cliente ve el resultado al instante. Resolución de colisiones en la cola de envío con UUIDs y transacciones atómicas en Firebase.
+- **Catálogo de servicios, técnicos, marcas y grupos de servicio:** CRUD completo conectado a SQLite con aislamiento por taller, unicidad de nombres por taller y protección histórica (Soft-Delete).
+- **Dashboard con datos reales:** números, gráficos y citas del día conectados a la base (no a mocks), filtrables por fecha.
+- **Panel multitenant y Modo Desarrollador:** creación de cuentas de admin y altas/bajas de talleres con sincronización a Firestore; impresión de recibos por Bluetooth (por Luis, integrada por Leandy).
 
-### 1. `Cita` (entidad de persistencia)
-Usada por SQLite y el repositorio.
+---
 
-### 2. `CitaAdmin` (entidad de UI)
-Usada por la pantalla de administración.
+## 4. Contribuciones del Equipo
 
-La app convierte entre ellos cuando edita o muestra información para evitar mezclar la lógica de base con la estructura de la interfaz.
 
-## Pruebas importantes
+### Leandy Gabin Fermín — Líder principal y arquitecto original
+Leandy dio origen al proyecto: definió la visión y el plan inicial, estableció la estructura base de la aplicación y condujo la arquitectura funcional sobre la que se integraron los módulos. En el código, trabajó en el diseño y CRUD administrativo de citas (`feature/leandy-citas-admin`), el acceso Cliente/Admin, el Modo Desarrollador (`feature/leandy-dev-apartado`), las cuentas de administración vinculadas a talleres (`feature/leandy-devMode-Account`), la separación de datos por taller (`feature/leandy-login-admin`) y la integración/revisión general del trabajo del equipo. **Su liderazgo principal y su rol de arquitecto original se mantuvieron durante el desarrollo.**
 
-El proyecto tiene tests para verificar:
-- `Cita.toMap()` y `Cita.fromMap()`
-- migración de esquema SQLite
-- CRUD del repositorio
-- comportamiento del controller
-- lógica de agrupación por estado
-- lógica de atrasadas por fecha
-- edición y eliminación desde UI
+### Sandy Alexander Ortiz Taveras — Co-líder integrador y responsable del motor Offline-First
+Sandy se incorporó como **co-líder integrador**: fortaleció la arquitectura original conforme aparecieron los requisitos de persistencia local, concurrencia, conectividad y sincronización; resolvió cuellos de botella técnicos y llevó módulos críticos a un estado integrado y estable. Su trabajo incluye el motor SQLite (`feature/sandy-conectividad-almacenamiento`, `feature/sandy-configuracion-db`), conectividad, Dashboard real, mapa, esquema v14, sincronización con Firebase (`feature/sandy-firebase-offline-sync`), gestión del ciclo de vida/limpieza local (`sesion-offline`) y cierre de Configuración Admin (`feature/sandy-configuracion-admin`, `feature/sandy-correccion-ids-solicitudes`).
 
-## Ejecutar el proyecto
+### Aportes iniciales de los demás integrantes
 
-### Dependencias
+- **Luis Ernesto Hernández Peralta — Bluetooth:** inició el flujo de impresión de recibos (`feature/luis-bluetooth`); Leandy lo integró y completó dentro del flujo de citas (`feature/leandy-recibo-cita`).
+- **Rafael David Sánchez Arias — Talleres y agenda del cliente:** inició el mapa y el formulario de agendamiento (`feature/david-busqueda-ubicacion`, `feature/david-mapa-final`); Sandy refinó la integración de MapLibre, la selección de afiliados, las distancias y la navegación a mapas externos.
+- **Andy Andrés Rodríguez Abreu — Servicios web y solicitudes:** inició el consumo de API REST y la gestión de solicitudes administrativas (`feature/andy-servicios-web`, `feature/andy-configuracion-marcas`, `feature/andy-solicitudes-admin`). Debido a la carga de trabajo y a las necesidades de integración, Sandy apoyó y finalizó la API de vehículos y el flujo de solicitudes **preservando la lógica base iniciada por Andy**.
+
+### Cierre colaborativo
+
+La distribución original asignó funcionalidades; la entrega requirió integración transversal. **Leandy fue el líder principal y arquitecto original; Sandy fue su co-líder integrador**, reforzando esa arquitectura, resolviendo los bloqueos de persistencia/sincronización y finalizando componentes que necesitaban trabajo adicional. Leandy aportó la dirección inicial y la integración funcional; Sandy consolidó buena parte del motor Offline-First y completó módulos iniciados por Andy, Luis y Rafael junto con Leandy. El resultado actual es un esfuerzo colaborativo cuyo liderazgo y cierre técnico recayeron principalmente en ambos, con responsabilidades distintas y complementarias.
+
+---
+
+## 5. Estructura del Proyecto
+
+```
+lib/
+├── app/                      # Punto de entrada: MaterialApp, ruta inicial, banner
+├── core/
+│   ├── auth/                 # Sesiones Admin/Cliente, credenciales seguras, Recuérdame
+│   ├── connectivity/         # Detector de red y banner global
+│   ├── data/                 # BaseRepository + LimpiezaLocal (garbage collection)
+│   ├── database/             # DatabaseHelper (singleton SQLite, migraciones v1→v14)
+│   ├── mapa/                 # Estilos y etiquetas del mapa
+│   ├── ubicacion/            # Servicio de geolocalización
+│   └── utils/                # borrado_logico (tombstones), reloj, uuid
+├── features/
+│   ├── admin/                # Citas admin, Dashboard, Configuración, Bluetooth
+│   ├── auth/                 # Login, cambio de contraseña
+│   ├── citas/                # Modelo Cita, repositorio, controller
+│   ├── cliente/              # Mis cita, Agendar, Talleres/Mapa, perfil, NHTSA
+│   ├── configuracion/        # Catálogos: técnicos, servicios, marcas, grupos
+│   ├── devMode/              # Talleres afiliados, cuentas admin, sync global
+│   ├── sync/                 # SyncService + catálogos por taller
+│   └── talleres/             # Modelo y repositorio de talleres
+└── shared/                   # Modelos compartidos y tema (AppColors)
+```
+
+---
+
+## 6. Cómo Ejecutar
+
 ```bash
-flutter pub get
+flutter pub get      # instalar dependencias
+flutter run          # ejecutar la app
+flutter test         # correr la suite de tests
+flutter analyze      # análisis estático
 ```
 
-### App normal
-```bash
-flutter run
-```
-
-### Tests
-```bash
-flutter test
-```
-
-## Resumen corto
-
-En resumen, la app funciona así:
-
-- la pantalla admin manda acciones a `CitasController`
-- el controller usa `CitaRepository`
-- el repositorio guarda y lee en SQLite
-- la entidad `Cita` representa los datos reales
-- las citas atrasadas se calculan según la fecha del día que se está viendo, no por la hora exacta
-- los estados visuales se agrupan para que la administración vea claramente qué necesita atención
-
-Este diseño hace que el proyecto sea más mantenible, fácil de testear y más seguro ante cambios futuros en la UI o en la base de datos.
+> **Nota Firebase:** la app usa credenciales reales del proyecto `autofix-6f844` (`android/app/google-services.json` + `lib/firebase_options.dart`) y reglas de Firestore versionadas en `firestore.rules`. Los claims de Modo Desarrollador (`dev`) deben emitirse **solo** a través de Firebase Admin SDK; nunca se conceden desde el cliente.
