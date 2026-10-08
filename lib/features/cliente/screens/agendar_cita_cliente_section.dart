@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:autofix/core/auth/sesion_cliente.dart';
 import 'package:autofix/core/connectivity/connectivity_scope.dart';
 import 'package:autofix/core/connectivity/connectivity_service.dart';
+import 'package:autofix/core/database/database_helper.dart';
 import 'package:autofix/core/mapa/etiqueta_distancia.dart';
 import 'package:autofix/core/ubicacion/ubicacion_service.dart';
 import 'package:autofix/features/citas/data/cita_repository.dart';
@@ -520,6 +521,7 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
       });
       return;
     }
+    await DatabaseHelper.instance.asegurarCatalogosParaTaller(tallerId);
     final todos = await TipoServicioRepository.instance.obtenerTodasPorTaller(
       tallerId,
     );

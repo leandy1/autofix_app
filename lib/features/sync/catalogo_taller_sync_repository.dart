@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:sqflite/sqflite.dart';
 
 import 'package:autofix/core/database/database_helper.dart';
+import 'package:autofix/core/database/semilla_inicial.dart';
 
 /// Correspondencia entre un catálogo local y su colección Firestore.
 ///
@@ -57,9 +58,9 @@ class CatalogoTallerSyncRepository {
 
   /// Incorpora una versión remota, sin convertirla en una edición local.
   ///
-  /// Una edición local `pending` siempre se conserva para el push. Entre dos
-  /// versiones ya sincronizadas se usa `actualizado_en`; además, un tombstone
-  /// local nunca se resucita por una copia remota viva.
+  /// Una edición local `pending` siempre se conserva para el push. Las plantillas
+  /// bootstrap ceden ante la configuración guardada en la nube, incluso si el
+  /// dispositivo las creó después; un tombstone local nunca se resucita.
   Future<bool> aplicarDesdeNube({
     required CatalogoTallerSyncDefinition definition,
     required String id,
@@ -83,6 +84,8 @@ class CatalogoTallerSyncRepository {
     final eliminadoRemoto = _fechaIso(data[DatabaseHelper.colEliminadoEn]);
     final tombstoneRemotoGana =
         eliminadoRemoto != null && eliminadoLocal == null;
+    final bootstrapLocal =
+        local != null && _esPlantillaBootstrap(definition, tallerId, local);
 
     if (local != null &&
         local[DatabaseHelper.colSyncStatus] == 'pending' &&
@@ -97,12 +100,12 @@ class CatalogoTallerSyncRepository {
       return false;
     }
     if (!tombstoneRemotoGana &&
+        !bootstrapLocal &&
         actualizadoLocal != null &&
         actualizadoRemoto != null &&
         actualizadoLocal.isAfter(actualizadoRemoto)) {
       return false;
     }
-
     final actualizado = actualizadoRemoto ?? DateTime.now().toUtc();
     final creado =
         _fechaIso(data[DatabaseHelper.colCreadoEn]) ??
@@ -130,6 +133,64 @@ class CatalogoTallerSyncRepository {
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
     return true;
+  }
+
+  bool _esPlantillaBootstrap(
+    CatalogoTallerSyncDefinition definition,
+    String tallerId,
+    Map<String, Object?> local,
+  ) {
+    if (local[DatabaseHelper.colSyncStatus] != 'synced' ||
+        local[DatabaseHelper.colEliminadoEn] != null ||
+        local[DatabaseHelper.colActivo] != 1) {
+      return false;
+    }
+
+    final indiceTaller = SemillaInicial.talleres.indexWhere(
+      (taller) => taller.id == tallerId,
+    );
+    if (indiceTaller < 0) return false;
+
+    final (nombres, ids, precioInicial) = switch (definition.tabla) {
+      DatabaseHelper.tablaTecnicos => (
+        SemillaInicial.tecnicos,
+        SemillaInicial.tecnicosIds,
+        null,
+      ),
+      DatabaseHelper.tablaTiposServicio => (
+        SemillaInicial.tiposServicio,
+        SemillaInicial.tiposServicioIds,
+        SemillaInicial.precioInicial,
+      ),
+      DatabaseHelper.tablaMarcas => (
+        SemillaInicial.marcas,
+        SemillaInicial.marcasIds,
+        null,
+      ),
+      DatabaseHelper.tablaGruposServicio => (
+        SemillaInicial.gruposServicio,
+        SemillaInicial.gruposServicioIds,
+        null,
+      ),
+      _ => (const <String>[], const <String>[], null),
+    };
+
+    for (var indice = 0; indice < ids.length; indice++) {
+      final idSemilla = SemillaInicial.idCatalogoParaTaller(
+        ids[indice],
+        indiceTaller,
+      );
+      if (local[DatabaseHelper.colId] != idSemilla ||
+          local[DatabaseHelper.colNombre] != nombres[indice]) {
+        continue;
+      }
+      if (precioInicial != null &&
+          (local[DatabaseHelper.colPrecio] as num?)?.toInt() != precioInicial) {
+        continue;
+      }
+      return true;
+    }
+    return false;
   }
 
   /// Marca una fila synced solo si no fue editada durante el push.

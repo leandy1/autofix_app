@@ -1,6 +1,7 @@
 import 'package:autofix/core/auth/sesion_admin.dart';
 import 'package:autofix/core/auth/sesion_cliente.dart';
 import 'package:autofix/core/database/database_helper.dart';
+import 'package:autofix/core/database/semilla_inicial.dart';
 import 'package:autofix/features/configuracion/data/grupo_servicio_repository.dart';
 import 'package:autofix/features/configuracion/data/marca_repository.dart';
 import 'package:autofix/features/configuracion/data/tecnico_repository.dart';
@@ -183,7 +184,11 @@ void main() {
   });
 
   test('el cliente descarga los servicios del taller seleccionado', () async {
-    const tallerCliente = 'taller-cliente';
+    final tallerCliente = SemillaInicial.talleres[2].id;
+    final idServicioSemillaCentral = SemillaInicial.idCatalogoParaTaller(
+      SemillaInicial.tiposServicioIds.first,
+      2,
+    );
     final firestore = FakeFirebaseFirestore();
     SyncService.instance.usarFirestoreParaPruebas(firestore);
     await SesionCliente.instance.iniciar(
@@ -193,10 +198,10 @@ void main() {
     );
     await firestore
         .collection('servicios')
-        .doc('srv-cliente')
+        .doc(idServicioSemillaCentral)
         .set(
           _catalogoRemoto(
-            id: 'srv-cliente',
+            id: idServicioSemillaCentral,
             tallerId: tallerCliente,
             nombre: 'Servicio del taller',
           )..['precio'] = 920,
@@ -220,9 +225,12 @@ void main() {
         tallerCliente,
       );
     }
-    expect(servicios, hasLength(1));
-    expect(servicios.single.nombre, 'Servicio del taller');
-    expect(servicios.single.precio, 920);
+    final remoto = servicios.firstWhere(
+      (servicio) => servicio.id == idServicioSemillaCentral,
+    );
+    expect(servicios.length, SemillaInicial.tiposServicio.length);
+    expect(remoto.nombre, 'Servicio del taller');
+    expect(remoto.precio, 920);
     expect(
       await TipoServicioRepository.instance.obtenerTodasPorTaller(
         'otro-taller',

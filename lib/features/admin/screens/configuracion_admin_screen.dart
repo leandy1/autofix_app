@@ -30,7 +30,10 @@ class ConfiguracionScreen extends StatefulWidget {
 
 class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
   late final ConfiguracionController _cfg = ConfiguracionController(
-    tallerId: widget.tallerId ?? SemillaInicial.talleres.first.id,
+    tallerId:
+        widget.tallerId ??
+        SesionAdmin.instance.tallerId ??
+        SemillaInicial.talleres.first.id,
   );
 
   @override
@@ -538,6 +541,18 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
       title: 'Grupos de servicios',
       child: Column(
         children: [
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: EdgeInsets.only(bottom: 12),
+              child: Text(
+                'Los grupos son etiquetas para clasificar servicios. En esta versión '
+                'todavía no se asignan servicios a un grupo ni cambian las opciones '
+                'de las citas.',
+                style: TextStyle(color: AppColors.textGray, fontSize: 12),
+              ),
+            ),
+          ),
           _addButton('Agregar grupo', () => unawaited(_editarGrupo())),
           const SizedBox(height: 12),
           if (_cfg.gruposServicio.isEmpty)

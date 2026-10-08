@@ -1,10 +1,8 @@
-import 'package:autofix/core/auth/sesion_admin.dart';
 import 'package:autofix/core/database/database_helper.dart';
 import 'package:autofix/core/database/semilla_inicial.dart';
 import 'package:autofix/features/admin/screens/configuracion_admin_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
@@ -18,15 +16,12 @@ void main() {
   });
 
   tearDownAll(() async {
-    await SesionAdmin.instance.cerrar();
     await DatabaseHelper.resetParaPruebas();
     DatabaseHelper.nombreBaseParaPruebas = null;
   });
 
   setUp(() async {
     await DatabaseHelper.resetParaPruebas();
-    SharedPreferences.setMockInitialValues({});
-    await SesionAdmin.instance.cerrar();
   });
 
   Future<void> mostrarPantalla(WidgetTester tester) async {

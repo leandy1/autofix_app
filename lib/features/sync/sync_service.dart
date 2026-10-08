@@ -279,6 +279,8 @@ class SyncService extends ChangeNotifier {
         !SesionAdmin.instance.activa && SesionCliente.instance.activa;
     if (!esAdmin && !esCliente) return;
 
+    await DatabaseHelper.instance.asegurarCatalogosParaTaller(tallerId);
+
     final suscripciones = esAdmin
         ? _catalogosAdminSubscriptions
         : _catalogosClienteSubscriptions;

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:autofix/core/auth/sesion_admin.dart';
 import 'package:autofix/core/auth/credenciales_seguras.dart';
 import 'package:autofix/core/data/limpieza_local.dart';
+import 'package:autofix/core/database/database_helper.dart';
 import 'package:autofix/features/admin/widgets/solicitudes_citas_admin_section.dart';
 import 'package:autofix/features/auth/screens/login_screen.dart';
 import 'package:autofix/features/citas/models/cita.dart' as cita_data;
@@ -1526,6 +1527,7 @@ class _CitasScreenState extends State<CitasScreen> {
     }
 
     try {
+      await DatabaseHelper.instance.asegurarCatalogosParaTaller(tallerId);
       final resultados = await Future.wait(<Future<Object?>>[
         TipoServicioRepository.instance.obtenerTodasPorTaller(tallerId),
         TecnicoRepository.instance.obtenerActivosPorTaller(tallerId),

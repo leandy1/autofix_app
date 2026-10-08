@@ -192,6 +192,39 @@ void main() {
       final tecnicos = await TecnicoRepository.instance.obtenerTodas();
       expect(tecnicos.length, SemillaInicial.tecnicos.length);
     });
+
+    test(
+      'cada taller afiliado obtiene su propio catálogo bootstrap idempotente',
+      () async {
+        final taller = SemillaInicial.talleres[2];
+        await DatabaseHelper.instance.asegurarCatalogosParaTaller(taller.id);
+        await DatabaseHelper.instance.asegurarCatalogosParaTaller(taller.id);
+
+        final servicios = await TipoServicioRepository.instance
+            .obtenerTodasPorTaller(taller.id);
+        final serviciosTallerBase = await TipoServicioRepository.instance
+            .obtenerTodasPorTaller(SemillaInicial.talleres.first.id);
+        expect(servicios, hasLength(SemillaInicial.tiposServicio.length));
+        expect(servicios.every((servicio) => servicio.precio == 0), isTrue);
+        expect(
+          servicios
+              .map((servicio) => servicio.id)
+              .toSet()
+              .intersection(
+                serviciosTallerBase.map((servicio) => servicio.id).toSet(),
+              ),
+          isEmpty,
+        );
+        expect(
+          servicios.map((servicio) => servicio.id).toSet(),
+          hasLength(SemillaInicial.tiposServicio.length),
+        );
+        expect(
+          await TecnicoRepository.instance.obtenerActivosPorTaller(taller.id),
+          hasLength(SemillaInicial.tecnicos.length),
+        );
+      },
+    );
   });
 
   group('CRUD de catalogos', () {

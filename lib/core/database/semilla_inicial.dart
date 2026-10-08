@@ -59,6 +59,21 @@ class TallerAfiliado {
 class SemillaInicial {
   SemillaInicial._();
 
+  /// Deriva una identidad de catálogo v4 estable y específica por taller.
+  /// El primer taller conserva el UUID legible de la plantilla.
+  static String idCatalogoParaTaller(String idBase, int indiceTaller) {
+    if (indiceTaller <= 0) return idBase;
+    final partes = idBase.split('-');
+    if (partes.length != 5 || partes[4].length != 12) {
+      throw FormatException('UUID base de catálogo inválido: $idBase');
+    }
+    final sufijo = int.parse(partes[4], radix: 16);
+    const mascara48Bits = 0xFFFFFFFFFFFF;
+    final derivado = (sufijo + indiceTaller * 0x10000) & mascara48Bits;
+    partes[4] = derivado.toRadixString(16).padLeft(12, '0');
+    return partes.join('-');
+  }
+
   /// Talleres AFILIADOS de la red AutoFix (v4).
   ///
   /// Directriz de Leandy: NO se buscan talleres libres en el mundo. El mapa solo

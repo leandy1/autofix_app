@@ -880,6 +880,102 @@ class DatabaseHelper {
     );
   }
 
+  /// Garantiza un catálogo operativo local para un taller afiliado de la
+  /// semilla.
+  ///
+  /// Las plantillas bootstrap se copian por taller con UUIDs deterministas y
+  /// separados por tenant. Esto permite agendar en Global Refriauto, Taller
+  /// Gómez o AutoFix Central sin reutilizar filas pertenecientes a otro taller.
+  /// Un catálogo ya iniciado (incluido uno cuyos registros se eliminaron
+  /// lógicamente) nunca se vuelve a sembrar.
+  Future<void> asegurarCatalogosParaTaller(String tallerId) async {
+    final indiceTaller = SemillaInicial.talleres.indexWhere(
+      (taller) => taller.id == tallerId,
+    );
+    if (indiceTaller < 0) return;
+
+    final db = await base;
+    var faltaAlgunCatalogo = false;
+    for (final tabla in <String>[
+      tablaTecnicos,
+      tablaTiposServicio,
+      tablaMarcas,
+      tablaGruposServicio,
+    ]) {
+      final existentes = await db.query(
+        tabla,
+        columns: <String>[colId],
+        where: '$colTallerId = ?',
+        whereArgs: <Object?>[tallerId],
+        limit: 1,
+      );
+      if (existentes.isEmpty) {
+        faltaAlgunCatalogo = true;
+        break;
+      }
+    }
+    if (!faltaAlgunCatalogo) return;
+
+    await db.transaction((txn) async {
+      final ahora = DateTime.now().toUtc().toIso8601String();
+
+      Future<void> sembrarParaTaller(
+        String tabla,
+        List<String> nombres,
+        List<String> ids, {
+        Map<String, Object?> extra = const <String, Object?>{},
+      }) async {
+        final existentes = await txn.query(
+          tabla,
+          columns: <String>[colId],
+          where: '$colTallerId = ?',
+          whereArgs: <Object?>[tallerId],
+          limit: 1,
+        );
+        if (existentes.isNotEmpty) return;
+
+        for (var indice = 0; indice < nombres.length; indice++) {
+          await txn.insert(tabla, <String, Object?>{
+            colId: SemillaInicial.idCatalogoParaTaller(
+              ids[indice],
+              indiceTaller,
+            ),
+            colNombre: nombres[indice],
+            colActivo: 1,
+            ...extra,
+            colTallerId: tallerId,
+            colSyncStatus: 'synced',
+            colEliminadoEn: null,
+            colCreadoEn: ahora,
+            colActualizadoEn: ahora,
+          }, conflictAlgorithm: ConflictAlgorithm.abort);
+        }
+      }
+
+      await sembrarParaTaller(
+        tablaTecnicos,
+        SemillaInicial.tecnicos,
+        SemillaInicial.tecnicosIds,
+      );
+      await sembrarParaTaller(
+        tablaTiposServicio,
+        SemillaInicial.tiposServicio,
+        SemillaInicial.tiposServicioIds,
+        extra: <String, Object?>{colPrecio: SemillaInicial.precioInicial},
+      );
+      await sembrarParaTaller(
+        tablaMarcas,
+        SemillaInicial.marcas,
+        SemillaInicial.marcasIds,
+      );
+      await sembrarParaTaller(
+        tablaGruposServicio,
+        SemillaInicial.gruposServicio,
+        SemillaInicial.gruposServicioIds,
+      );
+    });
+  }
+
   // ------------------------------------------------------------------
   // Semilla de CITAS: la unica que es data de prueba de verdad
   // ------------------------------------------------------------------
