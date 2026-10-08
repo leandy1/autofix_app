@@ -32,7 +32,7 @@ Por eso, AutoFix no se limita a un CRUD conectado a la nube: implementa un **flu
 ### Stack
 
 - **Flutter / Dart** — SDK `^3.13.2`, Material Design.
-- **SQLite (`sqflite`)** — base local, migraciones por versión (esquema **v14** actual).
+- **SQLite (`sqflite`)** — base local, migraciones por versión (esquema **v15** actual).
 - **Cloud Firestore + Firebase Auth** — sincronización y autenticación (credenciales del proyecto `autofix-6f844`).
 - **`connectivity_plus`** — detector de red en vivo (banner global de conectividad).
 - **`qr_flutter`** — generación local de códigos QR.
@@ -51,11 +51,11 @@ La separación por capas mantiene las responsabilidades acotadas: las pantallas 
 |            Flutter App           |          |             Firebase            |
 |                                  |          |                                 |
 |  +----------------------------+  |   PUSH   |  +---------------------------+  |
-|  | SQLite autofix.db (v14)    |  | pending |  |      Cloud Firestore       |  |
+|  | SQLite autofix.db (v15)    |  | pending |  |      Cloud Firestore       |  |
 |  |                            |--+--------->|  |                           |  |
 |  | citas      · catalogos     |  |  queue  |  | citas    · talleres        |  |
 |  | talleres   · admins        |  |         |  | tecnicos · servicios       |  |
-|  | clientes   · vehiculos     |<-+----------|  | marcas   · grupos          |  |
+|  | clientes   · vehiculos     |<-+----------|  | marcas · grupos · vehiculos |  |
 |  +----------------------------+  |   PULL   |  | counters/citas (QR)        |  |
 |                ▲                 |onSnapshot|  +---------------------------+  |
 |                | Ctrl+Repo       |          |                ▲                |
@@ -67,13 +67,13 @@ La separación por capas mantiene las responsabilidades acotadas: las pantallas 
 
 ### Patrones y decisiones clave
 
-- **Esquema SQLite versionado (v14):** `DatabaseHelper` centraliza una conexión singleton, el esquema, sus índices y las migraciones. La versión actual incorpora citas, vehículos, perfiles y catálogos con los campos necesarios para sincronización y aislamiento por taller. Las migraciones se ejecutan por versión; la reconstrucción de identidad introducida en v7 fue una decisión del entorno académico que puede descartar datos locales legados. Para conservar datos de usuarios reales se requiere una migración con conversión y copia de filas antes de desplegar una actualización.
-- **Tombstones para bajas sincronizables:** las bajas funcionales de citas y catálogos se representan con `eliminado_en` y, cuando corresponde, `eliminado_por`/`restaurado_en` (`lib/core/utils/borrado_logico.dart`). Las consultas ordinarias excluyen filas marcadas y la sincronización replica la marca como una actualización; las reglas de Firestore rechazan el borrado físico de estas colecciones. Es distinto de la purga local de `LimpiezaLocal`, que elimina físicamente citas, perfil y vehículos temporales al cerrar o cambiar de sesión según la política de "Recuérdame".
+- **Esquema SQLite versionado (v15):** `DatabaseHelper` centraliza una conexión singleton, el esquema, sus índices y las migraciones. La versión actual incorpora citas, vehículos, perfiles y catálogos con los campos necesarios para sincronización y aislamiento por taller. Las migraciones se ejecutan por versión; la reconstrucción de identidad introducida en v7 fue una decisión del entorno académico que puede descartar datos locales legados. Para conservar datos de usuarios reales se requiere una migración con conversión y copia de filas antes de desplegar una actualización.
+- **Tombstones para bajas sincronizables:** las bajas funcionales de citas, vehículos y catálogos se representan con `eliminado_en` y, cuando corresponde, `eliminado_por`/`restaurado_en` (`lib/core/utils/borrado_logico.dart`). Las consultas ordinarias excluyen filas marcadas y la sincronización replica la marca como una actualización; las reglas de Firestore rechazan el borrado físico de estas colecciones. Es distinto de la purga local de `LimpiezaLocal`, que elimina físicamente la copia local al cerrar o cambiar de sesión según la política de "Recuérdame"; el garaje en Firestore se recupera al volver a iniciar sesión.
 - **Identidad distribuida y código legible:** las entidades sincronizables usan UUID generados en el cliente como identidad estable, evitando colisiones de autoincrementos entre dispositivos. El código de cita visible (`CITA-XXXX`) es separado e inmutable una vez confirmado; su numeración se reserva mediante una **transacción atómica** sobre `counters/citas`.
 - **`SyncService` bidireccional:** `lib/features/sync/sync_service.dart` coordina las colas locales y los listeners de Firestore.
-  - **Push:** procesa registros `sync_status = 'pending'` para citas, perfiles y catálogos, con reintentos por fila. Los cambios de contraseña se reintentan mediante Firebase Auth; el secreto se conserva temporalmente en almacenamiento seguro y nunca se envía a Firestore. Los fallos de una cola no impiden procesar las demás.
-  - **Pull:** listeners `onSnapshot` aplican upserts a SQLite. Los filtros dependen de la sesión: `taller_id` para administración y `ownerUid`/correo para clientes. El listener se inicia al establecer el contexto de sesión, no con una descarga global de citas al abrir la app.
-  - **Conflictos:** las citas comparan `actualizado_en`; las bajas de catálogos tienen protección adicional para evitar que una edición local antigua las resucite. El `codigo_visible` se conserva una vez asignado. Para perfiles, un cambio local pendiente prevalece sobre una copia remota atrasada.
+  - **Push:** procesa registros `sync_status = 'pending'` para citas, vehículos, perfiles y catálogos, con reintentos por fila. Los cambios de contraseña se reintentan mediante Firebase Auth; el secreto se conserva temporalmente en almacenamiento seguro y nunca se envía a Firestore. Los fallos de una cola no impiden procesar las demás.
+  - **Pull:** listeners `onSnapshot` aplican upserts a SQLite. Los filtros dependen de la sesión: `taller_id` para administración y `ownerUid`/correo para citas y vehículos del cliente. El listener se inicia al establecer el contexto de sesión, no con una descarga global de citas al abrir la app.
+  - **Conflictos:** las citas comparan `actualizado_en`; las bajas de catálogos y vehículos tienen protección para evitar que una edición local antigua las resucite. El `codigo_visible` se conserva una vez asignado. Para perfiles, un cambio local pendiente prevalece sobre una copia remota atrasada.
 - **Multitenencia por `taller_id`:** citas y catálogos operativos llevan el identificador del taller. SQLite aplica filtros e índices por tenant y limita la unicidad de nombres al taller; Firestore valida la pertenencia del administrador al taller en las escrituras. Los catálogos globales de talleres y cuentas de administrador tienen un flujo separado.
 - **Ciclo de vida de sesión y datos:** `lib/core/data/limpieza_local.dart` separa datos temporales del usuario (citas, perfil y vehículos locales) de los datos permanentes de plataforma. Al cambiar de cuenta limpia primero, detiene listeners y hace un intento acotado de enviar pendientes cuando hay conectividad.
 - **Reglas de seguridad en la nube:** `firestore.rules` valida estructura y tipos, propiedad del cliente, asociación del administrador con `taller_id`, protección de catálogos y avance monotónico del contador. El acceso no definido queda denegado por defecto.
@@ -86,7 +86,7 @@ La separación por capas mantiene las responsabilidades acotadas: las pantallas 
 Área de cliente respaldada por un perfil local persistente (`clientes`):
 
 - **Registro híbrido:** acceso por correo/contraseña (Firebase Auth) con **modo invitado** y validación **sin internet** contra credenciales seguras del keystore cuando "Recuérdame" está activo. Memoria de roles (`SesionAdmin`/`SesionCliente`) independientes.
-- **Gestión de vehículos:** registro local de vehículos en SQLite (v13) con autocompletado desde **NHTSA vPIC** y estrategia de caché + fallback offline.
+- **Gestión de vehículos:** el "garaje virtual" guarda vehículos en SQLite v15 y sincroniza en ambos sentidos con Firestore, vinculados al UID/correo del cliente. El garaje remoto sobrevive al cierre de sesión y a la limpieza de caché (Garbage Collection) y se restaura al iniciar sesión; incluye autocompletado desde **NHTSA vPIC** y fallback offline.
 - **Agenda offline:** crear una cita con taller, vehículo, servicio y técnico del catálogo, fecha y hora; el guardado local no espera a que la sincronización termine.
 - **Historial de citas:** estados reales (pendiente, esperando pieza, en proceso, completada); lista "Mis Citas" alimentada por el listener contextual (por `ownerUid` y por `correo_cliente`).
 - **QR de confirmación local:** la cita aceptada muestra su código `CITA-XXXX` en un QR generado en el dispositivo, incluso sin red.
@@ -109,7 +109,7 @@ Panel de gestión aislado por taller (`taller_id`):
 Leandy dio origen al proyecto: definió la visión y el plan inicial, estableció la estructura base de la aplicación y condujo la arquitectura funcional sobre la que se integraron los módulos. En el código, trabajó en el diseño y CRUD administrativo de citas (`feature/leandy-citas-admin`), el acceso Cliente/Admin, el Modo Desarrollador (`feature/leandy-dev-apartado`), las cuentas de administración vinculadas a talleres (`feature/leandy-devMode-Account`), la separación de datos por taller (`feature/leandy-login-admin`) y la integración/revisión general del trabajo del equipo. **Su liderazgo principal y su rol de arquitecto original se mantuvieron durante el desarrollo.**
 
 ### Sandy Alexander Ortiz Taveras — Co-líder integrador y responsable del motor Offline-First
-Sandy se incorporó como **co-líder integrador**: fortaleció la arquitectura original conforme aparecieron los requisitos de persistencia local, concurrencia, conectividad y sincronización; resolvió cuellos de botella técnicos y llevó módulos críticos a un estado integrado y estable. Su trabajo incluye el motor SQLite (`feature/sandy-conectividad-almacenamiento`, `feature/sandy-configuracion-db`), conectividad, Dashboard real, mapa, esquema v14, sincronización con Firebase (`feature/sandy-firebase-offline-sync`), gestión del ciclo de vida/limpieza local (`sesion-offline`) y cierre de Configuración Admin (`feature/sandy-configuracion-admin`, `feature/sandy-correccion-ids-solicitudes`).
+Sandy se incorporó como **co-líder integrador**: fortaleció la arquitectura original conforme aparecieron los requisitos de persistencia local, concurrencia, conectividad y sincronización; resolvió cuellos de botella técnicos y llevó módulos críticos a un estado integrado y estable. Su trabajo incluye el motor SQLite (`feature/sandy-conectividad-almacenamiento`, `feature/sandy-configuracion-db`), conectividad, Dashboard real, mapa, esquema v15, sincronización con Firebase (`feature/sandy-firebase-offline-sync`), gestión del ciclo de vida/limpieza local (`sesion-offline`) y cierre de Configuración Admin (`feature/sandy-configuracion-admin`, `feature/sandy-correccion-ids-solicitudes`).
 
 ### Aportes iniciales de los demás integrantes
 
@@ -132,7 +132,7 @@ lib/
 │   ├── auth/                 # Sesiones Admin/Cliente, credenciales seguras, Recuérdame
 │   ├── connectivity/         # Detector de red y banner global
 │   ├── data/                 # BaseRepository + LimpiezaLocal (garbage collection)
-│   ├── database/             # DatabaseHelper (singleton SQLite, migraciones v1→v14)
+│   ├── database/             # DatabaseHelper (singleton SQLite, migraciones v1→v15)
 │   ├── mapa/                 # Estilos y etiquetas del mapa
 │   ├── ubicacion/            # Servicio de geolocalización
 │   └── utils/                # borrado_logico (tombstones), reloj, uuid
