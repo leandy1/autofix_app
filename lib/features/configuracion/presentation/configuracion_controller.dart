@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:sqflite/sqflite.dart' show DatabaseException;
 
+import 'package:autofix/core/auth/sesion_admin.dart';
 import 'package:autofix/features/configuracion/data/grupo_servicio_repository.dart';
 import 'package:autofix/features/configuracion/data/marca_repository.dart';
 import 'package:autofix/features/configuracion/data/tecnico_repository.dart';
@@ -10,6 +13,7 @@ import 'package:autofix/features/configuracion/models/grupo_servicio.dart';
 import 'package:autofix/features/configuracion/models/marca.dart';
 import 'package:autofix/features/configuracion/models/tecnico.dart';
 import 'package:autofix/features/configuracion/models/tipo_servicio.dart';
+import 'package:autofix/features/sync/sync_service.dart';
 
 /// Estado y logica de la pantalla de Configuracion.
 ///
@@ -95,6 +99,7 @@ class ConfiguracionController extends ChangeNotifier {
 
   bool _cargando = true;
   String? _error;
+  bool _disposed = false;
 
   /// Los cuatro getters devuelven listas NO modificables a proposito: son
   /// `List.unmodifiable`, no la lista interna. La UI puede ordenar o filtrar para
@@ -111,6 +116,16 @@ class ConfiguracionController extends ChangeNotifier {
   /// Ultimo error, en texto que se puede mostrar tal cual en un SnackBar.
   /// `null` cuando la ultima operacion salio bien.
   String? get error => _error;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
+  void _notificarSiActivo() {
+    if (!_disposed) notifyListeners();
+  }
 
   // ---------------------------------------------------------------------
   // Formato
@@ -138,19 +153,26 @@ class ConfiguracionController extends ChangeNotifier {
   /// silencio y que el admin descubra el error cuando le cuadre la factura.
   static int? leerPrecio(String? texto) {
     if (texto == null) return null;
-    final digitos = texto.replaceAll(RegExp(r'[^0-9]'), '');
-    if (digitos.isEmpty) return null;
-    return int.tryParse(digitos);
+    var limpio = texto.trim();
+    limpio = limpio.replaceFirst(
+      RegExp(r'^(?:RD\$|\$)\s*', caseSensitive: false),
+      '',
+    );
+    limpio = limpio.replaceAll(RegExp(r'\s+'), '');
+    if (!RegExp(r'^(?:\d+|\d{1,3}(?:,\d{3})+)$').hasMatch(limpio)) {
+      return null;
+    }
+    return int.tryParse(limpio.replaceAll(',', ''));
   }
 
   // ---------------------------------------------------------------------
   // Lectura
   // ---------------------------------------------------------------------
 
-  Future<void> cargar() async {
-    _cargando = true;
+  Future<void> cargar({bool mostrarCarga = true}) async {
+    if (mostrarCarga) _cargando = true;
     _error = null;
-    notifyListeners();
+    if (mostrarCarga) _notificarSiActivo();
 
     try {
       // Las cuatro se piden juntas filtradas por tallerId
@@ -171,7 +193,7 @@ class ConfiguracionController extends ChangeNotifier {
     }
 
     _cargando = false;
-    notifyListeners();
+    _notificarSiActivo();
   }
 
   // ---------------------------------------------------------------------
@@ -195,6 +217,18 @@ class ConfiguracionController extends ChangeNotifier {
     );
   }
 
+  Future<bool> editarTecnico(String id, String nombre) async {
+    final limpio = _validarNombre(nombre);
+    if (limpio == null) return false;
+    final existente = _tecnicos.where((tecnico) => tecnico.id == id);
+    if (existente.isEmpty) return _noEncontrado();
+    return _escribir(
+      () => _repoTecnicos.actualizar(existente.first.copyWith(nombre: limpio)),
+      () async =>
+          _tecnicos = await _repoTecnicos.obtenerTodasPorTaller(tallerId),
+    );
+  }
+
   Future<bool> guardarTipoServicio(String nombre, String? precioTexto) async {
     final limpio = _validarNombre(nombre);
     if (limpio == null) return false;
@@ -202,13 +236,37 @@ class ConfiguracionController extends ChangeNotifier {
     final precio = leerPrecio(precioTexto);
     if (precio == null) {
       _error = 'Escribe un precio válido, por ejemplo 1200.';
-      notifyListeners();
+      _notificarSiActivo();
       return false;
     }
 
     return _escribir(
       () => _repoServicios.crear(
         TipoServicio(nombre: limpio, precio: precio, tallerId: tallerId),
+      ),
+      () async =>
+          _tiposServicio = await _repoServicios.obtenerTodasPorTaller(tallerId),
+    );
+  }
+
+  Future<bool> editarTipoServicio(
+    String id,
+    String nombre,
+    String? precioTexto,
+  ) async {
+    final limpio = _validarNombre(nombre);
+    if (limpio == null) return false;
+    final precio = leerPrecio(precioTexto);
+    if (precio == null) {
+      _error = 'Escribe un precio válido y no negativo, por ejemplo 1200.';
+      _notificarSiActivo();
+      return false;
+    }
+    final existente = _tiposServicio.where((servicio) => servicio.id == id);
+    if (existente.isEmpty) return _noEncontrado();
+    return _escribir(
+      () => _repoServicios.actualizar(
+        existente.first.copyWith(nombre: limpio, precio: precio),
       ),
       () async =>
           _tiposServicio = await _repoServicios.obtenerTodasPorTaller(tallerId),
@@ -226,6 +284,17 @@ class ConfiguracionController extends ChangeNotifier {
     );
   }
 
+  Future<bool> editarMarca(String id, String nombre) async {
+    final limpio = _validarNombre(nombre);
+    if (limpio == null) return false;
+    final existente = _marcas.where((marca) => marca.id == id);
+    if (existente.isEmpty) return _noEncontrado();
+    return _escribir(
+      () => _repoMarcas.actualizar(existente.first.copyWith(nombre: limpio)),
+      () async => _marcas = await _repoMarcas.obtenerTodasPorTaller(tallerId),
+    );
+  }
+
   /// Alta de grupo de servicios. Sin precio: un grupo no se cobra, agrupa.
   Future<bool> guardarGrupoServicio(String nombre) async {
     final limpio = _validarNombre(nombre);
@@ -233,6 +302,18 @@ class ConfiguracionController extends ChangeNotifier {
     return _escribir(
       () =>
           _repoGrupos.crear(GrupoServicio(nombre: limpio, tallerId: tallerId)),
+      () async =>
+          _gruposServicio = await _repoGrupos.obtenerTodasPorTaller(tallerId),
+    );
+  }
+
+  Future<bool> editarGrupoServicio(String id, String nombre) async {
+    final limpio = _validarNombre(nombre);
+    if (limpio == null) return false;
+    final existente = _gruposServicio.where((grupo) => grupo.id == id);
+    if (existente.isEmpty) return _noEncontrado();
+    return _escribir(
+      () => _repoGrupos.actualizar(existente.first.copyWith(nombre: limpio)),
       () async =>
           _gruposServicio = await _repoGrupos.obtenerTodasPorTaller(tallerId),
     );
@@ -254,9 +335,8 @@ class ConfiguracionController extends ChangeNotifier {
         _tiposServicio = await _repoServicios.obtenerTodasPorTaller(tallerId),
   );
 
-  /// Borrado fisico de la marca. Para una baja que deba conservar el historial
-  /// existe `MarcaRepository.darDeBaja`, que marca `activo = 0`; la UI decide
-  /// cual de los dos usar y el controller no lo esconde.
+  /// Baja lógica sincronizable de la marca. `MarcaRepository.darDeBaja` conserva
+  /// además la marca visible en el historial usando `activo = 0`.
   Future<bool> eliminarMarca(String id) => _escribir(
     () => _repoMarcas.eliminar(id),
     () async => _marcas = await _repoMarcas.obtenerTodasPorTaller(tallerId),
@@ -278,10 +358,16 @@ class ConfiguracionController extends ChangeNotifier {
     final limpio = nombre.trim();
     if (limpio.isEmpty) {
       _error = 'El nombre no puede quedar vacío.';
-      notifyListeners();
+      _notificarSiActivo();
       return null;
     }
     return limpio;
+  }
+
+  bool _noEncontrado() {
+    _error = 'El registro ya no está disponible. Actualiza la lista e inténtalo de nuevo.';
+    _notificarSiActivo();
+    return false;
   }
 
   /// Ejecuta la escritura y despues relee la lista completa.
@@ -303,11 +389,17 @@ class ConfiguracionController extends ChangeNotifier {
       await accion();
       await releer();
       _error = null;
-      notifyListeners();
+      _notificarSiActivo();
+      if (SesionAdmin.instance.tallerId == tallerId) {
+        // La escritura local ya terminó. El push queda en segundo plano y, si
+        // no hay conexión o Firebase rechaza algo, `pending` se conserva para
+        // el siguiente ciclo de sincronización.
+        unawaited(SyncService.instance.pushPending());
+      }
       return true;
     } on Exception catch (e) {
       _error = _mensajeDe(e);
-      notifyListeners();
+      _notificarSiActivo();
       return false;
     }
   }

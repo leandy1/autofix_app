@@ -75,6 +75,10 @@ class _DashboardClienteScreenState extends State<DashboardClienteScreen> {
       );
       if (!mounted || taller == null) return;
       setState(() => _tallerSeleccionadoId = taller.id);
+      final tallerId = taller.id;
+      if (tallerId != null) {
+        unawaited(_sincronizarCatalogosDelTaller(tallerId));
+      }
     } catch (e) {
       debugPrint(
         'DashboardCliente: no se pudo resolver el taller inicial ($e)',
@@ -93,7 +97,23 @@ class _DashboardClienteScreenState extends State<DashboardClienteScreen> {
       _tallerSeleccionadoId = taller.id;
       _selectedSection = widget.invitado ? 0 : 1;
     });
+    final tallerId = taller.id;
+    if (tallerId != null) {
+      unawaited(_sincronizarCatalogosDelTaller(tallerId));
+    }
     if (widget.invitado) unawaited(_pedirSesionParaAgendar());
+  }
+
+  Future<void> _sincronizarCatalogosDelTaller(String tallerId) async {
+    if (widget.invitado || !SesionCliente.haySesion) return;
+    try {
+      await SyncService.instance.sincronizarCatalogosDeTaller(tallerId);
+    } catch (error) {
+      debugPrint(
+        'DashboardCliente: no se pudieron sincronizar catálogos '
+        'de $tallerId ($error)',
+      );
+    }
   }
 
   /// Si el mapa puede ofrecer "Agendar cita" en esta sesión.
@@ -266,12 +286,7 @@ class _DashboardClienteScreenState extends State<DashboardClienteScreen> {
                   1 => AgendarCitaClienteSection(
                     tallerSeleccionado: _selectedWorkshop,
                     tallerSeleccionadoId: _tallerSeleccionadoId,
-                    onTallerSelected: (taller) {
-                      setState(() {
-                        _selectedWorkshop = taller.nombre;
-                        _tallerSeleccionadoId = taller.id;
-                      });
-                    },
+                    onTallerSelected: _seleccionarTaller,
                   ),
                   _ => const MisCitasClienteSection(),
                 },

@@ -1,6 +1,8 @@
 import 'package:autofix/core/data/base_repository.dart';
 import 'package:autofix/core/utils/reloj.dart';
 
+const Object _tipoServicioSinCambio = Object();
+
 /// Trabajo que el taller ofrece: "Frenos", "Cambio de aceite", etc.
 ///
 /// Es el MISMO molde que [Tecnico] mas una columna de precio. El precio va
@@ -25,6 +27,8 @@ class TipoServicio implements EntidadPersistida {
     this.creadoEn,
     this.actualizadoEn,
     this.tallerId,
+    this.eliminadoEn,
+    this.syncStatus = 'pending',
   });
 
   static const String _kId = 'id';
@@ -34,6 +38,8 @@ class TipoServicio implements EntidadPersistida {
   static const String _kCreadoEn = 'creado_en';
   static const String _kActualizadoEn = 'actualizado_en';
   static const String _kTallerId = 'taller_id';
+  static const String _kEliminadoEn = 'eliminado_en';
+  static const String _kSyncStatus = 'sync_status';
 
   @override
   final String? id;
@@ -52,6 +58,12 @@ class TipoServicio implements EntidadPersistida {
 
   /// ID del taller al que pertenece este catalogo (v9)
   final String? tallerId;
+
+  /// Tombstone del registro. Las consultas operativas excluyen filas con valor.
+  final DateTime? eliminadoEn;
+
+  /// `pending` hasta que SyncService confirme el push a Firestore.
+  final String syncStatus;
 
   int get precioEnCentavos => precio * 100;
 
@@ -111,6 +123,8 @@ class TipoServicio implements EntidadPersistida {
     DateTime? creadoEn,
     DateTime? actualizadoEn,
     String? tallerId,
+    Object? eliminadoEn = _tipoServicioSinCambio,
+    String? syncStatus,
   }) {
     return TipoServicio(
       id: id ?? this.id,
@@ -120,6 +134,10 @@ class TipoServicio implements EntidadPersistida {
       creadoEn: creadoEn ?? this.creadoEn,
       actualizadoEn: actualizadoEn ?? this.actualizadoEn,
       tallerId: tallerId ?? this.tallerId,
+      eliminadoEn: identical(eliminadoEn, _tipoServicioSinCambio)
+          ? this.eliminadoEn
+          : eliminadoEn as DateTime?,
+      syncStatus: syncStatus ?? this.syncStatus,
     );
   }
 
@@ -134,6 +152,8 @@ class TipoServicio implements EntidadPersistida {
       // `actualizadoEn ?? reloj` y no el reloj a secas. Ver `Tecnico.toMap`.
       _kActualizadoEn: aIsoUtc(actualizadoEn ?? Reloj.instancia.ahora()),
       if (tallerId != null) _kTallerId: tallerId,
+      _kEliminadoEn: eliminadoEn == null ? null : aIsoUtc(eliminadoEn!),
+      _kSyncStatus: syncStatus,
     };
   }
 
@@ -146,6 +166,8 @@ class TipoServicio implements EntidadPersistida {
       creadoEn: desdeIso(map[_kCreadoEn]),
       actualizadoEn: desdeIso(map[_kActualizadoEn]),
       tallerId: map[_kTallerId]?.toString(),
+      eliminadoEn: desdeIso(map[_kEliminadoEn]),
+      syncStatus: (map[_kSyncStatus] as String?) ?? 'pending',
     );
   }
 }

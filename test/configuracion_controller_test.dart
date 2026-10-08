@@ -75,6 +75,54 @@ void main() {
       expect(c.error, isNull);
     });
 
+    test(
+      'edita técnicos y servicios conservando validación del precio',
+      () async {
+        final c = nuevo();
+        await c.cargar();
+        await c.guardarTecnico('Técnico editable');
+        final tecnico = c.tecnicos.firstWhere(
+          (elemento) => elemento.nombre == 'Técnico editable',
+        );
+        expect(
+          await c.editarTecnico(tecnico.id!, 'Técnico actualizado'),
+          isTrue,
+        );
+        expect(
+          c.tecnicos.any((t) => t.nombre == 'Técnico actualizado'),
+          isTrue,
+        );
+
+        await c.guardarTipoServicio('Servicio editable', '1200');
+        final servicio = c.tiposServicio.firstWhere(
+          (elemento) => elemento.nombre == 'Servicio editable',
+        );
+        expect(
+          await c.editarTipoServicio(
+            servicio.id!,
+            'Servicio actualizado',
+            '1850',
+          ),
+          isTrue,
+        );
+        expect(
+          c.tiposServicio
+              .firstWhere((elemento) => elemento.id == servicio.id)
+              .precio,
+          1850,
+        );
+        expect(
+          await c.editarTipoServicio(
+            servicio.id!,
+            'Servicio actualizado',
+            '-20',
+          ),
+          isFalse,
+        );
+        expect(c.error, contains('no negativo'));
+      },
+    );
+
     test('un nombre vacio no se guarda y explica por que', () async {
       final c = nuevo();
       await c.cargar();
@@ -250,6 +298,8 @@ void main() {
       expect(ConfiguracionController.leerPrecio(r'RD$ 1,200'), 1200);
       expect(ConfiguracionController.leerPrecio(r'$1200'), 1200);
       expect(ConfiguracionController.leerPrecio(' 850 '), 850);
+      expect(ConfiguracionController.leerPrecio('-50'), isNull);
+      expect(ConfiguracionController.leerPrecio('1,20'), isNull);
     });
 
     test('devuelve null cuando no hay ningun digito', () {

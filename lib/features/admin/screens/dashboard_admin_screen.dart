@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
@@ -41,11 +43,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
+    // Las sesiones Admin recordadas entran directamente al Dashboard y no
+    // pasan por LoginController. Arranca aquí también para descargar catálogos
+    // y citas del taller en esos arranques.
+    unawaited(_iniciarSyncDeSesion());
     // Sin `await`: la pantalla aparece de inmediato y el `ListenableBuilder`
     // pinta el estado que haya cuando terminen las lecturas. Una base local
     // tarda milisegundos y no amerita una pantalla de carga propia, aunque el
     // controller si distingue esa primera carga de un refresco posterior.
     _ctrl.cargar();
+  }
+
+  Future<void> _iniciarSyncDeSesion() async {
+    if (!SesionAdmin.instance.activa) return;
+    try {
+      await SyncService.instance.start();
+    } catch (error) {
+      debugPrint('DashboardAdmin: SyncService no arrancó ($error)');
+    }
   }
 
   @override

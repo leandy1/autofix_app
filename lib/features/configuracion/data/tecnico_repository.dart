@@ -2,6 +2,7 @@ import 'package:sqflite/sqflite.dart';
 
 import 'package:autofix/core/data/base_repository.dart';
 import 'package:autofix/core/database/database_helper.dart';
+import 'package:autofix/core/database/semilla_inicial.dart';
 import 'package:autofix/core/utils/reloj.dart';
 import 'package:autofix/core/utils/uuid.dart';
 import 'package:autofix/features/configuracion/models/tecnico.dart';
@@ -38,6 +39,9 @@ class TecnicoRepository implements BaseRepository<Tecnico> {
     final conId = tecnico.copyWith(
       id: tecnico.id ?? Uuid.instancia.generar(),
       creadoEn: tecnico.creadoEn ?? Reloj.instancia.ahora(),
+      tallerId: tecnico.tallerId ?? SemillaInicial.talleres.first.id,
+      eliminadoEn: null,
+      syncStatus: 'pending',
     );
     final db = await _helper.base;
     await db.insert(
@@ -57,7 +61,8 @@ class TecnicoRepository implements BaseRepository<Tecnico> {
     final db = await _helper.base;
     final filas = await db.query(
       tabla,
-      where: '${DatabaseHelper.colTallerId} = ?',
+      where:
+          '${DatabaseHelper.colTallerId} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[tallerId],
       orderBy: '${DatabaseHelper.colNombre} COLLATE NOCASE ASC',
     );
@@ -69,7 +74,7 @@ class TecnicoRepository implements BaseRepository<Tecnico> {
     final filas = await db.query(
       tabla,
       where:
-          '${DatabaseHelper.colTallerId} = ? AND ${DatabaseHelper.colActivo} = ?',
+          '${DatabaseHelper.colTallerId} = ? AND ${DatabaseHelper.colActivo} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[tallerId, 1],
       orderBy: '${DatabaseHelper.colNombre} COLLATE NOCASE ASC',
     );
@@ -84,7 +89,7 @@ class TecnicoRepository implements BaseRepository<Tecnico> {
     final filas = await db.query(
       tabla,
       where:
-          '${DatabaseHelper.colNombre} = ? COLLATE NOCASE AND ${DatabaseHelper.colTallerId} = ?',
+          '${DatabaseHelper.colNombre} = ? COLLATE NOCASE AND ${DatabaseHelper.colTallerId} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[nombre.trim(), tallerId],
       limit: 1,
     );
@@ -98,6 +103,7 @@ class TecnicoRepository implements BaseRepository<Tecnico> {
       tabla,
       // `COLLATE NOCASE` en el ORDER y no solo en el indice: asi "tecnico 2"
       // aparece junto a "Técnico 2" en vez de en otra punta de la lista.
+      where: '${DatabaseHelper.colEliminadoEn} IS NULL',
       orderBy: '${DatabaseHelper.colNombre} COLLATE NOCASE ASC',
     );
     return filas.map(Tecnico.fromMap).toList();
@@ -108,7 +114,8 @@ class TecnicoRepository implements BaseRepository<Tecnico> {
     final db = await _helper.base;
     final filas = await db.query(
       tabla,
-      where: '${DatabaseHelper.colId} = ?',
+      where:
+          '${DatabaseHelper.colId} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[id],
       limit: 1,
     );
@@ -121,7 +128,8 @@ class TecnicoRepository implements BaseRepository<Tecnico> {
     final db = await _helper.base;
     final filas = await db.query(
       tabla,
-      where: '${DatabaseHelper.colNombre} = ? COLLATE NOCASE',
+      where:
+          '${DatabaseHelper.colNombre} = ? COLLATE NOCASE AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[nombre.trim()],
       limit: 1,
     );
@@ -139,8 +147,14 @@ class TecnicoRepository implements BaseRepository<Tecnico> {
     final db = await _helper.base;
     return db.update(
       tabla,
-      tecnico.copyWith(actualizadoEn: Reloj.instancia.ahora()).toMap(),
-      where: '${DatabaseHelper.colId} = ?',
+      tecnico
+          .copyWith(
+            actualizadoEn: Reloj.instancia.ahora(),
+            syncStatus: 'pending',
+          )
+          .toMap(),
+      where:
+          '${DatabaseHelper.colId} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[id],
       conflictAlgorithm: ConflictAlgorithm.abort,
     );
@@ -148,23 +162,20 @@ class TecnicoRepository implements BaseRepository<Tecnico> {
 
   // ------------------------------ DELETE ------------------------------
 
-  /// Borrado fisico.
-  ///
-  /// Un tecnico NO lleva `eliminado_en` (a diferencia de `citas`), y es
-  /// deliberado: el campo `activo` ya es la baja logica del catalogo, y lo que se
-  /// ve en las citas viejas es el TEXTO del tecnico (`citas.tecnico`), no su id.
-  /// Un tecnico borrado deja las citas viejas legibles con el nombre que
-  /// guardaron, que es lo unico que el cliente puede llegar a ver.
-  ///
-  /// La unica razon por la que haria falta un tombstone aca es que un dia la cita
-  /// guarde `tecnico_id` en vez del texto. Ese dia se agrega la columna y se
-  /// cambia este metodo; hoy seria una columna que nadie lee.
+  /// Baja lógica sincronizable. La fila se conserva para el historial y el push.
   @override
   Future<int> eliminar(String id) async {
     final db = await _helper.base;
-    return db.delete(
+    final ahora = Reloj.instancia.ahora();
+    return db.update(
       tabla,
-      where: '${DatabaseHelper.colId} = ?',
+      <String, Object?>{
+        DatabaseHelper.colEliminadoEn: ahora.toIso8601String(),
+        DatabaseHelper.colActualizadoEn: ahora.toIso8601String(),
+        DatabaseHelper.colSyncStatus: 'pending',
+      },
+      where:
+          '${DatabaseHelper.colId} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[id],
     );
   }

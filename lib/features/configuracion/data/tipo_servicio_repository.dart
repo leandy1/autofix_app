@@ -2,6 +2,7 @@ import 'package:sqflite/sqflite.dart';
 
 import 'package:autofix/core/data/base_repository.dart';
 import 'package:autofix/core/database/database_helper.dart';
+import 'package:autofix/core/database/semilla_inicial.dart';
 import 'package:autofix/core/utils/reloj.dart';
 import 'package:autofix/core/utils/uuid.dart';
 import 'package:autofix/features/configuracion/models/tipo_servicio.dart';
@@ -9,8 +10,8 @@ import 'package:autofix/features/configuracion/models/tipo_servicio.dart';
 /// Acceso a datos de Tipos de Servicio.
 ///
 /// Mismo contrato que los otros catalogos, mas el precio. Vease
-/// `tecnico_repository.dart` para el por que de `ConflictAlgorithm.abort` y para
-/// por que no hay `eliminado_en` aca.
+/// `tecnico_repository.dart` para el por que de `ConflictAlgorithm.abort` y el
+/// tratamiento sincronizable de bajas mediante `eliminado_en`.
 ///
 /// CAMBIO v7: la PK paso a UUID, asi que [crear] devuelve el `String` generado y
 /// [obtenerPorId] / [eliminar] reciben `String`.
@@ -34,6 +35,9 @@ class TipoServicioRepository implements BaseRepository<TipoServicio> {
     final conId = servicio.copyWith(
       id: servicio.id ?? Uuid.instancia.generar(),
       creadoEn: servicio.creadoEn ?? Reloj.instancia.ahora(),
+      tallerId: servicio.tallerId ?? SemillaInicial.talleres.first.id,
+      eliminadoEn: null,
+      syncStatus: 'pending',
     );
     final db = await _helper.base;
     await db.insert(
@@ -50,7 +54,8 @@ class TipoServicioRepository implements BaseRepository<TipoServicio> {
     final db = await _helper.base;
     final filas = await db.query(
       tabla,
-      where: '${DatabaseHelper.colTallerId} = ?',
+      where:
+          '${DatabaseHelper.colTallerId} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[tallerId],
       orderBy: '${DatabaseHelper.colNombre} COLLATE NOCASE ASC',
     );
@@ -65,7 +70,7 @@ class TipoServicioRepository implements BaseRepository<TipoServicio> {
     final filas = await db.query(
       tabla,
       where:
-          '${DatabaseHelper.colNombre} = ? COLLATE NOCASE AND ${DatabaseHelper.colTallerId} = ?',
+          '${DatabaseHelper.colNombre} = ? COLLATE NOCASE AND ${DatabaseHelper.colTallerId} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[nombre.trim(), tallerId],
       limit: 1,
     );
@@ -77,6 +82,7 @@ class TipoServicioRepository implements BaseRepository<TipoServicio> {
     final db = await _helper.base;
     final filas = await db.query(
       tabla,
+      where: '${DatabaseHelper.colEliminadoEn} IS NULL',
       orderBy: '${DatabaseHelper.colNombre} COLLATE NOCASE ASC',
     );
     return filas.map(TipoServicio.fromMap).toList();
@@ -87,7 +93,8 @@ class TipoServicioRepository implements BaseRepository<TipoServicio> {
     final db = await _helper.base;
     final filas = await db.query(
       tabla,
-      where: '${DatabaseHelper.colId} = ?',
+      where:
+          '${DatabaseHelper.colId} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[id],
       limit: 1,
     );
@@ -98,7 +105,8 @@ class TipoServicioRepository implements BaseRepository<TipoServicio> {
     final db = await _helper.base;
     final filas = await db.query(
       tabla,
-      where: '${DatabaseHelper.colNombre} = ? COLLATE NOCASE',
+      where:
+          '${DatabaseHelper.colNombre} = ? COLLATE NOCASE AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[nombre.trim()],
       limit: 1,
     );
@@ -116,8 +124,14 @@ class TipoServicioRepository implements BaseRepository<TipoServicio> {
     final db = await _helper.base;
     return db.update(
       tabla,
-      servicio.copyWith(actualizadoEn: Reloj.instancia.ahora()).toMap(),
-      where: '${DatabaseHelper.colId} = ?',
+      servicio
+          .copyWith(
+            actualizadoEn: Reloj.instancia.ahora(),
+            syncStatus: 'pending',
+          )
+          .toMap(),
+      where:
+          '${DatabaseHelper.colId} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[id],
       conflictAlgorithm: ConflictAlgorithm.abort,
     );
@@ -125,14 +139,20 @@ class TipoServicioRepository implements BaseRepository<TipoServicio> {
 
   // ------------------------------ DELETE ------------------------------
 
-  /// Borrado fisico, por la misma razon que en `TecnicoRepository`: la cita
-  /// guarda el texto del servicio, no su id, y `activo` ya cubre la baja logica.
+  /// Baja lógica sincronizable que conserva referencias e historial.
   @override
   Future<int> eliminar(String id) async {
     final db = await _helper.base;
-    return db.delete(
+    final ahora = Reloj.instancia.ahora();
+    return db.update(
       tabla,
-      where: '${DatabaseHelper.colId} = ?',
+      <String, Object?>{
+        DatabaseHelper.colEliminadoEn: ahora.toIso8601String(),
+        DatabaseHelper.colActualizadoEn: ahora.toIso8601String(),
+        DatabaseHelper.colSyncStatus: 'pending',
+      },
+      where:
+          '${DatabaseHelper.colId} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[id],
     );
   }

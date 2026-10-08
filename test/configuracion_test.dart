@@ -192,6 +192,39 @@ void main() {
       final tecnicos = await TecnicoRepository.instance.obtenerTodas();
       expect(tecnicos.length, SemillaInicial.tecnicos.length);
     });
+
+    test(
+      'cada taller afiliado obtiene su propio catálogo bootstrap idempotente',
+      () async {
+        final taller = SemillaInicial.talleres[2];
+        await DatabaseHelper.instance.asegurarCatalogosParaTaller(taller.id);
+        await DatabaseHelper.instance.asegurarCatalogosParaTaller(taller.id);
+
+        final servicios = await TipoServicioRepository.instance
+            .obtenerTodasPorTaller(taller.id);
+        final serviciosTallerBase = await TipoServicioRepository.instance
+            .obtenerTodasPorTaller(SemillaInicial.talleres.first.id);
+        expect(servicios, hasLength(SemillaInicial.tiposServicio.length));
+        expect(servicios.every((servicio) => servicio.precio == 0), isTrue);
+        expect(
+          servicios
+              .map((servicio) => servicio.id)
+              .toSet()
+              .intersection(
+                serviciosTallerBase.map((servicio) => servicio.id).toSet(),
+              ),
+          isEmpty,
+        );
+        expect(
+          servicios.map((servicio) => servicio.id).toSet(),
+          hasLength(SemillaInicial.tiposServicio.length),
+        );
+        expect(
+          await TecnicoRepository.instance.obtenerActivosPorTaller(taller.id),
+          hasLength(SemillaInicial.tecnicos.length),
+        );
+      },
+    );
   });
 
   group('CRUD de catalogos', () {
@@ -271,18 +304,86 @@ void main() {
       },
     );
 
-    test('DELETE: la fila deja de estar en la base', () async {
-      // Los catalogos SI usan borrado fisico, a diferencia de las citas. La razon
-      // esta en el doc de `MarcaRepository.eliminar`: un tecnico o una marca no
-      // tienen historial, no se referencian desde `citas` por FK, y borrarlos es
-      // lo que espera el admin cuando aprieta la `X`.
-      final id = await MarcaRepository.instance.crear(
-        const Marca(nombre: 'Retrabajo'),
-      );
+    test(
+      'DELETE: todos los catalogos conservan tombstone y quedan pending',
+      () async {
+        final db = await DatabaseHelper.instance.base;
+        final altas =
+            <
+              ({
+                String tabla,
+                String id,
+                Future<int> Function(String) eliminar,
+                Future<Object?> Function(String) leer,
+              })
+            >[
+              (
+                tabla: DatabaseHelper.tablaTecnicos,
+                id: await TecnicoRepository.instance.crear(
+                  const Tecnico(nombre: 'Técnico tombstone'),
+                ),
+                eliminar: TecnicoRepository.instance.eliminar,
+                leer: (id) async => TecnicoRepository.instance.obtenerPorId(id),
+              ),
+              (
+                tabla: DatabaseHelper.tablaTiposServicio,
+                id: await TipoServicioRepository.instance.crear(
+                  const TipoServicio(nombre: 'Servicio tombstone'),
+                ),
+                eliminar: TipoServicioRepository.instance.eliminar,
+                leer: (id) async =>
+                    TipoServicioRepository.instance.obtenerPorId(id),
+              ),
+              (
+                tabla: DatabaseHelper.tablaMarcas,
+                id: await MarcaRepository.instance.crear(
+                  const Marca(nombre: 'Marca tombstone'),
+                ),
+                eliminar: MarcaRepository.instance.eliminar,
+                leer: (id) async => MarcaRepository.instance.obtenerPorId(id),
+              ),
+              (
+                tabla: DatabaseHelper.tablaGruposServicio,
+                id: await GrupoServicioRepository.instance.crear(
+                  const GrupoServicio(nombre: 'Grupo tombstone'),
+                ),
+                eliminar: GrupoServicioRepository.instance.eliminar,
+                leer: (id) async =>
+                    GrupoServicioRepository.instance.obtenerPorId(id),
+              ),
+            ];
 
-      expect(await MarcaRepository.instance.eliminar(id), 1);
-      expect(await MarcaRepository.instance.obtenerPorId(id), isNull);
-    });
+        for (final alta in altas) {
+          expect(await alta.eliminar(alta.id), 1);
+          expect(await alta.leer(alta.id), isNull);
+          final filas = await db.query(
+            alta.tabla,
+            where: '${DatabaseHelper.colId} = ?',
+            whereArgs: [alta.id],
+          );
+          final fila = filas.single;
+          expect(fila[DatabaseHelper.colEliminadoEn], isA<String>());
+          expect(fila[DatabaseHelper.colSyncStatus], 'pending');
+          expect(
+            await alta.eliminar(alta.id),
+            0,
+            reason: 'el tombstone es idempotente',
+          );
+        }
+
+        // El índice parcial permite crear de nuevo el mismo nombre sin destruir
+        // la fila histórica que conserva el tombstone.
+        await MarcaRepository.instance.crear(
+          const Marca(nombre: 'Marca tombstone'),
+        );
+        final marcas = await db.query(
+          DatabaseHelper.tablaMarcas,
+          where: '${DatabaseHelper.colNombre} = ?',
+          whereArgs: ['Marca tombstone'],
+        );
+        expect(marcas, hasLength(2));
+      },
+    );
 
     test('eliminar un id inexistente devuelve 0 filas', () async {
       // v7: los ids son UUID en texto, no numeros.
@@ -585,6 +686,118 @@ void main() {
       expect(
         (await TecnicoRepository.instance.obtenerTodas()).length,
         SemillaInicial.tecnicos.length,
+      );
+    });
+  });
+
+  group('migracion v13 -> v14', () {
+    Future<void> sembrarBaseV13() async {
+      await DatabaseHelper.resetParaPruebas();
+      final base = await databaseFactory.openDatabase(
+        await rutaDeLaBase(),
+        options: OpenDatabaseOptions(
+          version: 13,
+          onCreate: (db, _) async {
+            for (final tabla in <String>[
+              DatabaseHelper.tablaTecnicos,
+              DatabaseHelper.tablaTiposServicio,
+              DatabaseHelper.tablaMarcas,
+              DatabaseHelper.tablaGruposServicio,
+            ]) {
+              final precio = tabla == DatabaseHelper.tablaTiposServicio
+                  ? ', precio INTEGER NOT NULL DEFAULT 0'
+                  : '';
+              await db.execute('''
+                CREATE TABLE $tabla (
+                  id TEXT NOT NULL PRIMARY KEY,
+                  nombre TEXT NOT NULL,
+                  activo INTEGER NOT NULL DEFAULT 1,
+                  creado_en TEXT NOT NULL,
+                  actualizado_en TEXT NOT NULL,
+                  taller_id TEXT
+                  $precio
+                )
+              ''');
+              await db.execute(
+                'CREATE UNIQUE INDEX idx_${tabla}_nombre '
+                'ON $tabla (nombre COLLATE NOCASE)',
+              );
+              await db.execute(
+                'CREATE INDEX idx_${tabla}_taller_id ON $tabla (taller_id)',
+              );
+              await db.insert(tabla, <String, Object?>{
+                'id': 'legacy-$tabla',
+                'nombre': 'Fila legacy $tabla',
+                'activo': 1,
+                'creado_en': '2025-01-01T00:00:00.000Z',
+                'actualizado_en': '2025-01-02T00:00:00.000Z',
+                'taller_id': null,
+                if (tabla == DatabaseHelper.tablaTiposServicio) 'precio': 785,
+              });
+            }
+          },
+        ),
+      );
+      await base.close();
+    }
+
+    test('reconstruye los cuatro catálogos sin perder datos y asigna taller legacy', () async {
+      await sembrarBaseV13();
+      final db = await DatabaseHelper.instance.base;
+
+      for (final tabla in <String>[
+        DatabaseHelper.tablaTecnicos,
+        DatabaseHelper.tablaTiposServicio,
+        DatabaseHelper.tablaMarcas,
+        DatabaseHelper.tablaGruposServicio,
+      ]) {
+        final info = await db.rawQuery('PRAGMA table_info($tabla)');
+        final columnas = info.where(
+          (c) => c['name'] == DatabaseHelper.colTallerId,
+        );
+        expect(
+          columnas.single['notnull'],
+          1,
+          reason: '$tabla debe exigir taller_id',
+        );
+        expect(
+          info.map((c) => c['name']),
+          contains(DatabaseHelper.colSyncStatus),
+        );
+        expect(
+          info.map((c) => c['name']),
+          contains(DatabaseHelper.colEliminadoEn),
+        );
+
+        final filas = await db.query(tabla);
+        final fila = filas.single;
+        expect(fila[DatabaseHelper.colId], 'legacy-$tabla');
+        expect(
+          fila[DatabaseHelper.colTallerId],
+          SemillaInicial.talleres.first.id,
+        );
+        expect(fila[DatabaseHelper.colSyncStatus], 'pending');
+        expect(fila[DatabaseHelper.colEliminadoEn], isNull);
+        expect(fila[DatabaseHelper.colNombre], 'Fila legacy $tabla');
+        if (tabla == DatabaseHelper.tablaTiposServicio) {
+          expect(fila[DatabaseHelper.colPrecio], 785);
+        }
+      }
+    });
+
+    test('permite repetir nombres entre talleres, pero no entre filas vigentes del mismo taller', () async {
+      final repositorio = TecnicoRepository.instance;
+      await repositorio.crear(
+        const Tecnico(nombre: 'Mecanico', tallerId: 'taller-a'),
+      );
+      await repositorio.crear(
+        const Tecnico(nombre: 'mecanico', tallerId: 'taller-b'),
+      );
+      await expectLater(
+        repositorio.crear(
+          const Tecnico(nombre: 'MECANICO', tallerId: 'taller-a'),
+        ),
+        throwsA(isA<Exception>()),
       );
     });
   });

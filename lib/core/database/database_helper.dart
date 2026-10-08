@@ -90,12 +90,15 @@ class DatabaseHelper {
   ///      nube, ni siquiera de decir "esto cambio despues de la ultima sync".
   /// v13 = VEHÍCULOS DEL CLIENTE: agrega la lista local, que sigue disponible
   ///      al agendar sin depender de la API de catálogo.
+  /// v14 = CATALOGOS OFFLINE-FIRST: los cuatro catalogos reciben `sync_status`
+  ///      y el tombstone `eliminado_en`; `taller_id` se vuelve obligatorio y la
+  ///      unicidad del nombre queda limitada al taller y a filas vigentes.
   ///
   /// OJO: subir la version NO borra la base por si sola, dispara `onUpgrade`, que
   /// es lo que permite a un dispositivo que ya instalo la v1 seguir funcionando.
   /// En la v7 el `onUpgrade` hace `DROP TABLE`, asi que en ESTE caso si borra los
   /// datos, y es intencional (ver [_migrar]).
-  static const int _versionBase = 13;
+  static const int _versionBase = 14;
 
   /// Nombre del indice de [tablaCitas] por fecha.
   ///
@@ -763,8 +766,10 @@ class DatabaseHelper {
       _pkUuid,
       ..._columnasCatalogo.entries.map((e) => '${e.key} ${e.value}'),
       ...columnasExtra,
-      // v9: taller_id para aislar catalogos por taller
-      '$colTallerId TEXT',
+      // v9/v14: catalogos aislados por taller. Desde v14 es obligatorio.
+      '$colTallerId TEXT NOT NULL',
+      "$colSyncStatus TEXT NOT NULL DEFAULT 'pending'",
+      '$colEliminadoEn TEXT',
     ];
 
     await db.execute(
@@ -775,14 +780,20 @@ class DatabaseHelper {
     // IMPIDE que existan "Nissan" y "nissan" a la vez. Sin esto, el admin
     // escribia "Toyota" y tres semanas despues "toyota" y le aparecian dos
     // filas identicas en el desplegable de Marcas.
+    // Un catalogo puede repetir el mismo nombre en talleres distintos. Las bajas
+    // conservan el nombre historico, pero no deben impedir un alta posterior.
     await db.execute(
-      'CREATE UNIQUE INDEX IF NOT EXISTS idx_${tabla}_nombre '
-      'ON $tabla ($colNombre COLLATE NOCASE)',
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_${tabla}_taller_nombre_vigente '
+      'ON $tabla ($colTallerId, $colNombre COLLATE NOCASE) '
+      'WHERE $colEliminadoEn IS NULL',
     );
-    // v9: indice para filtrar por taller
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_${tabla}_taller_id '
       'ON $tabla ($colTallerId)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_${tabla}_sync_status '
+      'ON $tabla ($colSyncStatus)',
     );
   }
 
@@ -819,6 +830,9 @@ class DatabaseHelper {
           colNombre: nombres[i],
           colActivo: 1,
           ...extra,
+          // Las filas bootstrap son idénticas en todas las instalaciones; no
+          // son cambios del usuario que deban subir por separado.
+          colSyncStatus: 'synced',
           colCreadoEn: ahora,
           colActualizadoEn: ahora,
         });
@@ -833,9 +847,7 @@ class DatabaseHelper {
       tablaTecnicos,
       SemillaInicial.tecnicos,
       SemillaInicial.tecnicosIds,
-      extra: <String, Object?>{
-        if (tallerIdSemilla != null) colTallerId: tallerIdSemilla,
-      },
+      extra: <String, Object?>{colTallerId: ?tallerIdSemilla},
     );
     await sembrar(
       tablaTiposServicio,
@@ -843,7 +855,7 @@ class DatabaseHelper {
       SemillaInicial.tiposServicioIds,
       extra: <String, Object?>{
         colPrecio: SemillaInicial.precioInicial,
-        if (tallerIdSemilla != null) colTallerId: tallerIdSemilla,
+        colTallerId: ?tallerIdSemilla,
       },
     );
 
@@ -858,18 +870,110 @@ class DatabaseHelper {
       tablaMarcas,
       SemillaInicial.marcas,
       SemillaInicial.marcasIds,
-      extra: <String, Object?>{
-        if (tallerIdSemilla != null) colTallerId: tallerIdSemilla,
-      },
+      extra: <String, Object?>{colTallerId: ?tallerIdSemilla},
     );
     await sembrar(
       tablaGruposServicio,
       SemillaInicial.gruposServicio,
       SemillaInicial.gruposServicioIds,
-      extra: <String, Object?>{
-        if (tallerIdSemilla != null) colTallerId: tallerIdSemilla,
-      },
+      extra: <String, Object?>{colTallerId: ?tallerIdSemilla},
     );
+  }
+
+  /// Garantiza un catálogo operativo local para un taller afiliado de la
+  /// semilla.
+  ///
+  /// Las plantillas bootstrap se copian por taller con UUIDs deterministas y
+  /// separados por tenant. Esto permite agendar en Global Refriauto, Taller
+  /// Gómez o AutoFix Central sin reutilizar filas pertenecientes a otro taller.
+  /// Un catálogo ya iniciado (incluido uno cuyos registros se eliminaron
+  /// lógicamente) nunca se vuelve a sembrar.
+  Future<void> asegurarCatalogosParaTaller(String tallerId) async {
+    final indiceTaller = SemillaInicial.talleres.indexWhere(
+      (taller) => taller.id == tallerId,
+    );
+    if (indiceTaller < 0) return;
+
+    final db = await base;
+    var faltaAlgunCatalogo = false;
+    for (final tabla in <String>[
+      tablaTecnicos,
+      tablaTiposServicio,
+      tablaMarcas,
+      tablaGruposServicio,
+    ]) {
+      final existentes = await db.query(
+        tabla,
+        columns: <String>[colId],
+        where: '$colTallerId = ?',
+        whereArgs: <Object?>[tallerId],
+        limit: 1,
+      );
+      if (existentes.isEmpty) {
+        faltaAlgunCatalogo = true;
+        break;
+      }
+    }
+    if (!faltaAlgunCatalogo) return;
+
+    await db.transaction((txn) async {
+      final ahora = DateTime.now().toUtc().toIso8601String();
+
+      Future<void> sembrarParaTaller(
+        String tabla,
+        List<String> nombres,
+        List<String> ids, {
+        Map<String, Object?> extra = const <String, Object?>{},
+      }) async {
+        final existentes = await txn.query(
+          tabla,
+          columns: <String>[colId],
+          where: '$colTallerId = ?',
+          whereArgs: <Object?>[tallerId],
+          limit: 1,
+        );
+        if (existentes.isNotEmpty) return;
+
+        for (var indice = 0; indice < nombres.length; indice++) {
+          await txn.insert(tabla, <String, Object?>{
+            colId: SemillaInicial.idCatalogoParaTaller(
+              ids[indice],
+              indiceTaller,
+            ),
+            colNombre: nombres[indice],
+            colActivo: 1,
+            ...extra,
+            colTallerId: tallerId,
+            colSyncStatus: 'synced',
+            colEliminadoEn: null,
+            colCreadoEn: ahora,
+            colActualizadoEn: ahora,
+          }, conflictAlgorithm: ConflictAlgorithm.abort);
+        }
+      }
+
+      await sembrarParaTaller(
+        tablaTecnicos,
+        SemillaInicial.tecnicos,
+        SemillaInicial.tecnicosIds,
+      );
+      await sembrarParaTaller(
+        tablaTiposServicio,
+        SemillaInicial.tiposServicio,
+        SemillaInicial.tiposServicioIds,
+        extra: <String, Object?>{colPrecio: SemillaInicial.precioInicial},
+      );
+      await sembrarParaTaller(
+        tablaMarcas,
+        SemillaInicial.marcas,
+        SemillaInicial.marcasIds,
+      );
+      await sembrarParaTaller(
+        tablaGruposServicio,
+        SemillaInicial.gruposServicio,
+        SemillaInicial.gruposServicioIds,
+      );
+    });
   }
 
   // ------------------------------------------------------------------
@@ -1151,7 +1255,111 @@ class DatabaseHelper {
       if (versionAnterior < 13) {
         await _migrarAV13(txn);
       }
+
+      if (versionAnterior < 14) {
+        await _migrarAV14(txn);
+      }
     });
+  }
+
+  /// Paso 13 -> 14: convierte los catalogos existentes en tablas offline-first.
+  ///
+  /// Se reconstruyen para poder declarar `taller_id NOT NULL` en SQLite y se
+  /// copian los datos de cada fila (incluyendo sus UUID y precios). Una fila
+  /// legacy sin taller se asigna al primer taller estable de la semilla. Las
+  /// filas preexistentes nacen `pending` para que el primer login admin las
+  /// publique en Firestore.
+  Future<void> _migrarAV14(DatabaseExecutor txn) async {
+    for (final tabla in <String>[
+      tablaTecnicos,
+      tablaTiposServicio,
+      tablaMarcas,
+      tablaGruposServicio,
+    ]) {
+      await _migrarTablaCatalogoAV14(
+        txn,
+        tabla,
+        tienePrecio: tabla == tablaTiposServicio,
+      );
+    }
+  }
+
+  Future<void> _migrarTablaCatalogoAV14(
+    DatabaseExecutor txn,
+    String tabla, {
+    required bool tienePrecio,
+  }) async {
+    final info = await txn.rawQuery('PRAGMA table_info($tabla)');
+    final columnas = info.map((fila) => fila['name'] as String).toSet();
+    String valor(String columna, String alternativo) =>
+        columnas.contains(columna) ? columna : alternativo;
+
+    final temporal = '${tabla}_v14';
+    final precioDef = tienePrecio
+        ? ', $colPrecio INTEGER NOT NULL DEFAULT 0'
+        : '';
+    await txn.execute('DROP INDEX IF EXISTS idx_${tabla}_nombre');
+    await txn.execute(
+      'DROP INDEX IF EXISTS idx_${tabla}_taller_nombre_vigente',
+    );
+    await txn.execute('DROP INDEX IF EXISTS idx_${tabla}_taller_id');
+    await txn.execute('DROP INDEX IF EXISTS idx_${tabla}_sync_status');
+    await txn.execute('DROP TABLE IF EXISTS $temporal');
+    await txn.execute('''
+      CREATE TABLE $temporal (
+        $_pkUuid,
+        $colNombre TEXT NOT NULL,
+        $colActivo INTEGER NOT NULL DEFAULT 1,
+        $colCreadoEn TEXT NOT NULL,
+        $colActualizadoEn TEXT NOT NULL,
+        $colTallerId TEXT NOT NULL
+        $precioDef,
+        $colSyncStatus TEXT NOT NULL DEFAULT 'pending',
+        $colEliminadoEn TEXT
+      )
+    ''');
+
+    final columnasDestino = <String>[
+      colId,
+      colNombre,
+      colActivo,
+      colCreadoEn,
+      colActualizadoEn,
+      colTallerId,
+      if (tienePrecio) colPrecio,
+      colSyncStatus,
+      colEliminadoEn,
+    ];
+    final tallerFallback = "'${SemillaInicial.talleres.first.id}'";
+    final valores = <String>[
+      valor(colId, "''"),
+      valor(colNombre, "''"),
+      'COALESCE(${valor(colActivo, '1')}, 1)',
+      "COALESCE(${valor(colCreadoEn, "''")}, '')",
+      "COALESCE(${valor(colActualizadoEn, "''")}, '')",
+      'COALESCE(NULLIF(${valor(colTallerId, 'NULL')}, \'\'), $tallerFallback)',
+      if (tienePrecio) 'COALESCE(${valor(colPrecio, '0')}, 0)',
+      "COALESCE(${valor(colSyncStatus, "'pending'")}, 'pending')",
+      valor(colEliminadoEn, 'NULL'),
+    ];
+    await txn.execute(
+      'INSERT INTO $temporal (${columnasDestino.join(', ')}) '
+      'SELECT ${valores.join(', ')} FROM $tabla',
+    );
+    await txn.execute('DROP TABLE $tabla');
+    await txn.execute('ALTER TABLE $temporal RENAME TO $tabla');
+
+    await txn.execute(
+      'CREATE UNIQUE INDEX idx_${tabla}_taller_nombre_vigente '
+      'ON $tabla ($colTallerId, $colNombre COLLATE NOCASE) '
+      'WHERE $colEliminadoEn IS NULL',
+    );
+    await txn.execute(
+      'CREATE INDEX idx_${tabla}_taller_id ON $tabla ($colTallerId)',
+    );
+    await txn.execute(
+      'CREATE INDEX idx_${tabla}_sync_status ON $tabla ($colSyncStatus)',
+    );
   }
 
   /// Paso 6 -> 7: identidad federada (UUID), codigo visible, borrado logico y
