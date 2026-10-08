@@ -6,11 +6,14 @@ import 'package:autofix/core/auth/sesion_cliente.dart';
 import 'package:autofix/core/connectivity/connectivity_service.dart';
 import 'package:autofix/core/database/database_helper.dart';
 import 'package:autofix/core/utils/borrado_logico.dart';
+import 'package:autofix/core/utils/reloj.dart';
 import 'package:autofix/features/citas/data/cita_repository.dart';
 import 'package:autofix/features/citas/models/cita.dart';
 import 'package:autofix/features/citas/models/codigo_de_cita.dart';
 import 'package:autofix/features/cliente/data/cambios_password_repository.dart';
 import 'package:autofix/features/cliente/data/cliente_repository.dart';
+import 'package:autofix/features/cliente/data/vehiculo_repository.dart';
+import 'package:autofix/features/cliente/models/vehiculo.dart';
 import 'package:autofix/features/sync/catalogo_taller_sync_repository.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
@@ -26,11 +29,14 @@ import 'dart:async';
 /// - PULL (nube -> local): `onSnapshot` global en la coleccion `citas`.
 ///   Hace upsert en SQLite: inserta si no existe, actualiza si cambio,
 ///   respeta el borrado logico (si viene `eliminado_en` lo aplica).
+/// - `vehiculos`: cola propia `pending` -> `synced` y listener contextual de la
+///   colección Firestore `vehiculos`, limitado al UID/correo del cliente.
 ///
 /// Además de las citas, drena colas independientes de perfil y catálogos sin
 /// que el fallo de una pueda impedir que se intenten las otras:
 ///
 /// - `clientes`: el perfil que `Editar Perfil` guarda offline (v12).
+/// - `vehiculos`: vehículos registrados por el cliente, incluidos tombstones.
 /// - `cambios_password`: metadata de un cambio de contraseña que no pudo
 ///   aplicarse; el secreto en si nunca pasa por aca ni por Firestore.
 /// - `tecnicos`, `servicios`, `marcas` y `grupos_servicio`: datos del taller,
@@ -62,6 +68,7 @@ class SyncService extends ChangeNotifier {
 
   final CitaRepository _repo = CitaRepository.instance;
   final ClienteRepository _repoClientes = ClienteRepository();
+  final VehiculoRepository _repoVehiculos = VehiculoRepository.instance;
   final CatalogoTallerSyncRepository _repoCatalogos =
       CatalogoTallerSyncRepository();
   static const List<CatalogoTallerSyncDefinition> _catalogosTaller =
@@ -116,6 +123,9 @@ class SyncService extends ChangeNotifier {
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
   _clientesSubscription;
   final List<StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>
+  _vehiculosSubscriptions =
+      <StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>[];
+  final List<StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>
   _catalogosAdminSubscriptions =
       <StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>[];
   final List<StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>
@@ -163,6 +173,20 @@ class SyncService extends ChangeNotifier {
     ];
   }
 
+  List<Query<Map<String, dynamic>>> _consultasVehiculosDelCliente() {
+    if (!SesionCliente.instance.activa || SesionAdmin.instance.activa) {
+      return const <Query<Map<String, dynamic>>>[];
+    }
+    final uid = _currentUid();
+    final correo = SesionCliente.instance.correo?.trim().toLowerCase() ?? '';
+    return <Query<Map<String, dynamic>>>[
+      if (uid != null && uid.isNotEmpty)
+        _db.collection('vehiculos').where('ownerUid', isEqualTo: uid),
+      if (correo.isNotEmpty)
+        _db.collection('vehiculos').where('correo_cliente', isEqualTo: correo),
+    ];
+  }
+
   /// Inicia la sincronizacion de la sesion actual.
   ///
   /// NO se llama al abrir la app: las citas se bajan justo despues del login
@@ -191,6 +215,7 @@ class SyncService extends ChangeNotifier {
       await _snapshotSubscription?.cancel();
       await _snapshotCorreoSubscription?.cancel();
       await _clientesSubscription?.cancel();
+      await _cancelarSuscripcionesVehiculos();
       await _cancelarSuscripcionesCatalogos(_catalogosAdminSubscriptions);
       await _cancelarSuscripcionesCatalogos(_catalogosClienteSubscriptions);
       _snapshotSubscription = null;
@@ -218,6 +243,16 @@ class SyncService extends ChangeNotifier {
               debugPrint('[SyncService] Error en onSnapshot por correo: $e');
             },
           );
+    }
+    for (final consulta in _consultasVehiculosDelCliente()) {
+      _vehiculosSubscriptions.add(
+        consulta.snapshots().listen(
+          _onSnapshotVehiculos,
+          onError: (Object error) {
+            debugPrint('[SyncService] Error escuchando vehículos: $error');
+          },
+        ),
+      );
     }
     _firmaDelFiltro = firma;
 
@@ -256,6 +291,7 @@ class SyncService extends ChangeNotifier {
     await _snapshotSubscription?.cancel();
     await _snapshotCorreoSubscription?.cancel();
     await _clientesSubscription?.cancel();
+    await _cancelarSuscripcionesVehiculos();
     await _connectivitySubscription?.cancel();
     await _cancelarSuscripcionesCatalogos(_catalogosAdminSubscriptions);
     await _cancelarSuscripcionesCatalogos(_catalogosClienteSubscriptions);
@@ -325,6 +361,13 @@ class SyncService extends ChangeNotifier {
       await suscripcion.cancel();
     }
     suscripciones.clear();
+  }
+
+  Future<void> _cancelarSuscripcionesVehiculos() async {
+    for (final suscripcion in _vehiculosSubscriptions) {
+      await suscripcion.cancel();
+    }
+    _vehiculosSubscriptions.clear();
   }
 
   Future<void> _onSnapshotCatalogo(
@@ -454,9 +497,132 @@ class SyncService extends ChangeNotifier {
 
   /// Corre las dos colas de perfil sin que el fallo de una corte a la otra.
   Future<void> _drenarColas() async {
+    await _sinDejarQueCorte('vehículos del cliente', _pushVehiculosPendientes);
     await _sinDejarQueCorte('el perfil de cliente', _pushPerfilesPendientes);
     await _sinDejarQueCorte('cambios de contraseña', _drenarCambiosPassword);
     await _sinDejarQueCorte('catálogos del taller', _pushCatalogosPendientes);
+  }
+
+  /// Sube vehículos pendientes del cliente autenticado y publica bajas como
+  /// tombstones. La identidad del propietario no se toma de una fila arbitraria:
+  /// solo se procesa el correo de la sesión Firebase activa.
+  Future<void> _pushVehiculosPendientes() async {
+    if (!SesionCliente.instance.activa || SesionAdmin.instance.activa) return;
+    final uid = _currentUid();
+    if (uid == null || uid.isEmpty) return;
+
+    final correoSesion =
+        SesionCliente.instance.correo?.trim().toLowerCase() ?? '';
+    if (correoSesion.isEmpty) return;
+    if (_uidOverride == null) {
+      final usuario = FirebaseAuth.instance.currentUser;
+      if (usuario == null ||
+          usuario.isAnonymous ||
+          usuario.email?.trim().toLowerCase() != correoSesion) {
+        return;
+      }
+    }
+
+    final pendientes = await _repoVehiculos.pendientesDeSync(correoSesion);
+    for (final vehiculo in pendientes) {
+      final id = vehiculo.id;
+      final actualizadoEn = vehiculo.actualizadoEn;
+      if (id == null || actualizadoEn == null) continue;
+      final referencia = _db.collection('vehiculos').doc(id);
+      final fechaActualizacion = aIsoUtc(actualizadoEn);
+      final data = <String, Object?>{
+        'id': id,
+        'cliente_id': correoSesion,
+        'correo_cliente': correoSesion,
+        'ownerUid': uid,
+        'marca': vehiculo.marca,
+        'modelo': vehiculo.modelo,
+        'anio': vehiculo.anio,
+        'placa': vehiculo.placa,
+        'activo': vehiculo.activo,
+        'creado_en': aIsoUtc(vehiculo.creadoEn ?? actualizadoEn),
+        'actualizado_en': fechaActualizacion,
+        'eliminado_en': vehiculo.eliminadoEn == null
+            ? null
+            : aIsoUtc(vehiculo.eliminadoEn!),
+        'sync_status': 'synced',
+      };
+
+      try {
+        final bajaRemota = await _db.runTransaction<Map<String, dynamic>?>((
+          transaccion,
+        ) async {
+          final remoto = await transaccion.get(referencia);
+          final datosRemotos = remoto.data();
+          if (datosRemotos?['eliminado_en'] != null &&
+              vehiculo.eliminadoEn == null) {
+            return datosRemotos;
+          }
+          transaccion.set(referencia, data, SetOptions(merge: true));
+          return null;
+        });
+
+        if (bajaRemota != null) {
+          await _repoVehiculos.aplicarDesdeNube(
+            Vehiculo.fromMap(<String, Object?>{
+              ...bajaRemota,
+              'id': id,
+              'correo_cliente': bajaRemota['correo_cliente'] ?? correoSesion,
+            }),
+            prevaleceBaja: true,
+          );
+          notifyListeners();
+          continue;
+        }
+
+        final marcado = await _repoVehiculos.marcarSincronizado(
+          id: id,
+          actualizadoEn: fechaActualizacion,
+        );
+        if (marcado) notifyListeners();
+      } catch (error) {
+        // La fila queda pending y se reintentará en el próximo ciclo.
+        debugPrint('[SyncService] Falló el push del vehículo $id: $error');
+      }
+    }
+  }
+
+  Future<void> _onSnapshotVehiculos(
+    QuerySnapshot<Map<String, dynamic>> snapshot,
+  ) async {
+    var huboCambios = false;
+    final uid = _currentUid();
+    final correo = SesionCliente.instance.correo?.trim().toLowerCase() ?? '';
+    for (final cambio in snapshot.docChanges) {
+      // El borrado remoto oficial siempre es un tombstone. Un removed no debe
+      // convertirse en un DELETE local ni resucitar el vehículo al reconectar.
+      if (cambio.type == DocumentChangeType.removed) continue;
+      final data = cambio.doc.data();
+      if (data == null) continue;
+      final propietarioUid = data['ownerUid'] as String?;
+      final propietarioCorreo = (data['correo_cliente'] as String? ?? '')
+          .trim()
+          .toLowerCase();
+      if ((uid == null || propietarioUid != uid) &&
+          (correo.isEmpty || propietarioCorreo != correo)) {
+        continue;
+      }
+
+      try {
+        final vehiculo = Vehiculo.fromMap(<String, Object?>{
+          ...data,
+          'id': cambio.doc.id,
+          'correo_cliente': propietarioCorreo,
+        });
+        huboCambios =
+            await _repoVehiculos.aplicarDesdeNube(vehiculo) || huboCambios;
+      } catch (error) {
+        debugPrint(
+          '[SyncService] Error aplicando vehículo ${cambio.doc.id}: $error',
+        );
+      }
+    }
+    if (huboCambios) notifyListeners();
   }
 
   /// Publica solo los catálogos pendientes del taller Admin autenticado.

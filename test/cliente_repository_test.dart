@@ -105,7 +105,7 @@ void main() {
       },
     );
 
-    test('una base v11 sube a v13 con clientes y vehículos locales', () async {
+    test('una base v11 sube a v15 con clientes y vehículos locales', () async {
       await DatabaseHelper.resetParaPruebas();
       final ruta = await rutaDeLaBase();
 
@@ -139,7 +139,7 @@ void main() {
         contains(DatabaseHelper.colClienteIdVehiculo),
       );
       final version = await db.rawQuery('PRAGMA user_version');
-      expect(version.first.values.first, 13);
+      expect(version.first.values.first, 15);
     });
   });
 

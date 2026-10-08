@@ -47,6 +47,73 @@ service cloud.firestore {
       );
     }
 
+    function ownsVehiculo(data) {
+      return signedIn() && (
+        (data.keys().hasAny(['ownerUid'])
+          && data.ownerUid == request.auth.uid)
+        || (request.auth.token.email is string
+          && data.keys().hasAny(['correo_cliente'])
+          && data.correo_cliente is string
+          && data.correo_cliente.trim().lower()
+              == request.auth.token.email.trim().lower())
+      );
+    }
+
+    function vehiculoValido(data, documentoId) {
+      return data.keys().hasAll([
+          'id',
+          'cliente_id',
+          'correo_cliente',
+          'marca',
+          'modelo',
+          'anio',
+          'placa',
+          'activo',
+          'creado_en',
+          'actualizado_en',
+          'eliminado_en',
+          'sync_status'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'cliente_id',
+          'correo_cliente',
+          'ownerUid',
+          'marca',
+          'modelo',
+          'anio',
+          'placa',
+          'activo',
+          'creado_en',
+          'actualizado_en',
+          'eliminado_en',
+          'sync_status'
+        ])
+        && data.id == documentoId
+        && data.cliente_id is string
+        && data.correo_cliente is string
+        && data.correo_cliente.size() > 0
+        && data.marca is string
+        && data.modelo is string
+        && data.anio is int
+        && data.placa is string
+        && data.activo is bool
+        && data.creado_en is string
+        && data.actualizado_en is string
+        && data.sync_status == 'synced'
+        && (data.eliminado_en == null || data.eliminado_en is string)
+        && (!data.keys().hasAny(['ownerUid']) || data.ownerUid is string);
+    }
+
+    function puedeCrearVehiculo(data, documentoId) {
+      return vehiculoValido(data, documentoId)
+        && ownsVehiculo(data)
+        && data.correo_cliente.trim().lower()
+            == request.auth.token.email.trim().lower()
+        && (!data.keys().hasAny(['ownerUid'])
+          || data.ownerUid == request.auth.uid);
+    }
+
     function preservesTaller(oldData, newData) {
       return (oldData.keys().hasAny(['taller_id'])
           && newData.keys().hasAny(['taller_id'])
@@ -121,6 +188,24 @@ service cloud.firestore {
             && preservesTaller(resource.data, request.resource.data)));
 
       // La app usa tombstones (`eliminado_en`) y no necesita borrar físicamente.
+      allow delete: if false;
+    }
+
+    match /vehiculos/{vehiculoId} {
+      allow get, list: if ownsVehiculo(resource.data);
+
+      allow create: if puedeCrearVehiculo(request.resource.data, vehiculoId);
+
+      allow update: if vehiculoValido(request.resource.data, vehiculoId)
+        && ownsVehiculo(resource.data)
+        && ownsVehiculo(request.resource.data)
+        && request.resource.data.cliente_id == resource.data.cliente_id
+        && request.resource.data.correo_cliente == resource.data.correo_cliente
+        && (!resource.data.keys().hasAny(['ownerUid'])
+          || request.resource.data.ownerUid == resource.data.ownerUid);
+
+      // Las bajas se representan con activo=false y eliminado_en; no se permite
+      // borrar físicamente el documento.
       allow delete: if false;
     }
 

@@ -13,6 +13,8 @@ class Vehiculo implements EntidadPersistida {
     this.activo = true,
     this.creadoEn,
     this.actualizadoEn,
+    this.syncStatus = 'pending',
+    this.eliminadoEn,
   });
 
   static const String _kId = 'id';
@@ -24,6 +26,8 @@ class Vehiculo implements EntidadPersistida {
   static const String _kActivo = 'activo';
   static const String _kCreadoEn = 'creado_en';
   static const String _kActualizadoEn = 'actualizado_en';
+  static const String _kSyncStatus = 'sync_status';
+  static const String _kEliminadoEn = 'eliminado_en';
 
   @override
   final String? id;
@@ -37,6 +41,8 @@ class Vehiculo implements EntidadPersistida {
 
   @override
   final DateTime? actualizadoEn;
+  final String syncStatus;
+  final DateTime? eliminadoEn;
 
   String get resumen => [
     marca,
@@ -55,6 +61,8 @@ class Vehiculo implements EntidadPersistida {
     bool? activo,
     DateTime? creadoEn,
     DateTime? actualizadoEn,
+    String? syncStatus,
+    DateTime? eliminadoEn,
   }) => Vehiculo(
     id: id ?? this.id,
     clienteId: clienteId ?? this.clienteId,
@@ -65,6 +73,8 @@ class Vehiculo implements EntidadPersistida {
     activo: activo ?? this.activo,
     creadoEn: creadoEn ?? this.creadoEn,
     actualizadoEn: actualizadoEn ?? this.actualizadoEn,
+    syncStatus: syncStatus ?? this.syncStatus,
+    eliminadoEn: eliminadoEn ?? this.eliminadoEn,
   );
 
   Map<String, Object?> toMap() => {
@@ -77,17 +87,25 @@ class Vehiculo implements EntidadPersistida {
     _kActivo: activo ? 1 : 0,
     if (creadoEn != null) _kCreadoEn: aIsoUtc(creadoEn!),
     _kActualizadoEn: aIsoUtc(actualizadoEn ?? Reloj.instancia.ahora()),
+    _kSyncStatus: syncStatus,
+    _kEliminadoEn: eliminadoEn == null ? null : aIsoUtc(eliminadoEn!),
   };
 
   factory Vehiculo.fromMap(Map<String, Object?> map) => Vehiculo(
     id: map[_kId]?.toString(),
-    clienteId: map[_kClienteId] as String,
+    clienteId: (map[_kClienteId] ?? map['correo_cliente'] ?? '').toString(),
     marca: map[_kMarca] as String,
     modelo: map[_kModelo] as String,
     anio: (map[_kAnio] as num).toInt(),
     placa: map[_kPlaca] as String? ?? '',
-    activo: (map[_kActivo] as int? ?? 1) != 0,
+    activo: switch (map[_kActivo]) {
+      final bool activo => activo,
+      final num activo => activo != 0,
+      _ => true,
+    },
     creadoEn: desdeIso(map[_kCreadoEn]),
     actualizadoEn: desdeIso(map[_kActualizadoEn]),
+    syncStatus: map[_kSyncStatus] as String? ?? 'synced',
+    eliminadoEn: desdeIso(map[_kEliminadoEn]),
   );
 }

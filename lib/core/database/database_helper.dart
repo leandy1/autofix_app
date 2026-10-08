@@ -93,12 +93,14 @@ class DatabaseHelper {
   /// v14 = CATALOGOS OFFLINE-FIRST: los cuatro catalogos reciben `sync_status`
   ///      y el tombstone `eliminado_en`; `taller_id` se vuelve obligatorio y la
   ///      unicidad del nombre queda limitada al taller y a filas vigentes.
+  /// v15 = VEHÍCULOS OFFLINE-FIRST: estado de sincronización y tombstone para
+  ///      publicar el registro del cliente en Firestore sin perder filas locales.
   ///
   /// OJO: subir la version NO borra la base por si sola, dispara `onUpgrade`, que
   /// es lo que permite a un dispositivo que ya instalo la v1 seguir funcionando.
   /// En la v7 el `onUpgrade` hace `DROP TABLE`, asi que en ESTE caso si borra los
   /// datos, y es intencional (ver [_migrar]).
-  static const int _versionBase = 14;
+  static const int _versionBase = 15;
 
   /// Nombre del indice de [tablaCitas] por fecha.
   ///
@@ -148,6 +150,8 @@ class DatabaseHelper {
   static const String colAnioVehiculo = 'anio';
   static const String colPlacaVehiculo = 'placa';
   static const String colActivoVehiculo = 'activo';
+  static const String colSyncStatusVehiculo = 'sync_status';
+  static const String colEliminadoEnVehiculo = 'eliminado_en';
 
   // ------------------------------------------------------------------
   // SINCRONIZACION (Fase 2)
@@ -558,7 +562,9 @@ class DatabaseHelper {
         $colPlacaVehiculo TEXT NOT NULL DEFAULT '',
         $colActivoVehiculo INTEGER NOT NULL DEFAULT 1,
         $colCreadoEn TEXT NOT NULL,
-        $colActualizadoEn TEXT NOT NULL
+        $colActualizadoEn TEXT NOT NULL,
+        $colSyncStatusVehiculo TEXT NOT NULL DEFAULT 'pending',
+        $colEliminadoEnVehiculo TEXT
       )
     ''');
     await db.execute(
@@ -1259,7 +1265,32 @@ class DatabaseHelper {
       if (versionAnterior < 14) {
         await _migrarAV14(txn);
       }
+
+      if (versionAnterior < 15) {
+        await _migrarAV15(txn);
+      }
     });
+  }
+
+  /// Paso 14 -> 15. La base pasa a sync offline-first sin perder vehículos.
+  /// Las migraciones antiguas pueden haber reconstruido la tabla usando ya el
+  /// esquema nuevo, por lo que se consulta la lista real de columnas antes de
+  /// aplicar cada ALTER.
+  Future<void> _migrarAV15(DatabaseExecutor txn) async {
+    await _crearVehiculos(txn);
+    final info = await txn.rawQuery('PRAGMA table_info($tablaVehiculos)');
+    final columnas = info.map((fila) => fila['name'] as String).toSet();
+    if (!columnas.contains(colSyncStatusVehiculo)) {
+      await txn.execute(
+        "ALTER TABLE $tablaVehiculos ADD COLUMN "
+        "$colSyncStatusVehiculo TEXT NOT NULL DEFAULT 'pending'",
+      );
+    }
+    if (!columnas.contains(colEliminadoEnVehiculo)) {
+      await txn.execute(
+        'ALTER TABLE $tablaVehiculos ADD COLUMN $colEliminadoEnVehiculo TEXT',
+      );
+    }
   }
 
   /// Paso 13 -> 14: convierte los catalogos existentes en tablas offline-first.
@@ -1276,6 +1307,21 @@ class DatabaseHelper {
       tablaMarcas,
       tablaGruposServicio,
     ]) {
+      final existe = await txn.rawQuery(
+        'SELECT name FROM sqlite_master WHERE type = ? AND name = ?',
+        ['table', tabla],
+      );
+      if (existe.isEmpty) {
+        // Completa tablas ausentes con el esquema destino antes de migrar las
+        // existentes, que pueden tener las columnas intermedias de v13.
+        await _crearTablaCatalogo(
+          txn,
+          tabla,
+          columnasExtra: tabla == tablaTiposServicio
+              ? <String>['$colPrecio INTEGER NOT NULL DEFAULT 0']
+              : const <String>[],
+        );
+      }
       await _migrarTablaCatalogoAV14(
         txn,
         tabla,

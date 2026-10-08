@@ -305,6 +305,7 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
         _vehiculoSeleccionado = true;
         _vehiculoFormularioVisible = false;
       });
+      unawaited(SyncService.instance.pushPending());
       _mostrarAviso('Vehículo guardado en este dispositivo.');
     } on Object {
       if (mounted) {

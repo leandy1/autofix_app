@@ -169,7 +169,7 @@ class LimpiezaLocal {
   // QUIEN DEJO LOS DATOS
   // ------------------------------------------------------------------
 
-  /// `true` si hay algo en las colas de subida (citas o perfil locales).
+  /// `true` si hay algo en las colas de subida local.
   ///
   /// Existe para no consultar la conectividad cuando no hace falta: el
   /// `DELETE` de `purgar` no pierde nada si las dos colas estan vacias, y
@@ -185,7 +185,13 @@ class LimpiezaLocal {
     );
     if (citasFallidas.isNotEmpty) return true;
     final perfiles = await ClienteRepository().pendientesDeSync(limite: 1);
-    return perfiles.isNotEmpty;
+    if (perfiles.isNotEmpty) return true;
+    final correo = SesionCliente.instance.correo?.trim().toLowerCase();
+    if (correo == null || correo.isEmpty) return false;
+    final vehiculos = await VehiculoRepository.instance.pendientesDeSync(
+      correo,
+    );
+    return vehiculos.isNotEmpty;
   }
 
   static Future<String?> _leerUltimoUid() async {
