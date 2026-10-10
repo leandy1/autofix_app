@@ -14,6 +14,7 @@ class DevModeController extends ChangeNotifier {
   List<Taller> _talleres = const [];
   bool _cargando = false;
   String? _error;
+  bool _subscriptionsActivas = false;
 
   List<Taller> get talleres => List.unmodifiable(_talleres);
   bool get cargando => _cargando;
@@ -58,10 +59,23 @@ class DevModeController extends ChangeNotifier {
 
   Future<void> start() async {
     await DevModeSyncService.instance.start();
+    _talleresRepository.addListener(_alCambiarElCatalogo);
+    _subscriptionsActivas = true;
   }
 
   Future<void> stop() async {
+    _subscriptionsActivas = false;
+    _talleresRepository.removeListener(_alCambiarElCatalogo);
     await DevModeSyncService.instance.stop();
+  }
+
+  void _alCambiarElCatalogo() {
+    _talleresRepository.obtenerTodas().then((lista) {
+      if (!_subscriptionsActivas) return;
+      _talleres = lista;
+      _error = null;
+      notifyListeners();
+    }).catchError((_) {});
   }
 
   /// Fuerza una sincronizacion completa: reinicia el sync service

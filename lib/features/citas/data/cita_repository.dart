@@ -588,20 +588,25 @@ class CitaRepository implements BaseRepository<Cita> {
   ///
   /// 1. Si la fila no existe localmente, se inserta. Es una cita que otro
   ///    dispositivo creo.
-  /// 2. Si existe, la decision la toma [resolverConflictoDeBorrado], que es una
-  ///    funcion pura y por eso se testea sin base de datos.
+  /// 2. Si existe, la decision la toma [resolverConflictoDeBorrado]
+  ///    para borrados y restauraciones, y `actualizado_en` para filas
+  ///    vivas.
   ///
   /// La regla de que el borrado gana sobre una edicion esta dentro de esa
-  /// funcion y NO antes de la comparacion de relojes, porque si se compararan los
-  /// relojes primero, un documento remoto con `eliminado_en` puesto y una fila
+  /// funcion y NO antes de la comparacion de relojes, porque si se compararan
+  /// los relojes primero, un documento remoto con `eliminado_en` puesto y una fila
   /// local viva darian "la local es mas nueva, no toques nada" y la cita borrada
   /// reapareceria en este dispositivo. Que la reaparezca es el bug exacto que
   /// motivo el tombstone.
   ///
-  /// [GanadorDeConflicto.local] NO escribe nada, y es lo correcto: la nube no
-  /// tiene nada que esta fila no sepa, asi que no hay nada que bajar. El
-  /// `SyncService` es quien sube la version local cuando el ganador es
-  /// [GanadorDeConflicto.localAdelantada].
+  /// OJO con [GanadorDeConflicto.local]: `resolverConflictoDeBorrado` es
+  /// una funcion pura de la TRAZABILIDAD (borrado/restaurado) y nunca
+  /// ve `actualizado_en`, asi que dos filas vivas caen en `local` aunque
+  /// la nube traiga un estado mas nuevo. Por eso el caso `local` de
+  /// abajo compara `actualizado_en` antes de escribir: la regla de
+  /// conflicto de la app es "gana `actualizado_en`" (ver `SyncService`),
+  /// y sin esa comparacion un cambio de estado hecho en otro dispositivo
+  /// nunca bajaria a la base local.
   Future<void> fusionarDesdeNube(Cita remota) async {
     final idRemoto = remota.id;
     if (idRemoto == null) {
@@ -629,25 +634,51 @@ class CitaRepository implements BaseRepository<Cita> {
     );
 
     switch (ganador) {
-      // La nube no trae nada nuevo. No se escribe.
-      case GanadorDeConflicto.local:
+      // La nube manda (borrado o restauracion remota mas nueva): se
+      // baja el documento entero, trazabilidad incluida.
+      case GanadorDeConflicto.nube:
+        await _bajarVersionRemota(db, idRemoto, remota);
         return;
 
-      // La version local es la mas nueva: la nube todavia no sabe. Acá no se
-      // sube; eso es del `SyncService`, que ademas tiene que decidir si vale la
-      // pena pisar lo que ya esta en la nube.
+      // La version local es la mas nueva: la nube todavia no sabe.
+      // Acá no se sube; eso es del `SyncService`, que ademas tiene
+      // que decidir si vale la pena pisar lo que ya esta en la nube.
       case GanadorDeConflicto.localAdelantada:
         return;
 
-      // La nube manda: se baja el documento entero, trazabilidad incluida.
-      case GanadorDeConflicto.nube:
-        await db.update(
-          tabla,
-          remota.toMap(),
-          where: '${DatabaseHelper.colId} = ?',
-          whereArgs: <Object?>[idRemoto],
-        );
+      // `resolverConflictoDeBorrado` decide SOLO entre borrados y
+      // restaurados y nunca ve `actualizado_en`: dos filas VIVAS
+      // (el caso de todos los dias) caen aca aunque la nube traiga
+      // un estado mas nuevo. La regla de conflicto de la app es que
+      // gana `actualizado_en` (ver SyncService), y el `onSnapshot`
+      // solo llama a este metodo cuando la version remota es igual o
+      // mas reciente. Sin esta comparacion, un cambio de estado hecho
+      // en OTRO dispositivo nunca baja a la base local: la cita se
+      // queda congelada en el estado viejo mientras la nube ya tiene
+      // el nuevo, y los dispositivos dejan de mostrar lo mismo.
+      case GanadorDeConflicto.local:
+        final localMs = local.actualizadoEn?.millisecondsSinceEpoch ?? 0;
+        final remotaMs = remota.actualizadoEn?.millisecondsSinceEpoch ?? 0;
+        if (remotaMs < localMs) return;
+        await _bajarVersionRemota(db, idRemoto, remota);
     }
+  }
+
+  /// Escribe la version remota completa, trazabilidad incluida.
+  ///
+  /// Es `db.update` con el mapa de la cita, sacado aparte porque los
+  /// tres caminos de [fusionarDesdeNube] lo hacen igual.
+  Future<void> _bajarVersionRemota(
+    Database db,
+    String id,
+    Cita remota,
+  ) async {
+    await db.update(
+      tabla,
+      remota.toMap(),
+      where: '${DatabaseHelper.colId} = ?',
+      whereArgs: <Object?>[id],
+    );
   }
 
   /// Citas locales pendientes de subir a Firestore (sync_status = 'pending').

@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 import 'package:autofix/core/auth/sesion_admin.dart';
 import 'package:autofix/core/auth/credenciales_seguras.dart';
@@ -953,7 +952,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  /// Abre el escáner de QR y muestra la información de la cita encontrada.
+  /// Abre el escáner de QR y abre la cita encontrada
+  /// en detalle en el apartado de citas.
   Future<void> _abrirEscanerQr() async {
     final cita = await Navigator.of(context).push<Cita>(
       MaterialPageRoute<Cita>(
@@ -961,101 +961,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
         fullscreenDialog: true,
       ),
     );
-    
-    if (cita != null && context.mounted) {
-      _mostrarInfoCita(cita);
-    }
-  }
 
-  /// Muestra la información de la cita escaneada en un diálogo.
-  void _mostrarInfoCita(Cita cita) {
-    final ahora = DateTime.now();
-    final etiquetaEstado = cita.esAtrasada(ahora)
-        ? Cita.etiquetaAtrasadas
-        : cita.estado.etiqueta;
-    final colorEstado = cita.esAtrasada(ahora)
-        ? AppColors.atrasadas
-        : _colorDeEstado(cita.estado);
-
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-        contentPadding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-        title: Row(
-          children: [
-            Icon(
-              cita.estado == EstadoCita.completado
-                  ? Icons.check_circle
-                  : Icons.build_circle_outlined,
-              color: colorEstado,
-              size: 24,
-            ),
-            const SizedBox(width: 9),
-            Expanded(
-              child: Text(
-                'Cita encontrada · ${cita.identificadorParaPantalla}',
-                style: const TextStyle(
-                  color: AppColors.headerNavy,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _InfoCitaEscaneada(
-                label: 'ESTADO',
-                value: etiquetaEstado,
-                valueColor: colorEstado,
-              ),
-              _InfoCitaEscaneada(label: 'CLIENTE', value: cita.cliente),
-              _InfoCitaEscaneada(
-                label: 'TELÉFONO',
-                value: cita.telefono.isEmpty ? 'No indicado' : cita.telefono,
-              ),
-              _InfoCitaEscaneada(label: 'VEHÍCULO', value: cita.vehiculo),
-              _InfoCitaEscaneada(
-                label: 'PLACA',
-                value: cita.placa.isEmpty ? 'No indicada' : cita.placa,
-              ),
-              _InfoCitaEscaneada(
-                label: 'FECHA Y HORA',
-                // `fechaCita` viene en UTC de la base; se muestra
-                // en el horario local del taller.
-                value:
-                    '${_formatearFechaCorta(cita.fechaCita.toLocal())} · ${DateFormat('hh:mm a').format(cita.fechaCita.toLocal())}',
-              ),
-              _InfoCitaEscaneada(
-                label: 'SERVICIOS',
-                value: cita.servicios.isEmpty
-                    ? 'Sin servicios registrados'
-                    : cita.servicios.join(', '),
-              ),
-              _InfoCitaEscaneada(
-                label: 'TECNICO',
-                value: cita.tecnico.isEmpty ? 'Sin asignar' : cita.tecnico,
-              ),
-              _InfoCitaEscaneada(
-                label: 'TOTAL',
-                value: _ctrl.formatearDinero(cita.total),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cerrar'),
-          ),
-        ],
+    if (cita == null || !mounted) return;
+    // La cita se ve en su apartado, con su tarjeta y su
+    // detalle, en vez de un dialogo con los datos aca.
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => CitasScreen(citaInicial: cita),
       ),
     );
   }
@@ -1177,54 +1089,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     .toList(),
               ),
             ),
-        ],
-      ),
-    );
-  }
-}
-
-class _InfoCitaEscaneada extends StatelessWidget {
-  const _InfoCitaEscaneada({
-    required this.label,
-    required this.value,
-    this.valueColor = AppColors.labelDark,
-  });
-
-  final String label;
-  final String value;
-  final Color valueColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 7),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 98,
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: AppColors.textGray,
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.3,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              value,
-              style: TextStyle(
-                color: valueColor,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                height: 1.35,
-              ),
-            ),
-          ),
         ],
       ),
     );

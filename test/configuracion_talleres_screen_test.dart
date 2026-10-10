@@ -1,5 +1,6 @@
 import 'package:autofix/core/database/database_helper.dart';
 import 'package:autofix/features/talleres/data/taller_repository.dart';
+import 'package:autofix/features/talleres/models/taller.dart';
 import 'package:autofix/features/devMode/screens/talleres_afiliados_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -73,4 +74,26 @@ void main() {
     expect(actualizado.longitud, -69.5);
     expect(find.text('Dirección actualizada'), findsOneWidget);
   });
+
+  testWidgets(
+    'actualiza la lista cuando otro dispositivo agrega un taller',
+    (tester) async {
+      await tester.pumpWidget(const MaterialApp(home: TalleresAfiliadosScreen()));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Taller Widget Sync'), findsNothing);
+
+      await TallerRepository.instance.crear(const Taller(
+        nombre: 'Taller Widget Sync',
+        direccion: 'Calle de prueba',
+        telefono: '809-000-0000',
+        latitud: 18.4861,
+        longitud: -69.9312,
+      ));
+      TallerRepository.instance.avisarCatalogoActualizado();
+      await tester.pumpAndSettle();
+
+      expect(find.text('Taller Widget Sync'), findsOneWidget);
+    },
+  );
 }

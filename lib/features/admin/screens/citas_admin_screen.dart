@@ -39,13 +39,16 @@ const Map<String, Color> kColorPorEstado = {
 };
 
 /// Estados disponibles para el dropdown de edición de citas.
+///
+/// 'Aceptada' y 'Rechazada' no estan: son estados de la
+/// solicitud que el panel de Solicitudes resuelve con sus
+/// botones de Aceptar/Rechazar, no algo que se elija a mano
+/// en el editor.
 const List<String> kEstadosCitaAdmin = [
   'Pendiente',
-  'Aceptada',
   'Esperando Pieza',
   'En proceso',
   'Completado',
-  'Rechazada',
 ];
 
 class CitaAdminCard extends StatelessWidget {
@@ -397,205 +400,11 @@ class CitaAdminCard extends StatelessWidget {
   }
 
   void _mostrarDetalle(BuildContext context) {
-    final partesNombre = cita.cliente.trim().split(RegExp(r'\s+'));
-    final nombre = partesNombre.isEmpty || partesNombre.first.isEmpty
-        ? ''
-        : partesNombre.first;
-    final apellido = partesNombre.length > 1
-        ? partesNombre.skip(1).join(' ')
-        : '—';
-
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => Dialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: 560,
-            maxHeight: MediaQuery.sizeOf(context).height * 0.9,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
-                child: Column(
-                  children: [
-                    const Text(
-                      'INFORMACIÓN DE LA CITA',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: AppColors.headerNavy,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1, color: Color(0xFFE7EAF0)),
-              Flexible(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const _SectionTitle('CLIENTE'),
-                      _DetailGrid(
-                        fields: [
-                          ('Nombre', nombre),
-                          ('Apellido', apellido),
-                          ('Teléfono', cita.telefono),
-                        ],
-                      ),
-                      const Divider(height: 32, color: Color(0xFFE7EAF0)),
-                      const _SectionTitle('CITA'),
-                      _DetailGrid(
-                        fields: [
-                          ('Fecha', _fechaFormateada()),
-                          ('Hora', cita.hora.format(context)),
-                        ],
-                      ),
-                      const Divider(height: 32, color: Color(0xFFE7EAF0)),
-                      const _SectionTitle('VEHÍCULO'),
-                      _DetailGrid(
-                        fields: [
-                          ('Marca', cita.marca.toUpperCase()),
-                          ('Modelo', cita.modelo.toUpperCase()),
-                          ('Año', cita.anio),
-                          ('Placa', cita.placa.toUpperCase()),
-                          ('Técnico', cita.tecnico ?? 'Sin asignar'),
-                        ],
-                      ),
-                      const Divider(height: 32, color: Color(0xFFE7EAF0)),
-                      const _SectionTitle('SERVICIOS'),
-                      Wrap(
-                        spacing: 7,
-                        runSpacing: 7,
-                        children: cita.servicios.isEmpty
-                            ? [const _Chip(label: 'Sin servicios')]
-                            : [
-                                for (final servicio in cita.servicios)
-                                  _Chip(label: servicio),
-                              ],
-                      ),
-                      const Divider(height: 32, color: Color(0xFFE7EAF0)),
-                      const _SectionTitle('DESCRIPCIÓN'),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF0F3F7),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          cita.descripcion.isEmpty
-                              ? 'Sin descripción'
-                              : cita.descripcion,
-                          style: const TextStyle(
-                            color: AppColors.labelDark,
-                            fontSize: 13,
-                            height: 1.45,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const Divider(height: 1, color: Color(0xFFE7EAF0)),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final compact = constraints.maxWidth < 420;
-                    final buttonPadding = EdgeInsets.symmetric(
-                      horizontal: compact ? 8 : 16,
-                      vertical: 8,
-                    );
-                    final deleteButton = OutlinedButton(
-                      onPressed: () {
-                        Navigator.pop(dialogContext);
-                        // Una cita sin id todavia no existe en la base, asi que no
-                        // hay nada que borrar. Sin este chequeo, `onDeleted!` con
-                        // null llega hasta el repositorio y revienta el WHERE con
-                        // un id nulo en vez de no hacer nada.
-                        final id = cita.id;
-                        if (onDeleted != null && id != null) onDeleted!(id);
-                      },
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFFEF4444),
-                        side: const BorderSide(color: Color(0xFFFECACA)),
-                        padding: buttonPadding,
-                        minimumSize: const Size(0, 36),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      child: const Text('Eliminar'),
-                    );
-                    final editButton = OutlinedButton(
-                      onPressed: () {
-                        Navigator.pop(dialogContext);
-                        _editarCita(context);
-                      },
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.headerNavy,
-                        side: const BorderSide(color: AppColors.inputBorder),
-                        padding: buttonPadding,
-                        minimumSize: const Size(0, 36),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      child: const Text('Editar'),
-                    );
-                    final closeButton = OutlinedButton(
-                      onPressed: () => Navigator.pop(dialogContext),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.headerNavy,
-                        side: const BorderSide(color: AppColors.inputBorder),
-                        padding: buttonPadding,
-                        minimumSize: const Size(0, 36),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      child: const Text('Cerrar'),
-                    );
-
-                    if (compact) {
-                      return Row(
-                        children: [
-                          Expanded(child: deleteButton),
-                          const SizedBox(width: 6),
-                          Expanded(child: editButton),
-                          const SizedBox(width: 6),
-                          Expanded(child: closeButton),
-                        ],
-                      );
-                    }
-
-                    return Row(
-                      children: [
-                        deleteButton,
-                        const Spacer(),
-                        editButton,
-                        const SizedBox(width: 10),
-                        closeButton,
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    mostrarDialogoDetalleCita(
+      context,
+      cita: cita,
+      onEditar: () => _editarCita(context),
+      onDeleted: onDeleted,
     );
   }
 
@@ -884,6 +693,222 @@ class CitaAdminCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Dialogo de detalle de una cita. Lo usa la tarjeta de la lista de
+/// citas y la pantalla de citas al abrir una cita escaneada por QR:
+/// en ambos casos se muestra la misma informacion y las mismas acciones.
+///
+/// [onEditar] abre el editor de la cita; cada quien lo resuelve con
+/// los catalogos y el guardado que le correspondan.
+Future<void> mostrarDialogoDetalleCita(
+  BuildContext context, {
+  required CitaAdmin cita,
+  required VoidCallback onEditar,
+  ValueChanged<String>? onDeleted,
+}) {
+  final partesNombre = cita.cliente.trim().split(RegExp(r'\s+'));
+  final nombre = partesNombre.isEmpty || partesNombre.first.isEmpty
+      ? ''
+      : partesNombre.first;
+  final apellido = partesNombre.length > 1
+      ? partesNombre.skip(1).join(' ')
+      : '—';
+  final fechaFormateada =
+      '${cita.fecha.day.toString().padLeft(2, '0')}/${cita.fecha.month.toString().padLeft(2, '0')}/${cita.fecha.year}';
+
+  return showDialog<void>(
+    context: context,
+    builder: (dialogContext) => Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 560,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.9,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+              child: Column(
+                children: [
+                  const Text(
+                    'INFORMACIÓN DE LA CITA',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: AppColors.headerNavy,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: Color(0xFFE7EAF0)),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const _SectionTitle('CLIENTE'),
+                    _DetailGrid(
+                      fields: [
+                        ('Nombre', nombre),
+                        ('Apellido', apellido),
+                        ('Teléfono', cita.telefono),
+                      ],
+                    ),
+                    const Divider(height: 32, color: Color(0xFFE7EAF0)),
+                    const _SectionTitle('CITA'),
+                    _DetailGrid(
+                      fields: [
+                        ('Fecha', fechaFormateada),
+                        ('Hora', cita.hora.format(context)),
+                      ],
+                    ),
+                    const Divider(height: 32, color: Color(0xFFE7EAF0)),
+                    const _SectionTitle('VEHÍCULO'),
+                    _DetailGrid(
+                      fields: [
+                        ('Marca', cita.marca.toUpperCase()),
+                        ('Modelo', cita.modelo.toUpperCase()),
+                        ('Año', cita.anio),
+                        ('Placa', cita.placa.toUpperCase()),
+                        ('Técnico', cita.tecnico ?? 'Sin asignar'),
+                      ],
+                    ),
+                    const Divider(height: 32, color: Color(0xFFE7EAF0)),
+                    const _SectionTitle('SERVICIOS'),
+                    Wrap(
+                      spacing: 7,
+                      runSpacing: 7,
+                      children: cita.servicios.isEmpty
+                          ? [const _Chip(label: 'Sin servicios')]
+                          : [
+                              for (final servicio in cita.servicios)
+                                _Chip(label: servicio),
+                            ],
+                    ),
+                    const Divider(height: 32, color: Color(0xFFE7EAF0)),
+                    const _SectionTitle('DESCRIPCIÓN'),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0F3F7),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        cita.descripcion.isEmpty
+                            ? 'Sin descripción'
+                            : cita.descripcion,
+                        style: const TextStyle(
+                          color: AppColors.labelDark,
+                          fontSize: 13,
+                          height: 1.45,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const Divider(height: 1, color: Color(0xFFE7EAF0)),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final compact = constraints.maxWidth < 420;
+                  final buttonPadding = EdgeInsets.symmetric(
+                    horizontal: compact ? 8 : 16,
+                    vertical: 8,
+                  );
+                  final deleteButton = OutlinedButton(
+                    onPressed: () {
+                      Navigator.pop(dialogContext);
+                      // Una cita sin id todavia no existe en la base, asi que no
+                      // hay nada que borrar. Sin este chequeo, `onDeleted` con
+                      // null llega hasta el repositorio y revienta el WHERE con
+                      // un id nulo en vez de no hacer nada.
+                      final id = cita.id;
+                      if (onDeleted != null && id != null) onDeleted(id);
+                    },
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFEF4444),
+                      side: const BorderSide(color: Color(0xFFFECACA)),
+                      padding: buttonPadding,
+                      minimumSize: const Size(0, 36),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text('Eliminar'),
+                  );
+                  final editButton = OutlinedButton(
+                    onPressed: () {
+                      Navigator.pop(dialogContext);
+                      onEditar();
+                    },
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.headerNavy,
+                      side: const BorderSide(color: AppColors.inputBorder),
+                      padding: buttonPadding,
+                      minimumSize: const Size(0, 36),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text('Editar'),
+                  );
+                  final closeButton = OutlinedButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.headerNavy,
+                      side: const BorderSide(color: AppColors.inputBorder),
+                      padding: buttonPadding,
+                      minimumSize: const Size(0, 36),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text('Cerrar'),
+                  );
+
+                  if (compact) {
+                    return Row(
+                      children: [
+                        Expanded(child: deleteButton),
+                        const SizedBox(width: 6),
+                        Expanded(child: editButton),
+                        const SizedBox(width: 6),
+                        Expanded(child: closeButton),
+                      ],
+                    );
+                  }
+
+                  return Row(
+                    children: [
+                      deleteButton,
+                      const Spacer(),
+                      editButton,
+                      const SizedBox(width: 10),
+                      closeButton,
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 class _EditarCitaDialog extends StatefulWidget {
@@ -1584,7 +1609,14 @@ class _Chip extends StatelessWidget {
 }
 
 class CitasScreen extends StatefulWidget {
-  const CitasScreen({super.key});
+  const CitasScreen({super.key, this.citaInicial});
+
+  /// Cita que se abre en detalle apenas carga la pantalla.
+  ///
+  /// La envia el escaneo de QR del dashboard: la cita se ve en su
+  /// apartado, con el mismo detalle que tocando su tarjeta, en vez
+  /// de un dialogo aparte en el dashboard.
+  final cita_data.Cita? citaInicial;
 
   @override
   State<CitasScreen> createState() => _CitasScreenState();
@@ -1604,21 +1636,27 @@ class _CitasScreenState extends State<CitasScreen> {
   List<GrupoServicioItem> _grupoServicioItems = const <GrupoServicioItem>[];
   List<Marca> _marcasDisponibles = const <Marca>[];
   bool _cargandoCatalogos = true;
+  late final Future<void> _cargaInicial;
 
   @override
   void initState() {
     super.initState();
     _busquedaController = TextEditingController();
-    _citasController.cargar();
-    _cargarCatalogos();
-    SyncService.instance.addListener(_alCambiarCatalogos);
+    _cargaInicial = Future.wait<void>(<Future<void>>[
+      _citasController.cargar(),
+      _cargarCatalogos(),
+    ]).then((_) {});
+    SyncService.instance.addListener(_alCambiarSync);
+    if (widget.citaInicial != null) {
+      _abrirDetalleCitaEscaneada();
+    }
   }
 
   @override
   void dispose() {
     _busquedaController.dispose();
     _citasController.dispose();
-    SyncService.instance.removeListener(_alCambiarCatalogos);
+    SyncService.instance.removeListener(_alCambiarSync);
     super.dispose();
   }
 
@@ -1674,8 +1712,62 @@ class _CitasScreenState extends State<CitasScreen> {
     }
   }
 
-  void _alCambiarCatalogos() {
-    if (mounted) unawaited(_cargarCatalogos());
+  /// El snapshot de Firestore cambia CITAS y catalogos a la vez: una
+  /// cita nueva de otro dispositivo o un cambio de estado llegan por
+  /// SyncService, y la lista de citas hay que releerla, no solo los
+  /// catalogos. Sin `_citasController.cargar()` el panel del admin
+  /// seguira mostrando el estado viejo aunque la base local ya tenga
+  /// el nuevo.
+  void _alCambiarSync() {
+    if (!mounted) return;
+    unawaited(_cargarCatalogos());
+    unawaited(_citasController.cargar());
+  }
+
+  /// Abre en detalle la cita que llego por QR. Espera a que
+  /// terminen la carga de citas y la de catalogos: el detalle
+  /// ofrece "Editar", y el editor necesita los catalogos.
+  Future<void> _abrirDetalleCitaEscaneada() async {
+    await _cargaInicial;
+    final cita = widget.citaInicial;
+    if (cita == null || !mounted) return;
+    setState(() {
+      // Deja el dia de la cita seleccionado y su grupo abierto
+      // para que la tarjeta sea visible al cerrar el dialogo.
+      _fechaSeleccionada = cita.fechaCita.toLocal();
+      final ahora = DateTime.now();
+      _categoriaExpandida = _esMismoDia(_fechaSeleccionada, ahora) &&
+              cita.esAtrasada(ahora)
+          ? cita_data.Cita.etiquetaAtrasadas
+          : cita.etiquetaUI(ahora);
+    });
+    await _mostrarDetalleDeCita(_citaParaTarjeta(cita));
+  }
+
+  Future<void> _mostrarDetalleDeCita(CitaAdmin cita) {
+    return mostrarDialogoDetalleCita(
+      context,
+      cita: cita,
+      onEditar: () => _editarCitaDePantalla(cita),
+      onDeleted: (id) => _eliminarCita(id),
+    );
+  }
+
+  Future<void> _editarCitaDePantalla(CitaAdmin cita) {
+    return showDialog<void>(
+      context: context,
+      builder: (context) => _EditarCitaDialog(
+        cita: cita,
+        serviciosDisponibles: _serviciosDisponibles,
+        tecnicosDisponibles: _tecnicosDisponibles,
+        gruposServicio: _gruposServicio,
+        grupoServicioItems: _grupoServicioItems,
+        marcas: _marcasDisponibles,
+        onSaved: (citaActualizada) {
+          _guardarEdicion(citaActualizada);
+        },
+      ),
+    );
   }
 
   List<cita_data.Cita> _obtenerCitasFiltradas(String categoria) {

@@ -1,5 +1,6 @@
 import 'package:autofix/core/data/base_repository.dart';
 import 'package:autofix/core/database/database_helper.dart';
+import 'package:autofix/core/utils/borrado_logico.dart';
 import 'package:autofix/core/utils/uuid.dart';
 import 'package:autofix/features/citas/data/cita_repository.dart';
 import 'package:autofix/features/citas/models/cita.dart';
@@ -506,6 +507,66 @@ void main() {
 
         final id = await CitaRepository.instance.crear(nueva());
         expect(Uuid.tieneFormaDeUuid(id), isTrue);
+      },
+    );
+  });
+
+  group('FUSION DESDE NUBE (sincronizacion entre dispositivos)', () {
+    test(
+      'un cambio de estado de OTRO dispositivo baja a la base local',
+      () async {
+        final id = await CitaRepository.instance.crear(nueva());
+        final local = await CitaRepository.instance.obtenerPorId(id);
+        expect(local!.estado, EstadoCita.pendiente);
+
+        // Lo que llegaria del onSnapshot: misma cita, estado nuevo y
+        // actualizado_en mas reciente (lo escribe el otro dispositivo).
+        final remota = local.copyWith(
+          estado: EstadoCita.completado,
+          actualizadoEn: local.actualizadoEn!
+              .add(const Duration(hours: 1)),
+        );
+        await CitaRepository.instance.fusionarDesdeNube(remota);
+
+        final fusionada = await CitaRepository.instance.obtenerPorId(id);
+        expect(fusionada!.estado, EstadoCita.completado);
+      },
+    );
+
+    test(
+      'una version remota MAS VIEJA no pisa la local',
+      () async {
+        final id = await CitaRepository.instance.crear(nueva());
+        final local = await CitaRepository.instance.obtenerPorId(id);
+
+        final remotaVieja = local!.copyWith(
+          estado: EstadoCita.completado,
+          actualizadoEn: local.actualizadoEn!
+              .subtract(const Duration(hours: 1)),
+        );
+        await CitaRepository.instance.fusionarDesdeNube(remotaVieja);
+
+        final sinCambios = await CitaRepository.instance.obtenerPorId(id);
+        expect(sinCambios!.estado, EstadoCita.pendiente);
+      },
+    );
+
+    test(
+      'el tombstone remoto (borrado en otro dispositivo) gana',
+      () async {
+        final id = await CitaRepository.instance.crear(nueva());
+        final local = await CitaRepository.instance.obtenerPorId(id);
+
+        final borradaEnLaNube = local!.marcarBorrada(
+          cuando: local.actualizadoEn!
+              .add(const Duration(hours: 1)),
+          por: 'otro-dispositivo',
+        );
+        await CitaRepository.instance.fusionarDesdeNube(borradaEnLaNube);
+
+        final fusionada = await CitaRepository.instance.obtenerPorId(id);
+        expect(fusionada!.estaBorrada, isTrue);
+        expect(await CitaRepository.instance.obtenerTodas(), isEmpty);
       },
     );
   });
