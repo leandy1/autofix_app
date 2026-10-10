@@ -32,9 +32,8 @@ import 'package:autofix/features/citas/models/resumen_citas.dart';
 /// cambiaran de numero cada vez que el admin mira otra fecha (mentira), o los
 /// ingresos contarian todo el historial en vez de lo del dia (tambien mentira).
 class DashboardAdminController extends ChangeNotifier {
-  DashboardAdminController({CitaRepository? repositorio, String? tallerId})
-    : _repo = repositorio ?? CitaRepository.instance,
-      _tallerId = tallerId;
+  DashboardAdminController({CitaRepository? repositorio, this._tallerId})
+    : _repo = repositorio ?? CitaRepository.instance;
 
   final CitaRepository _repo;
   final String? _tallerId;

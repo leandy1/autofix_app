@@ -50,7 +50,7 @@ void main() {
           body: SingleChildScrollView(
             child: SolicitudesCitasAdminSection(
               citas: citas,
-              onCambiarEstado: (cita, estado) async {
+              onCambiarEstado: (cita, estado, {String? motivoRechazo}) async {
                 cambios[cita.id!] = estado;
               },
             ),
@@ -67,7 +67,13 @@ void main() {
 
     await tester.tap(find.widgetWithText(FilledButton, 'Aceptar').first);
     await tester.pumpAndSettle();
+
+    // Rechazar: opens dialog, must enter motivo and confirm
     await tester.tap(find.widgetWithText(OutlinedButton, 'Rechazar').last);
+    await tester.pumpAndSettle();
+    // Dialog is open, enter motivo
+    await tester.enterText(find.byType(TextField), 'Motivo de prueba');
+    await tester.tap(find.widgetWithText(FilledButton, 'Rechazar'));
     await tester.pumpAndSettle();
 
     expect(cambios[citas[0].id], EstadoCita.aceptada);

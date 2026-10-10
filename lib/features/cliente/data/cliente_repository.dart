@@ -147,8 +147,10 @@ class ClienteRepository {
 
   Future<ClientePerfil?> obtener(String uid) async {
     final snapshot = await _coleccion.doc(uid).get();
+    debugPrint('🔐 ClienteRepository.obtener: uid=$uid, exists=${snapshot.exists}');
     if (!snapshot.exists) return null;
     final datos = snapshot.data();
+    debugPrint('🔐 ClienteRepository.obtener: datos=$datos');
     if (datos == null || datos['eliminado'] == true) return null;
     return ClientePerfil.desdeFirestore(uid, datos);
   }

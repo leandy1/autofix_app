@@ -50,7 +50,8 @@ dependencies:
   maplibre_gl: 0.27.1
   geolocator: 14.1.1
   url_launcher: 6.2.5
-
+  mobile_scanner: ^5.2.0
+ 
   # Sesion persistente (Modo "Recuerdame"): UID, correo y taller_id del admin
   # quedan en disco para entrar al Dashboard sin internet.
   # Ver lib/core/auth/sesion_cache.dart.

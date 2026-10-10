@@ -12,6 +12,9 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
 
+    <!-- Cámara: para escanear códigos QR de citas -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+
     <application
         android:label="autofix"
         android:name="${applicationName}"

@@ -10,6 +10,7 @@ import 'package:autofix/core/auth/credenciales_seguras.dart';
 import 'package:autofix/core/data/limpieza_local.dart';
 import 'package:autofix/features/admin/presentation/dashboard_admin_controller.dart';
 import 'package:autofix/features/auth/screens/login_screen.dart';
+import 'package:autofix/features/admin/widgets/qr_scanner_widget.dart';
 import 'package:autofix/features/citas/models/cita.dart';
 import 'package:autofix/features/sync/sync_service.dart';
 import 'package:autofix/shared/theme/app_colors.dart';
@@ -869,6 +870,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  /// Tarjeta para escanear QR de citas.
   Widget _buildQrScannerCard() {
     return Container(
       width: double.infinity,
@@ -916,7 +918,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                     SizedBox(height: 3),
                     Text(
-                      'Consulta rápidamente la información de una cita.',
+                      'Apunta la cámara al código QR del cliente para ver la información de la cita.',
                       style: TextStyle(
                         color: AppColors.textGray,
                         fontSize: 12,
@@ -929,76 +931,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ],
           ),
           const SizedBox(height: 16),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: AppColors.background,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.inputBorder),
-            ),
-            child: Column(
-              children: [
-                SizedBox(
-                  height: 126,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Container(
-                        width: 126,
-                        height: 112,
-                        decoration: BoxDecoration(
-                          color: AppColors.headerNavy,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          Icons.qr_code_2_rounded,
-                          color: Colors.white,
-                          size: 76,
-                        ),
-                      ),
-                      Positioned(
-                        left: 0,
-                        right: 0,
-                        child: Container(
-                          height: 2,
-                          margin: const EdgeInsets.symmetric(horizontal: 28),
-                          decoration: BoxDecoration(
-                            color: AppColors.orangePrimary,
-                            borderRadius: BorderRadius.circular(2),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.orangePrimary.withValues(
-                                  alpha: 0.65,
-                                ),
-                                blurRadius: 8,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Text(
-                  'Lector QR · Escaneo simulado',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: AppColors.textGray,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: _mostrarCitaEscaneada,
+              onPressed: _abrirEscanerQr,
               icon: const Icon(Icons.qr_code_scanner, size: 18),
-              label: const Text('Simular escaneo de cita'),
+              label: const Text('Escanear código QR'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.headerNavy,
                 foregroundColor: Colors.white,
@@ -1015,24 +953,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  void _mostrarCitaEscaneada() {
-    // Antes era `demoCitaCompletadaAdmin`: un `SolicitudCitaCliente` de mentira.
-    // Ahora muestra una cita REAL de la base. El boton sigue siendo una
-    // simulacion (no hay camara todavia), pero lo que ensena es un dato que el
-    // admin podria encontrar el mismo en la pantalla de Citas.
-    final cita = _ctrl.citasDia.isEmpty ? null : _ctrl.citasDia.first;
-
-    if (cita == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'No hay citas para el ${_formatearFechaCorta(_ctrl.fecha)} que escanear.',
-          ),
-        ),
-      );
-      return;
+  /// Abre el escáner de QR y muestra la información de la cita encontrada.
+  Future<void> _abrirEscanerQr() async {
+    final cita = await Navigator.of(context).push<Cita>(
+      MaterialPageRoute<Cita>(
+        builder: (_) => const QrScannerScreen(),
+        fullscreenDialog: true,
+      ),
+    );
+    
+    if (cita != null && context.mounted) {
+      _mostrarInfoCita(cita);
     }
+  }
 
+  /// Muestra la información de la cita escaneada en un diálogo.
+  void _mostrarInfoCita(Cita cita) {
     final ahora = DateTime.now();
     final etiquetaEstado = cita.esAtrasada(ahora)
         ? Cita.etiquetaAtrasadas

@@ -5,11 +5,14 @@ import 'package:intl/intl.dart';
 import 'package:sqflite/sqflite.dart' show DatabaseException;
 
 import 'package:autofix/core/auth/sesion_admin.dart';
+import 'package:autofix/features/cliente/data/catalogo_vehiculos_api.dart';
+import 'package:autofix/features/configuracion/data/grupo_servicio_item_repository.dart';
 import 'package:autofix/features/configuracion/data/grupo_servicio_repository.dart';
 import 'package:autofix/features/configuracion/data/marca_repository.dart';
 import 'package:autofix/features/configuracion/data/tecnico_repository.dart';
 import 'package:autofix/features/configuracion/data/tipo_servicio_repository.dart';
 import 'package:autofix/features/configuracion/models/grupo_servicio.dart';
+import 'package:autofix/features/configuracion/models/grupo_servicio_item.dart';
 import 'package:autofix/features/configuracion/models/marca.dart';
 import 'package:autofix/features/configuracion/models/tecnico.dart';
 import 'package:autofix/features/configuracion/models/tipo_servicio.dart';
@@ -75,10 +78,12 @@ class ConfiguracionController extends ChangeNotifier {
     TipoServicioRepository? servicios,
     MarcaRepository? marcas,
     GrupoServicioRepository? grupos,
+    GrupoServicioItemRepository? grupoServicioItems,
   }) : _repoTecnicos = tecnicos ?? TecnicoRepository.instance,
        _repoServicios = servicios ?? TipoServicioRepository.instance,
        _repoMarcas = marcas ?? MarcaRepository.instance,
-       _repoGrupos = grupos ?? GrupoServicioRepository.instance;
+       _repoGrupos = grupos ?? GrupoServicioRepository.instance,
+       _repoGrupoServicioItems = grupoServicioItems ?? GrupoServicioItemRepository.instance;
 
   final String tallerId;
 
@@ -86,6 +91,11 @@ class ConfiguracionController extends ChangeNotifier {
   final TipoServicioRepository _repoServicios;
   final MarcaRepository _repoMarcas;
   final GrupoServicioRepository _repoGrupos;
+  final GrupoServicioItemRepository _repoGrupoServicioItems;
+
+  /// Cliente de la API NHTSA vPIC para obtener marcas de vehículos.
+  /// Se usa para importar marcas desde la API y guardarlas en la BD local.
+  final CatalogoVehiculosApi _catalogoVehiculos = CatalogoVehiculosApi();
 
   /// Formateador de miles. Sin locale explicito a proposito: el separador de
   /// miles por defecto de `intl` ya sale con coma ('1,200') sin pedirle que
@@ -96,6 +106,7 @@ class ConfiguracionController extends ChangeNotifier {
   List<TipoServicio> _tiposServicio = const <TipoServicio>[];
   List<Marca> _marcas = const <Marca>[];
   List<GrupoServicio> _gruposServicio = const <GrupoServicio>[];
+  List<GrupoServicioItem> _grupoServicioItems = const <GrupoServicioItem>[];
 
   bool _cargando = true;
   String? _error;
@@ -110,6 +121,7 @@ class ConfiguracionController extends ChangeNotifier {
   List<TipoServicio> get tiposServicio => List.unmodifiable(_tiposServicio);
   List<Marca> get marcas => List.unmodifiable(_marcas);
   List<GrupoServicio> get gruposServicio => List.unmodifiable(_gruposServicio);
+  List<GrupoServicioItem> get grupoServicioItems => List.unmodifiable(_grupoServicioItems);
 
   bool get cargando => _cargando;
 
@@ -175,18 +187,20 @@ class ConfiguracionController extends ChangeNotifier {
     if (mostrarCarga) _notificarSiActivo();
 
     try {
-      // Las cuatro se piden juntas filtradas por tallerId
+      // Las cinco se piden juntas filtradas por tallerId
       final resultados = await Future.wait(<Future<Object?>>[
         _repoTecnicos.obtenerTodasPorTaller(tallerId),
         _repoServicios.obtenerTodasPorTaller(tallerId),
         _repoMarcas.obtenerTodasPorTaller(tallerId),
         _repoGrupos.obtenerTodasPorTaller(tallerId),
+        _repoGrupoServicioItems.obtenerActivosPorTaller(tallerId),
       ]);
 
       _tecnicos = resultados[0] as List<Tecnico>;
       _tiposServicio = resultados[1] as List<TipoServicio>;
       _marcas = resultados[2] as List<Marca>;
       _gruposServicio = resultados[3] as List<GrupoServicio>;
+      _grupoServicioItems = resultados[4] as List<GrupoServicioItem>;
       _error = null;
     } on Exception catch (e) {
       _error = _mensajeDe(e);
@@ -347,6 +361,177 @@ class ConfiguracionController extends ChangeNotifier {
     () async =>
         _gruposServicio = await _repoGrupos.obtenerTodasPorTaller(tallerId),
   );
+
+  // ---------------------------------------------------------------------
+  // Grupo - Servicio (v16)
+  // ---------------------------------------------------------------------
+
+  /// Obtiene los IDs de los servicios que pertenecen a un grupo.
+  List<String> obtenerServiciosDelGrupo(String grupoId) {
+    return _grupoServicioItems
+        .where((item) => item.grupoId == grupoId && item.activo)
+        .map((item) => item.tipoServicioId)
+        .toList();
+  }
+
+  /// Obtiene los servicios completos (TipoServicio) que pertenecen a un grupo.
+  List<TipoServicio> obtenerServiciosCompletosDelGrupo(String grupoId) {
+    final servicioIds = obtenerServiciosDelGrupo(grupoId);
+    return _tiposServicio
+        .where((servicio) => servicioIds.contains(servicio.id))
+        .toList();
+  }
+
+  /// Obtiene los IDs de los grupos a los que pertenece un servicio.
+  List<String> obtenerGruposDelServicio(String tipoServicioId) {
+    return _grupoServicioItems
+        .where((item) => item.tipoServicioId == tipoServicioId && item.activo)
+        .map((item) => item.grupoId)
+        .toList();
+  }
+
+  /// Agrega un servicio a un grupo.
+  Future<bool> agregarServicioAGrupo({
+    required String grupoId,
+    required String tipoServicioId,
+    int? orden,
+  }) async {
+    // Verificar que no exista ya el vínculo
+    final existe = await _repoGrupoServicioItems.existeVinculo(
+      grupoId: grupoId,
+      tipoServicioId: tipoServicioId,
+      tallerId: tallerId,
+    );
+    if (existe) {
+      _error = 'El servicio ya está en este grupo.';
+      _notificarSiActivo();
+      return false;
+    }
+
+    // Si no se proporciona orden, usar el siguiente disponible
+    final ordenFinal = orden ??
+        (_grupoServicioItems
+                .where((item) => item.grupoId == grupoId)
+                .map((item) => item.orden)
+                .fold(0, (a, b) => a > b ? a : b) +
+            1);
+
+    return _escribir(
+      () => _repoGrupoServicioItems.crearVinculo(
+        grupoId: grupoId,
+        tipoServicioId: tipoServicioId,
+        tallerId: tallerId,
+        orden: ordenFinal,
+      ),
+      () async =>
+          _grupoServicioItems =
+              await _repoGrupoServicioItems.obtenerActivosPorTaller(tallerId),
+    );
+  }
+
+  /// Quita un servicio de un grupo (baja lógica).
+  Future<bool> quitarServicioDeGrupo({
+    required String grupoId,
+    required String tipoServicioId,
+  }) async {
+    return _escribir(
+      () => _repoGrupoServicioItems.eliminarVinculo(
+        grupoId: grupoId,
+        tipoServicioId: tipoServicioId,
+      ),
+      () async =>
+          _grupoServicioItems =
+              await _repoGrupoServicioItems.obtenerActivosPorTaller(tallerId),
+    );
+  }
+
+  /// Actualiza el orden de un servicio dentro de un grupo.
+  Future<bool> actualizarOrdenServicioEnGrupo({
+    required String grupoId,
+    required String tipoServicioId,
+    required int orden,
+  }) async {
+    // Buscar el vínculo actual
+    final items = _grupoServicioItems.where((item) =>
+        item.grupoId == grupoId && item.tipoServicioId == tipoServicioId);
+    if (items.isEmpty) {
+      _error = 'El servicio no está en este grupo.';
+      _notificarSiActivo();
+      return false;
+    }
+    final item = items.first;
+    return _escribir(
+      () => _repoGrupoServicioItems.actualizarOrden(item.id!, orden),
+      () async =>
+          _grupoServicioItems =
+              await _repoGrupoServicioItems.obtenerActivosPorTaller(tallerId),
+    );
+  }
+
+  /// Reordena los servicios de un grupo según la lista de IDs proporcionada.
+  Future<bool> reordenarServiciosDelGrupo({
+    required String grupoId,
+    required List<String> tipoServicioIds,
+  }) async {
+    for (int i = 0; i < tipoServicioIds.length; i++) {
+      final tipoServicioId = tipoServicioIds[i];
+      final items = _grupoServicioItems.where((item) =>
+          item.grupoId == grupoId && item.tipoServicioId == tipoServicioId);
+      if (items.isNotEmpty) {
+        await _repoGrupoServicioItems.actualizarOrden(items.first.id!, i);
+      }
+    }
+    // Releer para actualizar la lista en memoria
+    _grupoServicioItems =
+        await _repoGrupoServicioItems.obtenerActivosPorTaller(tallerId);
+    _notificarSiActivo();
+    return true;
+  }
+
+  // ---------------------------------------------------------------------
+  // Importar marcas desde API NHTSA
+  // ---------------------------------------------------------------------
+
+  /// Importa marcas de vehículos desde la API NHTSA vPIC y las guarda en la BD local.
+  ///
+  /// Esta es la misma API que usa el formulario del cliente para crear el carro.
+  /// Las marcas se almacenan en la tabla `marcas` para que funcionen offline.
+  /// Devuelve la cantidad de marcas nuevas agregadas.
+  Future<int> importarMarcasDesdeApi() async {
+    _cargando = true;
+    _error = null;
+    _notificarSiActivo();
+
+    int nuevas = 0;
+    try {
+      // Obtener marcas desde la API (en línea)
+      final marcasApi = await _catalogoVehiculos.obtenerMarcas(enLinea: true);
+
+      // Guardar cada marca en la BD local si no existe
+      for (final nombreMarca in marcasApi) {
+        final existe = await _repoMarcas.obtenerPorNombreYTaller(
+          nombreMarca.trim(),
+          tallerId,
+        );
+        if (existe == null) {
+          await _repoMarcas.crear(
+            Marca(nombre: nombreMarca.trim(), tallerId: tallerId),
+          );
+          nuevas++;
+        }
+      }
+
+      // Recargar la lista local
+      _marcas = await _repoMarcas.obtenerTodasPorTaller(tallerId);
+      _error = null;
+    } on Exception catch (e) {
+      _error = 'No se pudo importar marcas: ${_mensajeDe(e)}';
+    }
+
+    _cargando = false;
+    _notificarSiActivo();
+    return nuevas;
+  }
 
   // ---------------------------------------------------------------------
   // Internos

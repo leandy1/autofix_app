@@ -90,6 +90,7 @@ class Cita implements EntidadPersistida {
     this.total = 0,
     this.syncStatus = 'pending',
     this.trazabilidad = Trazabilidad.vacia,
+    this.motivoRechazo,
   });
 
   static const String etiquetaAtrasadas = 'ATRASADAS';
@@ -110,6 +111,7 @@ class Cita implements EntidadPersistida {
   static const String _kFechaCita = 'fecha_cita';
   static const String _kEstado = 'estado';
   static const String _kTallerId = 'taller_id';
+  static const String _kMotivoRechazo = 'motivo_rechazo';
   static const String _kCreadoEn = 'creado_en';
   static const String _kActualizadoEn = 'actualizado_en';
   static const String _kTotal = 'total';
@@ -198,6 +200,11 @@ class Cita implements EntidadPersistida {
   /// dispositivos resucitaba la cita en cuanto el otro la rebia de la nube.
   final Trazabilidad trazabilidad;
 
+  /// Motivo de rechazo (cuando estado == EstadoCita.rechazada).
+  ///
+  /// Se muestra al cliente en "Mis citas" para que sepa por que no se acepto.
+  final String? motivoRechazo;
+
   /// Si la fila esta borrada. Es lo que filtra `WHERE eliminado_en IS NULL` en
   /// SQL, y lo que la UI consulta para no pintar una papelera por error.
   bool get estaBorrada => trazabilidad.estaBorrada;
@@ -235,8 +242,18 @@ class Cita implements EntidadPersistida {
 
   /// Llave exacta del mapa de colores de la UI. Va en mayusculas porque asi
   /// esta definida alla.
-  String etiquetaUI(DateTime ahora) =>
-      esAtrasada(ahora) ? etiquetaAtrasadas : estado.etiqueta;
+  String etiquetaUI(DateTime ahora) {
+    if (esAtrasada(ahora)) return etiquetaAtrasadas;
+    // Mapear estados que ya no existen en la UI admin a 'Pendiente'
+    switch (estado) {
+      case EstadoCita.aceptada:
+        return 'Pendiente';
+      case EstadoCita.rechazada:
+        return 'Rechazada';
+      default:
+        return estado.etiqueta;
+    }
+  }
 
   Cita copyWith({
     String? id,
@@ -260,6 +277,7 @@ class Cita implements EntidadPersistida {
     int? total,
     String? syncStatus,
     Trazabilidad? trazabilidad,
+    String? motivoRechazo,
   }) {
     return Cita(
       id: id ?? this.id,
@@ -288,6 +306,7 @@ class Cita implements EntidadPersistida {
       total: total ?? this.total,
       syncStatus: syncStatus ?? this.syncStatus,
       trazabilidad: trazabilidad ?? this.trazabilidad,
+      motivoRechazo: motivoRechazo ?? this.motivoRechazo,
     );
   }
 
@@ -368,6 +387,9 @@ class Cita implements EntidadPersistida {
       // columna tiene NOT NULL DEFAULT 'pending'. El repositorio actualiza
       // a 'synced' tras push exitoso; aqui siempre emitimos el valor actual.
       _kSyncStatus: syncStatus,
+      // Motivo de rechazo (solo se escribe cuando estado == rechazada)
+      if (motivoRechazo != null && motivoRechazo!.isNotEmpty)
+        _kMotivoRechazo: motivoRechazo,
       ...mapaDeTrazabilidad(trazabilidad),
     };
   }
@@ -396,6 +418,12 @@ class Cita implements EntidadPersistida {
       actualizadoEn: desdeIso(map[_kActualizadoEn]),
       total: _entero(map[_kTotal]),
       syncStatus: map[_kSyncStatus]?.toString() ?? 'pending',
+      motivoRechazo: (() {
+        final value = map[_kMotivoRechazo];
+        if (value == null) return null;
+        final str = value.toString();
+        return str.isEmpty ? null : str;
+      })(),
       trazabilidad: Trazabilidad(
         eliminadoEn: desdeIso(map['eliminado_en']),
         eliminadoPor: map['eliminado_por']?.toString(),

@@ -14,24 +14,49 @@ class CuentasAdminController extends ChangeNotifier {
   String? _error;
   List<Taller> _talleres = [];
   List<Map<String, dynamic>> _admins = [];
+  bool _verificado = false;
+  String? _emailVerificado;
 
-  /// Rules de producción solo permiten mutaciones DEV con custom claim.
-  /// El password local de la pantalla DEV no constituye una identidad Auth.
-  Future<bool> _exigirClaimDev() async {
-    try {
-      final usuario = FirebaseAuth.instance.currentUser;
-      if (usuario != null) {
-        final token = await usuario.getIdTokenResult();
-        if (token.claims?['dev'] == true) return true;
-      }
-    } on Object catch (error) {
-      debugPrint('[CuentasAdmin] No se pudo verificar el claim DEV: $error');
-    }
-    _error = 'La sesión Firebase actual no tiene el permiso DEV para modificar cuentas.';
-    _cargando = false;
+  /// Verifica si el email está en la colección `adminUsers` de Firestore.
+  /// Si pasa, marca `_verificado = true` y permite operaciones.
+  Future<bool> verificarAcceso(String email) async {
+    _cargando = true;
+    _error = null;
     notifyListeners();
-    return false;
+
+    try {
+      final normalizado = email.trim().toLowerCase();
+      final doc = await _db.collection('adminUsers').doc(normalizado).get();
+      
+      if (doc.exists) {
+        _verificado = true;
+        _emailVerificado = normalizado;
+        _cargando = false;
+        notifyListeners();
+        return true;
+      } else {
+        _error = 'Este correo no tiene permisos de administrador de cuentas.';
+        _cargando = false;
+        notifyListeners();
+        return false;
+      }
+    } catch (e) {
+      _error = 'Error al verificar permisos: $e';
+      _cargando = false;
+      notifyListeners();
+      return false;
+    }
   }
+
+  /// Limpia la verificación (ej. al salir de la pantalla)
+  void limpiarVerificacion() {
+    _verificado = false;
+    _emailVerificado = null;
+    notifyListeners();
+  }
+
+  bool get verificado => _verificado;
+  String? get emailVerificado => _emailVerificado;
 
   bool get cargando => _cargando;
   String? get error => _error;
@@ -50,12 +75,22 @@ class CuentasAdminController extends ChangeNotifier {
   /// (que hace el push inicial de talleres a Firebase) y recarga la data
   /// directamente de Firestore.
   Future<void> sincronizar() async {
+    if (!_verificado) {
+      _error = 'Debe verificar su correo antes de sincronizar.';
+      notifyListeners();
+      return;
+    }
     await DevModeSyncService.instance.stop();
     await DevModeSyncService.instance.start();
     await cargarDatos();
   }
 
   Future<void> cargarDatos() async {
+    if (!_verificado) {
+      _error = 'Debe verificar su correo antes de cargar datos.';
+      notifyListeners();
+      return;
+    }
     _cargando = true;
     _error = null;
     notifyListeners();
@@ -101,11 +136,15 @@ class CuentasAdminController extends ChangeNotifier {
     required String password,
     required String tallerId,
   }) async {
+    if (!_verificado) {
+      _error = 'Debe verificar su correo antes de crear cuentas.';
+      notifyListeners();
+      return false;
+    }
+
     _cargando = true;
     _error = null;
     notifyListeners();
-
-    if (!await _exigirClaimDev()) return false;
 
     final normalizado = email.trim().toLowerCase();
 
@@ -219,10 +258,14 @@ class CuentasAdminController extends ChangeNotifier {
 
   /// Cambia el taller asignado a un admin.
   Future<bool> editarAdmin(String uid, String nuevoTallerId) async {
+    if (!_verificado) {
+      _error = 'Debe verificar su correo antes de editar.';
+      notifyListeners();
+      return false;
+    }
     _cargando = true;
     _error = null;
     notifyListeners();
-    if (!await _exigirClaimDev()) return false;
     try {
       await _db.collection('admins').doc(uid).update({
         'tallerId': nuevoTallerId,
@@ -245,10 +288,14 @@ class CuentasAdminController extends ChangeNotifier {
   /// El usuario de Firebase Auth asociado sigue existiendo; para eliminarlo
   /// hace falta el Admin SDK (Cloud Function/backend).
   Future<bool> eliminarAdmin(String uid) async {
+    if (!_verificado) {
+      _error = 'Debe verificar su correo antes de eliminar.';
+      notifyListeners();
+      return false;
+    }
     _cargando = true;
     _error = null;
     notifyListeners();
-    if (!await _exigirClaimDev()) return false;
     try {
       await _db.collection('admins').doc(uid).update({
         'eliminado': true,
@@ -266,10 +313,14 @@ class CuentasAdminController extends ChangeNotifier {
 
   /// Reactiva una cuenta admin que fue dada de baja (`eliminado = true`).
   Future<bool> reactivarAdmin(String uid) async {
+    if (!_verificado) {
+      _error = 'Debe verificar su correo antes de reactivar.';
+      notifyListeners();
+      return false;
+    }
     _cargando = true;
     _error = null;
     notifyListeners();
-    if (!await _exigirClaimDev()) return false;
     try {
       await _db.collection('admins').doc(uid).update({
         'eliminado': false,

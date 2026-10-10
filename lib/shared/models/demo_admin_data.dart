@@ -119,8 +119,6 @@ final demoCitaCompletadaAdmin = SolicitudCitaCliente(
 const demoTecnicosAdmin = ['Técnico 1', 'Técnico 2', 'Técnico 3'];
 const demoEstadosAdmin = [
   'Pendiente',
-  'Aceptada',
-  'Rechazada',
   'Esperando Pieza',
   'En proceso',
   'Completado',

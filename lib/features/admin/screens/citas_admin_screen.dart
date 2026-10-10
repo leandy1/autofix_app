@@ -11,13 +11,18 @@ import 'package:autofix/features/admin/widgets/solicitudes_citas_admin_section.d
 import 'package:autofix/features/auth/screens/login_screen.dart';
 import 'package:autofix/features/citas/models/cita.dart' as cita_data;
 import 'package:autofix/features/citas/presentation/citas_controller.dart';
+import 'package:autofix/features/configuracion/data/grupo_servicio_item_repository.dart';
+import 'package:autofix/features/configuracion/data/grupo_servicio_repository.dart';
+import 'package:autofix/features/configuracion/data/marca_repository.dart';
 import 'package:autofix/features/configuracion/data/tecnico_repository.dart';
 import 'package:autofix/features/configuracion/data/tipo_servicio_repository.dart';
+import 'package:autofix/features/configuracion/models/grupo_servicio.dart';
+import 'package:autofix/features/configuracion/models/grupo_servicio_item.dart';
+import 'package:autofix/features/configuracion/models/marca.dart';
 import 'package:autofix/features/configuracion/models/tecnico.dart';
 import 'package:autofix/features/configuracion/models/tipo_servicio.dart';
 import 'package:autofix/features/sync/sync_service.dart';
 import 'package:autofix/shared/models/cita_admin.dart';
-import 'package:autofix/shared/models/demo_admin_data.dart';
 import 'package:autofix/shared/theme/app_colors.dart';
 
 import 'dashboard_admin_screen.dart';
@@ -28,18 +33,29 @@ import 'editar_perfil_admin_screen.dart';
 const Map<String, Color> kColorPorEstado = {
   'ATRASADAS': AppColors.atrasadas,
   'Pendiente': AppColors.pendientes,
-  'Aceptada': AppColors.greenAccent,
-  'Rechazada': AppColors.atrasadas,
   'Esperando Pieza': AppColors.esperandoPieza,
   'En proceso': AppColors.enProceso,
   'Completado': AppColors.completado,
 };
+
+/// Estados disponibles para el dropdown de edición de citas.
+const List<String> kEstadosCitaAdmin = [
+  'Pendiente',
+  'Aceptada',
+  'Esperando Pieza',
+  'En proceso',
+  'Completado',
+  'Rechazada',
+];
 
 class CitaAdminCard extends StatelessWidget {
   const CitaAdminCard({
     required this.cita,
     this.serviciosDisponibles = const <TipoServicio>[],
     this.tecnicosDisponibles = const <Tecnico>[],
+    this.gruposServicio = const <GrupoServicio>[],
+    this.grupoServicioItems = const <GrupoServicioItem>[],
+    this.marcas = const <Marca>[],
     this.onEdited,
     this.onDeleted,
     this.onEstadoCambiado,
@@ -49,6 +65,9 @@ class CitaAdminCard extends StatelessWidget {
   final CitaAdmin cita;
   final List<TipoServicio> serviciosDisponibles;
   final List<Tecnico> tecnicosDisponibles;
+  final List<GrupoServicio> gruposServicio;
+  final List<GrupoServicioItem> grupoServicioItems;
+  final List<Marca> marcas;
   final ValueChanged<CitaAdmin>? onEdited;
 
   /// Borrado logico: recibe el UUID de la cita (`String` desde la v7), no un
@@ -70,11 +89,9 @@ class CitaAdminCard extends StatelessWidget {
       case EstadoCitaAdmin.atrasada:
         return 'Atrasadas';
       case EstadoCitaAdmin.pendiente:
-        return 'Pendiente';
       case EstadoCitaAdmin.aceptada:
-        return 'Aceptada';
       case EstadoCitaAdmin.rechazada:
-        return 'Rechazada';
+        return 'Pendiente';
       case EstadoCitaAdmin.esperandoPieza:
         return 'Esperando Pieza';
       case EstadoCitaAdmin.enProceso:
@@ -89,11 +106,9 @@ class CitaAdminCard extends StatelessWidget {
       case EstadoCitaAdmin.atrasada:
         return AppColors.atrasadas;
       case EstadoCitaAdmin.pendiente:
-        return AppColors.pendientes;
       case EstadoCitaAdmin.aceptada:
-        return AppColors.greenAccent;
       case EstadoCitaAdmin.rechazada:
-        return AppColors.atrasadas;
+        return AppColors.pendientes;
       case EstadoCitaAdmin.esperandoPieza:
         return AppColors.esperandoPieza;
       case EstadoCitaAdmin.enProceso:
@@ -371,6 +386,9 @@ class CitaAdminCard extends StatelessWidget {
         cita: cita,
         serviciosDisponibles: serviciosDisponibles,
         tecnicosDisponibles: tecnicosDisponibles,
+        gruposServicio: gruposServicio,
+        grupoServicioItems: grupoServicioItems,
+        marcas: marcas,
         onSaved: (citaActualizada) {
           onEdited?.call(citaActualizada);
         },
@@ -585,7 +603,21 @@ class CitaAdminCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final statusColor = _estadoColor(cita.estado);
     final statusLabel = _estadoTexto(cita.estado);
-    final statusOptions = [...demoEstadosAdmin];
+    
+    // Una vez aceptada/rechazada, no puede volver a "Pendiente" (solicitudes de citas)
+    final estadosPosAceptacion = {
+      EstadoCitaAdmin.aceptada,
+      EstadoCitaAdmin.rechazada,
+      EstadoCitaAdmin.esperandoPieza,
+      EstadoCitaAdmin.enProceso,
+      EstadoCitaAdmin.completada,
+    };
+    final puedeVolverAPendiente = !estadosPosAceptacion.contains(cita.estado);
+    
+    final statusOptions = [...kEstadosCitaAdmin];
+    if (!puedeVolverAPendiente) {
+      statusOptions.remove('Pendiente');
+    }
     if (statusLabel == 'Atrasadas') statusOptions.insert(0, statusLabel);
     final fields = [
       _Field(label: 'CLIENTE', value: cita.cliente),
@@ -683,8 +715,6 @@ class CitaAdminCard extends StatelessWidget {
                         if (nuevoEstado == null) return;
                         final nuevoEstadoEnum = switch (nuevoEstado) {
                           'Pendiente' => EstadoCitaAdmin.pendiente,
-                          'Aceptada' => EstadoCitaAdmin.aceptada,
-                          'Rechazada' => EstadoCitaAdmin.rechazada,
                           'Esperando Pieza' => EstadoCitaAdmin.esperandoPieza,
                           'En proceso' => EstadoCitaAdmin.enProceso,
                           'Completado' => EstadoCitaAdmin.completada,
@@ -862,12 +892,18 @@ class _EditarCitaDialog extends StatefulWidget {
     required this.onSaved,
     required this.serviciosDisponibles,
     required this.tecnicosDisponibles,
+    required this.gruposServicio,
+    required this.grupoServicioItems,
+    required this.marcas,
   });
 
   final CitaAdmin cita;
   final ValueChanged<CitaAdmin> onSaved;
   final List<TipoServicio> serviciosDisponibles;
   final List<Tecnico> tecnicosDisponibles;
+  final List<GrupoServicio> gruposServicio;
+  final List<GrupoServicioItem> grupoServicioItems;
+  final List<Marca> marcas;
 
   @override
   State<_EditarCitaDialog> createState() => _EditarCitaDialogState();
@@ -902,9 +938,10 @@ class _EditarCitaDialogState extends State<_EditarCitaDialog> {
     );
     _fecha = widget.cita.fecha;
     _hora = widget.cita.hora;
-    _marcaSeleccionada = demoMarcasVehiculo.contains(widget.cita.marca)
+    final nombresMarcas = widget.marcas.where((m) => m.activo).map((m) => m.nombre).toList();
+    _marcaSeleccionada = nombresMarcas.contains(widget.cita.marca)
         ? widget.cita.marca
-        : demoMarcasVehiculo.first;
+        : (nombresMarcas.isNotEmpty ? nombresMarcas.first : null);
     _tecnicoSeleccionado =
         widget.tecnicosDisponibles.any(
           (tecnico) => tecnico.nombre == widget.cita.tecnico,
@@ -914,8 +951,8 @@ class _EditarCitaDialogState extends State<_EditarCitaDialog> {
     _estadoSeleccionado = switch (widget.cita.estado) {
       EstadoCitaAdmin.atrasada => 'Pendiente',
       EstadoCitaAdmin.pendiente => 'Pendiente',
-      EstadoCitaAdmin.aceptada => 'Aceptada',
-      EstadoCitaAdmin.rechazada => 'Rechazada',
+      EstadoCitaAdmin.aceptada => 'Pendiente',
+      EstadoCitaAdmin.rechazada => 'Pendiente',
       EstadoCitaAdmin.esperandoPieza => 'Esperando Pieza',
       EstadoCitaAdmin.enProceso => 'En proceso',
       EstadoCitaAdmin.completada => 'Completado',
@@ -961,6 +998,128 @@ class _EditarCitaDialogState extends State<_EditarCitaDialog> {
 
   String _formatearFechaCorta(DateTime fecha) =>
       '${fecha.day.toString().padLeft(2, '0')}/${fecha.month.toString().padLeft(2, '0')}/${fecha.year}';
+
+  Widget _buildServiciosAgrupados() {
+    // Servicios sin grupo asignado
+    final serviciosConGrupo = <String>{};
+    for (final item in widget.grupoServicioItems) {
+      serviciosConGrupo.add(item.tipoServicioId);
+    }
+    final serviciosSinGrupo = widget.serviciosDisponibles
+        .where((s) => !serviciosConGrupo.contains(s.id))
+        .toList();
+
+    // Mapa de grupo -> lista de servicios
+    final Map<String, List<TipoServicio>> serviciosPorGrupo = {};
+    for (final grupo in widget.gruposServicio) {
+      final servicioIds = widget.grupoServicioItems
+          .where((item) => item.grupoId == grupo.id && item.activo)
+          .map((item) => item.tipoServicioId)
+          .toSet();
+      final servicios = widget.serviciosDisponibles
+          .where((s) => servicioIds.contains(s.id))
+          .toList();
+      if (servicios.isNotEmpty) {
+        serviciosPorGrupo[grupo.nombre] = servicios;
+      }
+    }
+
+    return Column(
+      children: [
+        // Grupos con servicios
+        ...serviciosPorGrupo.entries.map((entry) {
+          final grupoNombre = entry.key;
+          final servicios = entry.value;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                color: const Color(0xFFF3F5F8),
+                child: Text(
+                  grupoNombre.toUpperCase(),
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textGray,
+                  ),
+                ),
+              ),
+              ...servicios.map(
+                (servicio) => CheckboxListTile(
+                  dense: true,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  value: _serviciosMarcados.contains(servicio.nombre),
+                  onChanged: (checked) {
+                    setState(() {
+                      if (checked == true) {
+                        _serviciosMarcados.add(servicio.nombre);
+                      } else {
+                        _serviciosMarcados.remove(servicio.nombre);
+                      }
+                    });
+                  },
+                  title: Text(
+                    '${servicio.nombre} · RD\$ ${servicio.precio}',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+              ),
+            ],
+          );
+        }),
+        // Servicios sin grupo
+        if (serviciosSinGrupo.isNotEmpty) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(
+              horizontal: 10,
+              vertical: 8,
+            ),
+            color: const Color(0xFFF3F5F8),
+            child: const Text(
+              'SIN GRUPO',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textGray,
+              ),
+            ),
+          ),
+          ...serviciosSinGrupo.map(
+            (servicio) => CheckboxListTile(
+              dense: true,
+              controlAffinity: ListTileControlAffinity.leading,
+              value: _serviciosMarcados.contains(servicio.nombre),
+              onChanged: (checked) {
+                setState(() {
+                  if (checked == true) {
+                    _serviciosMarcados.add(servicio.nombre);
+                  } else {
+                    _serviciosMarcados.remove(servicio.nombre);
+                  }
+                });
+              },
+              title: Text(
+                '${servicio.nombre} · RD\$ ${servicio.precio}',
+                style: const TextStyle(fontSize: 13),
+              ),
+            ),
+          ),
+        ],
+        // Sin servicios
+        if (widget.serviciosDisponibles.isEmpty)
+          const ListTile(
+            dense: true,
+            title: Text('No hay servicios activos configurados.'),
+          ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1047,17 +1206,18 @@ class _EditarCitaDialogState extends State<_EditarCitaDialog> {
                             child: DropdownButtonFormField<String>(
                               initialValue: _marcaSeleccionada,
                               decoration: _decoracionCampo('Marca'),
-                              items: demoMarcasVehiculo
-                                  .map(
-                                    (m) => DropdownMenuItem(
-                                      value: m,
-                                      child: Text(
-                                        m,
-                                        style: const TextStyle(fontSize: 13),
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
+items: widget.marcas
+    .where((m) => m.activo)
+    .map(
+      (m) => DropdownMenuItem(
+        value: m.nombre,
+        child: Text(
+          m.nombre,
+          style: const TextStyle(fontSize: 13),
+        ),
+      ),
+    )
+    .toList(),
                               onChanged: (valor) =>
                                   setState(() => _marcaSeleccionada = valor),
                             ),
@@ -1106,59 +1266,7 @@ class _EditarCitaDialogState extends State<_EditarCitaDialog> {
                           border: Border.all(color: AppColors.inputBorder),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Column(
-                          children: [
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 8,
-                              ),
-                              color: const Color(0xFFF3F5F8),
-                              child: const Text(
-                                'TIPOS DE SERVICIO',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.textGray,
-                                ),
-                              ),
-                            ),
-                            if (widget.serviciosDisponibles.isEmpty)
-                              const ListTile(
-                                dense: true,
-                                title: Text(
-                                  'No hay servicios activos configurados.',
-                                ),
-                              )
-                            else
-                              ...widget.serviciosDisponibles.map(
-                                (servicio) => CheckboxListTile(
-                                  dense: true,
-                                  controlAffinity:
-                                      ListTileControlAffinity.leading,
-                                  value: _serviciosMarcados.contains(
-                                    servicio.nombre,
-                                  ),
-                                  onChanged: (checked) {
-                                    setState(() {
-                                      if (checked == true) {
-                                        _serviciosMarcados.add(servicio.nombre);
-                                      } else {
-                                        _serviciosMarcados.remove(
-                                          servicio.nombre,
-                                        );
-                                      }
-                                    });
-                                  },
-                                  title: Text(
-                                    '${servicio.nombre} · RD\$ ${servicio.precio}',
-                                    style: const TextStyle(fontSize: 13),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
+child: _buildServiciosAgrupados(),
                       ),
                       const SizedBox(height: 16),
                       const Text(
@@ -1262,7 +1370,7 @@ class _EditarCitaDialogState extends State<_EditarCitaDialog> {
                       DropdownButtonFormField<String>(
                         initialValue: _estadoSeleccionado,
                         decoration: _decoracionCampo('Estado'),
-                        items: demoEstadosAdmin
+                        items: kEstadosCitaAdmin
                             .map(
                               (e) => DropdownMenuItem(
                                 value: e,
@@ -1311,8 +1419,6 @@ class _EditarCitaDialogState extends State<_EditarCitaDialog> {
                     estado: switch (_estadoSeleccionado) {
                       'Atrasadas' => EstadoCitaAdmin.atrasada,
                       'Pendiente' => EstadoCitaAdmin.pendiente,
-                      'Aceptada' => EstadoCitaAdmin.aceptada,
-                      'Rechazada' => EstadoCitaAdmin.rechazada,
                       'Esperando Pieza' => EstadoCitaAdmin.esperandoPieza,
                       'En proceso' => EstadoCitaAdmin.enProceso,
                       'Completado' => EstadoCitaAdmin.completada,
@@ -1494,6 +1600,9 @@ class _CitasScreenState extends State<CitasScreen> {
   final CitasController _citasController = CitasController();
   List<TipoServicio> _serviciosDisponibles = const <TipoServicio>[];
   List<Tecnico> _tecnicosDisponibles = const <Tecnico>[];
+  List<GrupoServicio> _gruposServicio = const <GrupoServicio>[];
+  List<GrupoServicioItem> _grupoServicioItems = const <GrupoServicioItem>[];
+  List<Marca> _marcasDisponibles = const <Marca>[];
   bool _cargandoCatalogos = true;
 
   @override
@@ -1521,6 +1630,9 @@ class _CitasScreenState extends State<CitasScreen> {
       setState(() {
         _serviciosDisponibles = const <TipoServicio>[];
         _tecnicosDisponibles = const <Tecnico>[];
+        _gruposServicio = const <GrupoServicio>[];
+        _grupoServicioItems = const <GrupoServicioItem>[];
+        _marcasDisponibles = const <Marca>[];
         _cargandoCatalogos = false;
       });
       return;
@@ -1531,13 +1643,22 @@ class _CitasScreenState extends State<CitasScreen> {
       final resultados = await Future.wait(<Future<Object?>>[
         TipoServicioRepository.instance.obtenerTodasPorTaller(tallerId),
         TecnicoRepository.instance.obtenerActivosPorTaller(tallerId),
+        GrupoServicioRepository.instance.obtenerActivosPorTaller(tallerId),
+        MarcaRepository.instance.obtenerActivasPorTaller(tallerId),
       ]);
       if (!mounted || SesionAdmin.instance.tallerId != tallerId) return;
+
+      // Obtener items de grupos-servicios
+      final items = await GrupoServicioItemRepository.instance.obtenerActivosPorTaller(tallerId);
+
       setState(() {
         _serviciosDisponibles = (resultados[0] as List<TipoServicio>)
             .where((servicio) => servicio.activo)
             .toList(growable: false);
         _tecnicosDisponibles = resultados[1] as List<Tecnico>;
+        _gruposServicio = resultados[2] as List<GrupoServicio>;
+        _marcasDisponibles = resultados[3] as List<Marca>;
+        _grupoServicioItems = items.where((item) => item.activo).toList(growable: false);
         _cargandoCatalogos = false;
         if (_tecnicoFiltro != null &&
             !_tecnicosDisponibles.any(
@@ -1618,11 +1739,12 @@ class _CitasScreenState extends State<CitasScreen> {
     final estado = switch (cita.estado) {
       EstadoCitaAdmin.atrasada => cita_data.EstadoCita.pendiente,
       EstadoCitaAdmin.pendiente => cita_data.EstadoCita.pendiente,
-      EstadoCitaAdmin.aceptada => cita_data.EstadoCita.aceptada,
-      EstadoCitaAdmin.rechazada => cita_data.EstadoCita.rechazada,
-      EstadoCitaAdmin.esperandoPieza => cita_data.EstadoCita.esperandoPieza,
-      EstadoCitaAdmin.enProceso => cita_data.EstadoCita.enProceso,
-      EstadoCitaAdmin.completada => cita_data.EstadoCita.completado,
+      EstadoCitaAdmin.aceptada => cita_data.EstadoCita.pendiente,
+      // Lado del cliente: todo lo posterior a "aceptada" se ve como "aceptada"
+      EstadoCitaAdmin.rechazada => cita_data.EstadoCita.pendiente,
+      EstadoCitaAdmin.esperandoPieza => cita_data.EstadoCita.aceptada,
+      EstadoCitaAdmin.enProceso => cita_data.EstadoCita.aceptada,
+      EstadoCitaAdmin.completada => cita_data.EstadoCita.aceptada,
     };
     final fechaCita = DateTime(
       cita.fecha.year,
@@ -1679,10 +1801,11 @@ class _CitasScreenState extends State<CitasScreen> {
         ? EstadoCitaAdmin.atrasada
         : switch (cita.estado) {
             cita_data.EstadoCita.pendiente => EstadoCitaAdmin.pendiente,
-            cita_data.EstadoCita.aceptada => EstadoCitaAdmin.aceptada,
-            cita_data.EstadoCita.rechazada => EstadoCitaAdmin.rechazada,
-            cita_data.EstadoCita.esperandoPieza =>
-              EstadoCitaAdmin.esperandoPieza,
+            // BD tiene 'aceptada' pero en admin se muestra como 'Pendiente'
+            cita_data.EstadoCita.aceptada => EstadoCitaAdmin.pendiente,
+            // BD tiene 'rechazada' pero en admin se muestra como 'Pendiente'
+            cita_data.EstadoCita.rechazada => EstadoCitaAdmin.pendiente,
+            cita_data.EstadoCita.esperandoPieza => EstadoCitaAdmin.esperandoPieza,
             cita_data.EstadoCita.enProceso => EstadoCitaAdmin.enProceso,
             cita_data.EstadoCita.completado => EstadoCitaAdmin.completada,
           };
@@ -1734,8 +1857,8 @@ class _CitasScreenState extends State<CitasScreen> {
     if (nuevo == EstadoCitaAdmin.atrasada) return;
     final estado = switch (nuevo) {
       EstadoCitaAdmin.pendiente => cita_data.EstadoCita.pendiente,
-      EstadoCitaAdmin.aceptada => cita_data.EstadoCita.aceptada,
-      EstadoCitaAdmin.rechazada => cita_data.EstadoCita.rechazada,
+      EstadoCitaAdmin.aceptada => cita_data.EstadoCita.pendiente,
+      EstadoCitaAdmin.rechazada => cita_data.EstadoCita.pendiente,
       EstadoCitaAdmin.esperandoPieza => cita_data.EstadoCita.esperandoPieza,
       EstadoCitaAdmin.enProceso => cita_data.EstadoCita.enProceso,
       EstadoCitaAdmin.completada => cita_data.EstadoCita.completado,
@@ -1749,23 +1872,38 @@ class _CitasScreenState extends State<CitasScreen> {
   /// fila como `pending` y solicita a SyncService subirla cuando haya red.
   Future<void> _responderSolicitud(
     cita_data.Cita cita,
-    cita_data.EstadoCita estado,
-  ) async {
+    cita_data.EstadoCita estado, {
+    String? motivoRechazo,
+  }) async {
     final id = cita.id;
     if (id == null) {
       _mostrarErrorPersistencia();
       return;
     }
 
-    final guardada = await _citasController.cambiarEstado(id, estado);
-    if (!mounted) return;
-    if (!guardada) {
-      _mostrarErrorPersistencia();
-      return;
+    if (estado == cita_data.EstadoCita.aceptada) {
+      // Aceptar: pasa a "aceptada" -> aparece en accordion "Pendiente"
+      final guardada = await _citasController.cambiarEstado(id, cita_data.EstadoCita.aceptada);
+      if (!mounted) return;
+      if (!guardada) {
+        _mostrarErrorPersistencia();
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Solicitud aceptada.')),
+      );
+    } else if (estado == cita_data.EstadoCita.rechazada) {
+      // Rechazar: pasa a "rechazada" con motivo -> desaparece de "Solicitudes" y en cliente se ve "Rechazada"
+      final guardada = await _citasController.cambiarEstado(id, cita_data.EstadoCita.rechazada, motivoRechazo: motivoRechazo);
+      if (!mounted) return;
+      if (!guardada) {
+        _mostrarErrorPersistencia();
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Solicitud rechazada.')),
+      );
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Solicitud ${estado.etiqueta.toLowerCase()}.')),
-    );
   }
 
   /// BORRADO LOGICO desde la v7: `_citasController.eliminar` no borra la fila,
@@ -2520,6 +2658,9 @@ class _CitasScreenState extends State<CitasScreen> {
                           cita: _citaParaTarjeta(cita),
                           serviciosDisponibles: _serviciosDisponibles,
                           tecnicosDisponibles: _tecnicosDisponibles,
+                          gruposServicio: _gruposServicio,
+                          grupoServicioItems: _grupoServicioItems,
+                          marcas: _marcasDisponibles,
                           onEdited: (citaActualizada) {
                             _guardarEdicion(citaActualizada);
                           },
@@ -2576,6 +2717,9 @@ class _CitasScreenState extends State<CitasScreen> {
         return _CrearCitaDialog(
           serviciosDisponibles: _serviciosDisponibles,
           tecnicosDisponibles: _tecnicosDisponibles,
+          gruposServicio: _gruposServicio,
+          grupoServicioItems: _grupoServicioItems,
+          marcas: _marcasDisponibles,
           onSaved: (cita) async {
             final guardada = await _citasController.guardar(cita);
             if (!mounted) return guardada;
@@ -2595,11 +2739,17 @@ class _CrearCitaDialog extends StatefulWidget {
     required this.onSaved,
     required this.serviciosDisponibles,
     required this.tecnicosDisponibles,
+    required this.gruposServicio,
+    required this.grupoServicioItems,
+    required this.marcas,
   });
 
   final Future<bool> Function(cita_data.Cita cita) onSaved;
   final List<TipoServicio> serviciosDisponibles;
   final List<Tecnico> tecnicosDisponibles;
+  final List<GrupoServicio> gruposServicio;
+  final List<GrupoServicioItem> grupoServicioItems;
+  final List<Marca> marcas;
 
   @override
   State<_CrearCitaDialog> createState() => _CrearCitaDialogState();
@@ -2702,6 +2852,128 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
           letterSpacing: 0.5,
         ),
       ),
+    );
+  }
+
+  Widget _buildServiciosAgrupados() {
+    // Servicios sin grupo asignado
+    final serviciosConGrupo = <String>{};
+    for (final item in widget.grupoServicioItems) {
+      serviciosConGrupo.add(item.tipoServicioId);
+    }
+    final serviciosSinGrupo = widget.serviciosDisponibles
+        .where((s) => !serviciosConGrupo.contains(s.id))
+        .toList();
+
+    // Mapa de grupo -> lista de servicios
+    final Map<String, List<TipoServicio>> serviciosPorGrupo = {};
+    for (final grupo in widget.gruposServicio) {
+      final servicioIds = widget.grupoServicioItems
+          .where((item) => item.grupoId == grupo.id && item.activo)
+          .map((item) => item.tipoServicioId)
+          .toSet();
+      final servicios = widget.serviciosDisponibles
+          .where((s) => servicioIds.contains(s.id))
+          .toList();
+      if (servicios.isNotEmpty) {
+        serviciosPorGrupo[grupo.nombre] = servicios;
+      }
+    }
+
+    return Column(
+      children: [
+        // Grupos con servicios
+        ...serviciosPorGrupo.entries.map((entry) {
+          final grupoNombre = entry.key;
+          final servicios = entry.value;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                color: const Color(0xFFF3F5F8),
+                child: Text(
+                  grupoNombre.toUpperCase(),
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textGray,
+                  ),
+                ),
+              ),
+              ...servicios.map(
+                (servicio) => CheckboxListTile(
+                  dense: true,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  value: _serviciosMarcados.contains(servicio.nombre),
+                  onChanged: (checked) {
+                    setState(() {
+                      if (checked == true) {
+                        _serviciosMarcados.add(servicio.nombre);
+                      } else {
+                        _serviciosMarcados.remove(servicio.nombre);
+                      }
+                    });
+                  },
+                  title: Text(
+                    '${servicio.nombre} · RD\$ ${servicio.precio}',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+              ),
+            ],
+          );
+        }),
+        // Servicios sin grupo
+        if (serviciosSinGrupo.isNotEmpty) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(
+              horizontal: 10,
+              vertical: 8,
+            ),
+            color: const Color(0xFFF3F5F8),
+            child: const Text(
+              'SIN GRUPO',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textGray,
+              ),
+            ),
+          ),
+          ...serviciosSinGrupo.map(
+            (servicio) => CheckboxListTile(
+              dense: true,
+              controlAffinity: ListTileControlAffinity.leading,
+              value: _serviciosMarcados.contains(servicio.nombre),
+              onChanged: (checked) {
+                setState(() {
+                  if (checked == true) {
+                    _serviciosMarcados.add(servicio.nombre);
+                  } else {
+                    _serviciosMarcados.remove(servicio.nombre);
+                  }
+                });
+              },
+              title: Text(
+                '${servicio.nombre} · RD\$ ${servicio.precio}',
+                style: const TextStyle(fontSize: 13),
+              ),
+            ),
+          ),
+        ],
+        // Sin servicios
+        if (widget.serviciosDisponibles.isEmpty)
+          const ListTile(
+            dense: true,
+            title: Text('No hay servicios activos configurados.'),
+          ),
+      ],
     );
   }
 
@@ -2847,17 +3119,18 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                                   'Seleccionar',
                                   style: TextStyle(fontSize: 13),
                                 ),
-                                items: demoMarcasVehiculo
-                                    .map(
-                                      (m) => DropdownMenuItem(
-                                        value: m,
-                                        child: Text(
-                                          m,
-                                          style: const TextStyle(fontSize: 13),
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
+items: widget.marcas
+    .where((m) => m.activo)
+    .map(
+      (m) => DropdownMenuItem(
+        value: m.nombre,
+        child: Text(
+          m.nombre,
+          style: const TextStyle(fontSize: 13),
+        ),
+      ),
+    )
+    .toList(),
                                 onChanged: (valor) =>
                                     setState(() => _marcaSeleccionada = valor),
                               ),
@@ -2942,61 +3215,7 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                             border: Border.all(color: AppColors.inputBorder),
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: Column(
-                            children: [
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 8,
-                                ),
-                                color: const Color(0xFFF3F5F8),
-                                child: const Text(
-                                  'TIPOS DE SERVICIO',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.textGray,
-                                  ),
-                                ),
-                              ),
-                              if (widget.serviciosDisponibles.isEmpty)
-                                const ListTile(
-                                  dense: true,
-                                  title: Text(
-                                    'No hay servicios activos configurados.',
-                                  ),
-                                )
-                              else
-                                ...widget.serviciosDisponibles.map(
-                                  (servicio) => CheckboxListTile(
-                                    dense: true,
-                                    controlAffinity:
-                                        ListTileControlAffinity.leading,
-                                    value: _serviciosMarcados.contains(
-                                      servicio.nombre,
-                                    ),
-                                    onChanged: (checked) {
-                                      setState(() {
-                                        if (checked == true) {
-                                          _serviciosMarcados.add(
-                                            servicio.nombre,
-                                          );
-                                        } else {
-                                          _serviciosMarcados.remove(
-                                            servicio.nombre,
-                                          );
-                                        }
-                                      });
-                                    },
-                                    title: Text(
-                                      '${servicio.nombre} · RD\$ ${servicio.precio}',
-                                      style: const TextStyle(fontSize: 13),
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
+                          child: _buildServiciosAgrupados(),
                         ),
                         if (_intentoGuardar && _serviciosMarcados.isEmpty) ...[
                           const SizedBox(height: 6),
@@ -3157,7 +3376,7 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                         DropdownButtonFormField<String>(
                           initialValue: _estadoSeleccionado,
                           decoration: _decoracionCampo('Estado'),
-                          items: demoEstadosAdmin
+                          items: kEstadosCitaAdmin
                               .map(
                                 (e) => DropdownMenuItem(
                                   value: e,
@@ -3214,8 +3433,6 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                             }
 
                             final estado = switch (_estadoSeleccionado) {
-                              'Aceptada' => cita_data.EstadoCita.aceptada,
-                              'Rechazada' => cita_data.EstadoCita.rechazada,
                               'Esperando Pieza' =>
                                 cita_data.EstadoCita.esperandoPieza,
                               'En proceso' => cita_data.EstadoCita.enProceso,

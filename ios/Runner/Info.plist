@@ -5,6 +5,8 @@
 	<!-- Sin esta clave iOS TERMINA la app al pedir el permiso de ubicacion. -->
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>AutoFix usa tu ubicacion para mostrarte los talleres mas cercanos.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>AutoFix usa la cámara para escanear códigos QR de citas.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

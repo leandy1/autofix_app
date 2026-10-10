@@ -3,8 +3,33 @@ import 'package:flutter/material.dart';
 import 'package:autofix/features/cliente/widgets/cliente_section_widgets.dart';
 import 'package:autofix/features/cliente/widgets/taller_cliente_widgets.dart';
 import 'package:autofix/shared/models/cliente_dashboard_data.dart';
-import 'package:autofix/shared/models/demo_cliente_data.dart';
 import 'package:autofix/shared/theme/app_colors.dart';
+
+/// Talleres de demostración para la vista del cliente.
+/// En producción esto vendría de la base de datos / API.
+const List<TallerCliente> talleresCliente = [
+  TallerCliente(
+    nombre: 'AutoFix Central',
+    direccion: 'Av. Winston Churchill, Santo Domingo',
+    distancia: '1.2 km',
+    calificacion: '4.8',
+    horario: 'Abierto · Cierra a las 6:00 p. m.',
+  ),
+  TallerCliente(
+    nombre: 'Taller Los Prados',
+    direccion: 'Calle Olof Palme, Los Prados',
+    distancia: '2.4 km',
+    calificacion: '4.6',
+    horario: 'Abierto · Cierra a las 5:30 p. m.',
+  ),
+  TallerCliente(
+    nombre: 'Servicio Motor Express',
+    direccion: 'Av. 27 de Febrero, Evaristo Morales',
+    distancia: '3.1 km',
+    calificacion: '4.5',
+    horario: 'Abierto · Cierra a las 7:00 p. m.',
+  ),
+];
 
 class TalleresClienteSection extends StatefulWidget {
   const TalleresClienteSection({

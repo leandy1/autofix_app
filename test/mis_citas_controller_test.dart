@@ -252,4 +252,42 @@ void main() {
       }
     });
   });
+
+  group('motivo de rechazo', () {
+    test('cita rechazada con motivo lo muestra en el item', () async {
+      final id = await repoCitas.crear(
+        citaEn(DateTime.now().add(const Duration(days: 1))).copyWith(
+          estado: EstadoCita.rechazada,
+          motivoRechazo: 'Taller completo para esa fecha',
+        ),
+      );
+
+      final controller = nuevoController();
+      await controller.cargar();
+
+      expect(controller.hayCitas, isTrue);
+      final item = controller.items.single;
+      expect(item.cita.estado, EstadoCita.rechazada);
+      expect(item.cita.motivoRechazo, 'Taller completo para esa fecha');
+      expect(item.etiqueta, 'Rechazada');
+    });
+
+    test('cita rechazada sin motivo no muestra motivo vacio', () async {
+      await repoCitas.crear(
+        citaEn(DateTime.now().add(const Duration(days: 1))).copyWith(
+          estado: EstadoCita.rechazada,
+          motivoRechazo: '',
+        ),
+      );
+
+      final controller = nuevoController();
+      await controller.cargar();
+
+      expect(controller.hayCitas, isTrue);
+      final item = controller.items.single;
+      expect(item.cita.estado, EstadoCita.rechazada);
+      expect(item.cita.motivoRechazo, isNull); // vacio se guarda como NULL
+      expect(item.etiqueta, 'Rechazada');
+    });
+  });
 }

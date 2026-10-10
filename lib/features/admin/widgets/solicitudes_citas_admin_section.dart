@@ -14,7 +14,7 @@ class SolicitudesCitasAdminSection extends StatelessWidget {
   });
 
   final List<Cita> citas;
-  final Future<void> Function(Cita cita, EstadoCita estado) onCambiarEstado;
+  final Future<void> Function(Cita cita, EstadoCita estado, {String? motivoRechazo}) onCambiarEstado;
   final bool cargando;
 
   @override
@@ -145,7 +145,7 @@ class _SolicitudPendienteCard extends StatefulWidget {
   });
 
   final Cita cita;
-  final Future<void> Function(Cita cita, EstadoCita estado) onCambiarEstado;
+  final Future<void> Function(Cita cita, EstadoCita estado, {String? motivoRechazo}) onCambiarEstado;
 
   @override
   State<_SolicitudPendienteCard> createState() =>
@@ -157,12 +157,56 @@ class _SolicitudPendienteCardState extends State<_SolicitudPendienteCard> {
 
   Future<void> _responder(EstadoCita estado) async {
     if (_guardando) return;
-    setState(() => _guardando = true);
-    try {
-      await widget.onCambiarEstado(widget.cita, estado);
-    } finally {
-      if (mounted) setState(() => _guardando = false);
+
+    if (estado == EstadoCita.rechazada) {
+      final motivo = await _mostrarDialogoMotivoRechazo();
+      if (motivo == null || motivo.trim().isEmpty) return;
+      setState(() => _guardando = true);
+      try {
+        await widget.onCambiarEstado(widget.cita, estado, motivoRechazo: motivo.trim());
+      } finally {
+        if (mounted) setState(() => _guardando = false);
+      }
+    } else {
+      setState(() => _guardando = true);
+      try {
+        await widget.onCambiarEstado(widget.cita, estado);
+      } finally {
+        if (mounted) setState(() => _guardando = false);
+      }
     }
+  }
+
+  Future<String?> _mostrarDialogoMotivoRechazo() async {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Motivo de rechazo'),
+        content: TextField(
+          controller: controller,
+          maxLines: 3,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: 'Escriba el motivo de la cancelación...',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.atrasadas,
+            ),
+            child: const Text('Rechazar'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override

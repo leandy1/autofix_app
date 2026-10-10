@@ -244,6 +244,7 @@ class LoginController extends ChangeNotifier {
       );
       authValidada = true;
       final uid = credenciales.user?.uid;
+      debugPrint('🔐 LOGIN CLIENTE: Auth OK, uid=$uid');
       if (uid == null) {
         _error = 'No se pudo identificar la cuenta de cliente.';
         await _cerrarAuthActual();
@@ -251,10 +252,12 @@ class LoginController extends ChangeNotifier {
       }
 
       final perfil = await _clientes.obtener(uid);
+      debugPrint('🔐 LOGIN CLIENTE: perfil desde Firestore = $perfil');
       if (perfil == null) {
         // Evita que una cuenta admin o un usuario sin perfil cliente acceda al
         // dashboard de cliente por cambiar el selector de rol.
         final admin = await _db.collection('admins').doc(uid).get();
+        debugPrint('🔐 LOGIN CLIENTE: admin doc exists = ${admin.exists}');
         _error = admin.exists
             ? 'Esta cuenta pertenece a un administrador. Selecciona Admin.'
             : 'El usuario no tiene permisos de cliente.';

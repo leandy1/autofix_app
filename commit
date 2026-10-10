@@ -1,0 +1,65 @@
+# Cambios realizados - 2026-10-10
+
+## 1. QR Scanner para Admin (Escaneo de citas con cámara)
+**Archivos:**
+- `pubspec.yaml` - Agregada dependencia `mobile_scanner: ^5.2.0`
+- `android/app/src/main/AndroidManifest.xml` - Permiso CAMERA
+- `ios/Runner/Info.plist` - NSCameraUsageDescription
+- `lib/features/admin/widgets/qr_scanner_widget.dart` - Nuevo widget QrScannerWidget y QrScannerScreen
+- `lib/features/admin/screens/dashboard_admin_screen.dart` - Integración del botón "Escanear QR" que abre la cámara y muestra dialog con info de la cita
+
+**Funcionalidad:** El admin puede escanear códigos QR de citas (formato "CITA-XXXX") con la cámara del dispositivo. Al escanear, busca la cita en la base local y muestra un dialog con detalles (cliente, vehículo, fecha, estado, servicios).
+
+---
+
+## 2. Cancelar/Borrar cita para Cliente
+**Archivos:**
+- `lib/features/cliente/presentation/mis_citas_controller.dart` - Método `cancelarCita()`
+- `lib/features/cliente/screens/mis_citas_cliente_section.dart` - Botón contextual `_BotonCancelarCita`
+
+**Funcionalidad:** El cliente puede cancelar/borrar sus citas en 3 estados:
+- **Pendiente** → "Cancelar solicitud" (antes de que el admin acepte)
+- **Rechazada** → "Borrar cita" (después de que el admin rechace)
+- **Completado** → "Borrar cita" (después de finalizada)
+
+Usa borrado lógico, valida ownership (correo del cliente) y muestra confirmación con mensaje adaptado al estado.
+
+---
+
+## 3. Validación de fecha/hora en Agendar Cita
+**Archivo:** `lib/features/cliente/screens/agendar_cita_cliente_section.dart`
+
+**Funcionalidad:** En `_enviarSolicitud()` se valida que la fecha/hora seleccionada no sea anterior al momento actual. Si lo es, muestra error: "La fecha y hora de la cita no pueden ser anteriores a la actual."
+
+---
+
+## 4. Campo motivo_rechazo visible para Cliente
+**Archivo:** `lib/features/cliente/screens/mis_citas_cliente_section.dart`
+
+**Funcionalidad:** Cuando una cita está en estado "Rechazada" y tiene `motivoRechazo`, se muestra en dos lugares:
+1. En el cuerpo de la tarjeta: "Motivo de cancelación:" + texto
+2. Tarjeta destacada abajo del divider: "Motivo de rechazo" con icono rojo y contenedor tintado
+
+---
+
+## 5. Limpieza de código
+- Eliminados emojis de debug prints (`💾`, `🔍`) en `cita_repository.dart` y `cita.dart`
+- Eliminados imports de datos demo:
+  - `citas_admin_screen.dart`: `demo_admin_data.dart` → constante local `kEstadosCitaAdmin`
+  - `talleres_cliente_section.dart`: `demo_cliente_data.dart` → constante local `talleresCliente` en el mismo archivo
+
+---
+
+## 6. Tests nuevos/actualizados
+- `test/mis_citas_controller_test.dart`: 2 tests nuevos para verificar lectura de `motivoRechazo`
+- `test/cita_repository_test.dart`: Test "rechazar con motivo guarda el motivo en la base"
+- `test/solicitudes_citas_admin_section_test.dart`: Actualizado para interactuar con dialog de rechazo (ingresa motivo y confirma)
+
+---
+
+## Nota técnica
+El campo `motivo_rechazo` se guarda en SQLite solo cuando:
+- El estado es `EstadoCita.rechazada`
+- El motivo no es null ni vacío
+
+Los tests que mostraban `READING motivo_rechazo from DB: type=Null, value="null"` eran tests que llamaban `cambiarEstado(id, EstadoCita.rechazada)` **sin pasar** el parámetro `motivoRechazo`. En producción, el flujo UI **obliga** al admin a escribir un motivo antes de confirmar el rechazo.

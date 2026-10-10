@@ -1132,6 +1132,7 @@ class SyncService extends ChangeNotifier {
         eliminadoPor: data['eliminado_por'] as String?,
         restauradoEn: parseDate(data['restaurado_en']),
       ),
+      motivoRechazo: data['motivo_rechazo'] as String?,
       syncStatus: (data['sync_status'] as String?) ?? 'synced',
     );
   }

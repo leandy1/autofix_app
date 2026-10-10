@@ -149,6 +149,22 @@ void main() {
     },
   );
 
+  test('rechazar con motivo guarda el motivo en la base', () async {
+    final id = await CitaRepository.instance.crear(
+      nueva().copyWith(syncStatus: 'synced'),
+    );
+
+    await CitaRepository.instance.cambiarEstado(
+      id,
+      EstadoCita.rechazada,
+      motivoRechazo: 'Cliente no se presentó',
+    );
+    final releida = await CitaRepository.instance.obtenerPorId(id);
+
+    expect(releida!.estado, EstadoCita.rechazada);
+    expect(releida.motivoRechazo, 'Cliente no se presentó');
+  });
+
   // -------------------------------------------------------------------
   // BORRADO LOGICO (v7)
   //

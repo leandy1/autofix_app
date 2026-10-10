@@ -702,6 +702,13 @@ class _AgendarCitaClienteSectionState extends State<AgendarCitaClienteSection> {
       return;
     }
 
+    // Validar que la fecha y hora no sean anteriores al momento actual
+    final ahora = DateTime.now();
+    if (_fechaCita.isBefore(ahora)) {
+      _mostrarAviso('La fecha y hora de la cita no pueden ser anteriores a la actual.');
+      return;
+    }
+
     final cita = Cita(
       cliente: cliente,
       correoCliente: _correoController.text.trim().toLowerCase(),

@@ -961,8 +961,9 @@ class _CrearCuentaClienteDialogState extends State<_CrearCuentaClienteDialog> {
                         validator: (valor) {
                           final v = valor?.trim() ?? '';
                           if (v.isEmpty) return 'Ingresa tu nombre completo.';
-                          if (v.length < 3)
+                          if (v.length < 3) {
                             return 'El nombre debe tener al menos 3 caracteres.';
+                          }
                           return null;
                         },
                       ),
@@ -973,8 +974,9 @@ class _CrearCuentaClienteDialogState extends State<_CrearCuentaClienteDialog> {
                         decoration: _decoracionCampo('Correo electrónico'),
                         validator: (valor) {
                           final v = valor?.trim() ?? '';
-                          if (v.isEmpty)
+                          if (v.isEmpty) {
                             return 'Ingresa tu correo electrónico.';
+                          }
                           if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
                               .hasMatch(v)) {
                             return 'Ingresa un correo electrónico válido.';
@@ -989,8 +991,9 @@ class _CrearCuentaClienteDialogState extends State<_CrearCuentaClienteDialog> {
                         decoration: _decoracionCampo('Teléfono'),
                         validator: (valor) {
                           final v = valor?.trim() ?? '';
-                          if (v.isEmpty)
+                          if (v.isEmpty) {
                             return 'Ingresa tu número de teléfono.';
+                          }
                           final digitos = v.replaceAll(RegExp(r'\D'), '');
                           if (digitos.length < 10 || digitos.length > 15) {
                             return 'Ingresa un teléfono válido (10 a 15 dígitos).';
@@ -1020,8 +1023,9 @@ class _CrearCuentaClienteDialogState extends State<_CrearCuentaClienteDialog> {
                         validator: (valor) {
                           final v = valor ?? '';
                           if (v.isEmpty) return 'Ingresa una contraseña.';
-                          if (v.length < 6)
+                          if (v.length < 6) {
                             return 'La contraseña debe tener al menos 6 caracteres.';
+                          }
                           return null;
                         },
                       ),

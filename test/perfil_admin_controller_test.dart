@@ -79,7 +79,7 @@ void main() {
         persistir: false,
       );
       final password = CambioPasswordController(
-        aplicarEnNube: (_, __) async {
+        aplicarEnNube: (_, _) async {
           throw FirebaseAuthException(code: 'network-request-failed');
         },
       );

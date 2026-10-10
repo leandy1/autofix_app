@@ -12,13 +12,16 @@ class CuentasAdminScreen extends StatefulWidget {
 
 class _CuentasAdminScreenState extends State<CuentasAdminScreen> {
   final CuentasAdminController _controller = CuentasAdminController();
+  bool _verificandoAcceso = false;
 
   @override
   void initState() {
     super.initState();
     _controller.addListener(_onControllerChange);
     _controller.start();
-    _controller.cargarDatos();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _mostrarVerificacionCorreo();
+    });
   }
 
   @override
@@ -30,10 +33,109 @@ class _CuentasAdminScreenState extends State<CuentasAdminScreen> {
   }
 
   void _onControllerChange() {
+    if (mounted) setState(() {});
+  }
+
+  /// Muestra un diálogo para verificar el correo del administrador
+  /// contra la colección `adminUsers` en Firestore.
+  Future<void> _mostrarVerificacionCorreo() async {
+    if (_verificandoAcceso) return;
+
+    final emailController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    final resultado = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Verificación de Acceso'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Ingrese su correo de administrador para gestionar cuentas:',
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            Form(
+              key: formKey,
+              child: TextFormField(
+                controller: emailController,
+                decoration: const InputDecoration(
+                  labelText: 'Correo electrónico',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.email_outlined),
+                ),
+                keyboardType: TextInputType.emailAddress,
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Ingrese su correo';
+                  }
+                  if (!value.contains('@')) {
+                    return 'Correo inválido';
+                  }
+                  return null;
+                },
+                autofillHints: const [AutofillHints.email],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (!formKey.currentState!.validate()) return;
+              Navigator.of(dialogContext).pop(true);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.orangePrimary),
+            child: const Text('Verificar', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (resultado != true) {
+      // Si cancela, volver a la pantalla anterior
+      if (mounted) Navigator.of(context).pop();
+      return;
+    }
+
+    _verificandoAcceso = true;
     setState(() {});
+
+    final verificado = await _controller.verificarAcceso(emailController.text.trim());
+
+    _verificandoAcceso = false;
+
+    if (!mounted) return;
+    setState(() {});
+
+    if (!verificado) {
+      // Mostrar error y volver a pedir
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_controller.error ?? 'Correo no autorizado'),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+      await _mostrarVerificacionCorreo();
+    } else {
+      // Verificado: cargar datos
+      await _controller.cargarDatos();
+    }
   }
 
   Future<void> _sincronizar() async {
+    if (!_controller.verificado) {
+      await _mostrarVerificacionCorreo();
+      return;
+    }
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Sincronizando con Firebase...')),
     );
@@ -60,6 +162,11 @@ class _CuentasAdminScreenState extends State<CuentasAdminScreen> {
   }
 
   void _mostrarCrearAdmin() {
+    if (!_controller.verificado) {
+      _mostrarVerificacionCorreo();
+      return;
+    }
+
     final activos = _controller.talleres.where((t) => t.activo).toList();
     if (activos.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -95,6 +202,11 @@ class _CuentasAdminScreenState extends State<CuentasAdminScreen> {
   }
 
   Future<void> _confirmarAccionAdmin(Map<String, dynamic> admin) async {
+    if (!_controller.verificado) {
+      await _mostrarVerificacionCorreo();
+      return;
+    }
+
     final eliminado = (admin['eliminado'] as bool?) ?? false;
     final uid = admin['uid']?.toString() ?? '';
     final email = admin['email'] ?? 'este correo';
@@ -148,6 +260,8 @@ class _CuentasAdminScreenState extends State<CuentasAdminScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final verificado = _controller.verificado;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -158,69 +272,112 @@ class _CuentasAdminScreenState extends State<CuentasAdminScreen> {
           IconButton(
             tooltip: 'Sincronizar',
             icon: const Icon(Icons.sync),
-            onPressed: _sincronizar,
+            onPressed: _controller.cargando || _verificandoAcceso ? null : _sincronizar,
           ),
-          IconButton(
-            tooltip: 'Crear Admin',
-            icon: const Icon(Icons.add),
-            onPressed: _controller.cargando ? null : _mostrarCrearAdmin,
-          ),
-          if (_controller.cargando)
-              const Padding(
+          if (verificado)
+            IconButton(
+              tooltip: 'Crear Admin',
+              icon: const Icon(Icons.add),
+              onPressed: _controller.cargando ? null : _mostrarCrearAdmin,
+            ),
+          if (_controller.cargando || _verificandoAcceso)
+            const Padding(
               padding: EdgeInsets.symmetric(horizontal: 8),
               child: Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))),
             ),
+          if (verificado)
+            IconButton(
+              tooltip: 'Cambiar cuenta',
+              icon: const Icon(Icons.switch_account),
+              onPressed: () {
+                _controller.limpiarVerificacion();
+                _mostrarVerificacionCorreo();
+              },
+            ),
         ],
       ),
-      body: _controller.cargando && _controller.admins.isEmpty
+      body: _verificandoAcceso
           ? const Center(child: CircularProgressIndicator())
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-               itemCount: _controller.admins.length,
-               itemBuilder: (context, index) {
-                 final admin = _controller.admins[index];
-                 final eliminado = (admin['eliminado'] as bool?) ?? false;
-                 final tallerAsociado = _controller.talleres.where((t) => t.id == admin['tallerId']).firstOrNull;
-                 final uid = admin['uid']?.toString() ?? '';
-                 return Card(
-                   margin: const EdgeInsets.only(bottom: 12),
-                   color: eliminado ? const Color(0xFFF5F5F5) : null,
-                   child: ListTile(
-                     leading: CircleAvatar(
-                       backgroundColor: eliminado ? Colors.grey : AppColors.orangePrimary,
-                       child: Icon(eliminado ? Icons.person_off : Icons.person, color: Colors.white),
-                     ),
-                     title: Text(
-                       admin['email'] ?? 'Sin email',
-                       style: TextStyle(fontWeight: FontWeight.bold, color: eliminado ? Colors.grey : null),
-                     ),
-                     subtitle: Text(
-                       eliminado
-                           ? 'Cuenta eliminada'
-                           : 'Taller: ${tallerAsociado?.nombre ?? 'Desconocido (${admin['tallerId']})'}',
-                     ),
-                     trailing: SizedBox(
-                       width: 96,
-                       child: Row(
-                         mainAxisAlignment: MainAxisAlignment.end,
-                         children: [
-                           if (uid.isNotEmpty)
-                             IconButton(
-                               icon: Icon(
-                                 eliminado ? Icons.refresh : Icons.delete_outline,
-                                 color: eliminado ? Colors.green : Colors.redAccent,
-                                 size: 20,
-                               ),
-                               tooltip: eliminado ? 'Reactivar' : 'Eliminar',
-                               onPressed: () => _confirmarAccionAdmin(admin),
-                             ),
-                         ],
-                       ),
-                     ),
-                   ),
-                 );
-               },
-            ),
+          : _controller.cargando && _controller.admins.isEmpty
+              ? const Center(child: CircularProgressIndicator())
+              : !verificado
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.lock_outline, size: 64, color: AppColors.textGray),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Verificación requerida',
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: AppColors.headerNavy),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Ingrese un correo autorizado para gestionar cuentas de administrador.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: AppColors.textGray),
+                          ),
+                          const SizedBox(height: 24),
+                          ElevatedButton.icon(
+                            onPressed: _mostrarVerificacionCorreo,
+                            icon: const Icon(Icons.verified_user),
+                            label: const Text('Verificar correo'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.orangePrimary,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _controller.admins.length,
+                      itemBuilder: (context, index) {
+                        final admin = _controller.admins[index];
+                        final eliminado = (admin['eliminado'] as bool?) ?? false;
+                        final tallerAsociado = _controller.talleres.where((t) => t.id == admin['tallerId']).firstOrNull;
+                        final uid = admin['uid']?.toString() ?? '';
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          color: eliminado ? const Color(0xFFF5F5F5) : null,
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: eliminado ? Colors.grey : AppColors.orangePrimary,
+                              child: Icon(eliminado ? Icons.person_off : Icons.person, color: Colors.white),
+                            ),
+                            title: Text(
+                              admin['email'] ?? 'Sin email',
+                              style: TextStyle(fontWeight: FontWeight.bold, color: eliminado ? Colors.grey : null),
+                            ),
+                            subtitle: Text(
+                              eliminado
+                                  ? 'Cuenta eliminada'
+                                  : 'Taller: ${tallerAsociado?.nombre ?? 'Desconocido (${admin['tallerId']})'}',
+                            ),
+                            trailing: SizedBox(
+                              width: 96,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  if (uid.isNotEmpty)
+                                    IconButton(
+                                      icon: Icon(
+                                        eliminado ? Icons.refresh : Icons.delete_outline,
+                                        color: eliminado ? Colors.green : Colors.redAccent,
+                                        size: 20,
+                                      ),
+                                      tooltip: eliminado ? 'Reactivar' : 'Eliminar',
+                                      onPressed: () => _confirmarAccionAdmin(admin),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
     );
   }
 }
@@ -257,16 +414,16 @@ class _CrearAdminDialogState extends State<_CrearAdminDialog> {
               const SizedBox(height: 20),
               TextFormField(
                 controller: _email,
-                decoration: const InputDecoration(labelText: 'Correo electrnico', border: OutlineInputBorder()),
+                decoration: const InputDecoration(labelText: 'Correo electrónico', border: OutlineInputBorder()),
                 keyboardType: TextInputType.emailAddress,
-                validator: (v) => v == null || v.isEmpty || !v.contains('@') ? 'Correo invǭlido' : null,
+                validator: (v) => v == null || v.isEmpty || !v.contains('@') ? 'Correo inválido' : null,
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _password,
-                decoration: const InputDecoration(labelText: 'Contrasea', border: OutlineInputBorder()),
+                decoration: const InputDecoration(labelText: 'Contraseña', border: OutlineInputBorder()),
                 obscureText: true,
-                validator: (v) => v == null || v.length < 6 ? 'Mnimo 6 caracteres' : null,
+                validator: (v) => v == null || v.length < 6 ? 'Mínimo 6 caracteres' : null,
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(

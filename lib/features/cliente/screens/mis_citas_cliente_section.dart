@@ -18,14 +18,19 @@ import 'package:autofix/shared/theme/app_colors.dart';
 /// vez de importar el del archivo de admin) es deliberado tambien: importar un
 /// screen desde otro screen ataria este archivo a toda la pantalla de admin,
 /// su `firebase_auth` y su `SyncService`.
+///
+/// Del lado del cliente, la cita en estado "aceptada" se muestra como "Pendiente"
+/// en la UI (ver `etiquetaUI` en `Cita`). Los estados de admin adicionales
+/// (Esperando Pieza, En proceso, Completado) se mapean a "Aceptada" en el cliente.
+/// El estado "rechazada" se muestra como "Rechazada" en el cliente.
 const Map<String, Color> _colorPorEtiqueta = {
   Cita.etiquetaAtrasadas: AppColors.atrasadas,
   'Pendiente': AppColors.pendientes,
-  'Aceptada': AppColors.greenAccent,
-  'Rechazada': AppColors.atrasadas,
   'Esperando Pieza': AppColors.esperandoPieza,
   'En proceso': AppColors.enProceso,
   'Completado': AppColors.completado,
+  'Aceptada': AppColors.greenAccent,
+  'Rechazada': AppColors.atrasadas,
 };
 
 /// "9:30 a. m." / "2:05 p. m." -- hora local sin depender de `intl`.
@@ -91,27 +96,30 @@ class _MisCitasClienteSectionState extends State<MisCitasClienteSection> {
     // Escucha SOLO el controller de esta seccion: un `setState` del estado
     // reconstruiria la pestana entera del dashboard, y notificar a nivel de
     // dashboard haria que las otras dos pestanas se repintaran tambien.
-    return ListenableBuilder(
-      listenable: _controller,
-      builder: (context, _) {
-        return ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            const TituloSeccionCliente(
-              eyebrow: 'TUS VISITAS',
-              title: 'Mis citas',
-              subtitle:
-                  'Consulta el estado y presenta el QR cuando acepten tu cita.',
-            ),
-            const SizedBox(height: 14),
-            if (_controller.hayPendientes) ...[
-              _AvisoDeCola(pendientes: _controller.pendientesDeSync),
+    return RefreshIndicator(
+      onRefresh: _controller.cargar,
+      color: AppColors.orangePrimary,
+      child: ListenableBuilder(
+        listenable: _controller,
+        builder: (context, _) {
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              const TituloSeccionCliente(
+                eyebrow: 'TUS VISITAS',
+                title: 'Mis citas',
+                subtitle: 'Consulta el estado y presenta el QR cuando acepten tu cita.',
+              ),
               const SizedBox(height: 14),
+              if (_controller.hayPendientes) ...[
+                _AvisoDeCola(pendientes: _controller.pendientesDeSync),
+                const SizedBox(height: 14),
+              ],
+              ..._contenido(),
             ],
-            ..._contenido(),
-          ],
-        );
-      },
+          );
+        },
+      ),
     );
   }
 
@@ -156,7 +164,7 @@ class _MisCitasClienteSectionState extends State<MisCitasClienteSection> {
     return [
       for (var index = 0; index < items.length; index++) ...[
         if (index > 0) const SizedBox(height: 14),
-        _TarjetaCita(item: items[index]),
+        _TarjetaCita(item: items[index], controller: _controller),
       ],
     ];
   }
@@ -297,9 +305,10 @@ class _BotonSecundarioCliente extends StatelessWidget {
 }
 
 class _TarjetaCita extends StatelessWidget {
-  const _TarjetaCita({required this.item});
+  const _TarjetaCita({required this.item, required this.controller});
 
   final CitaClienteItem item;
+  final MisCitasController controller;
 
   Cita get cita => item.cita;
 
@@ -392,6 +401,28 @@ class _TarjetaCita extends StatelessWidget {
                         fontWeight: FontWeight.w500,
                       ),
                     ),
+                    if (cita.estado == EstadoCita.rechazada &&
+                        cita.motivoRechazo != null &&
+                        cita.motivoRechazo!.trim().isNotEmpty &&
+                        cita.motivoRechazo != 'null') ...[
+                      const SizedBox(height: 7),
+                      const Text(
+                        'Motivo de cancelación:',
+                        style: TextStyle(
+                          color: AppColors.atrasadas,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        cita.motivoRechazo!,
+                        style: const TextStyle(
+                          color: AppColors.labelDark,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -430,6 +461,13 @@ class _TarjetaCita extends StatelessWidget {
           if (cita.estado == EstadoCita.aceptada) ...[
             const SizedBox(height: 14),
             AccionQrCitaCliente(cita: cita),
+          ],
+          // Mostrar boton de cancelar si la cita esta pendiente, rechazada o completada
+          if (cita.estado == EstadoCita.pendiente ||
+              cita.estado == EstadoCita.rechazada ||
+              cita.estado == EstadoCita.completado) ...[
+            const SizedBox(height: 14),
+            _BotonCancelarCita(cita: cita, controller: controller),
           ],
         ],
       ),
@@ -504,5 +542,95 @@ class _StatusBadge extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Boton para cancelar/borrar una cita (pendiente, rechazada o completada).
+class _BotonCancelarCita extends StatelessWidget {
+  const _BotonCancelarCita({required this.cita, required this.controller});
+
+  final Cita cita;
+  final MisCitasController controller;
+
+  /// Texto del boton segun el estado: 'Cancelar solicitud' para pendiente,
+  /// 'Borrar cita' para rechazada o completada.
+  String get _etiquetaBoton {
+    if (cita.estado == EstadoCita.rechazada ||
+        cita.estado == EstadoCita.completado) {
+      return 'Borrar cita';
+    }
+    return 'Cancelar solicitud';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: () => _confirmarCancelar(context),
+        icon: const Icon(Icons.cancel_outlined),
+        label: Text(_etiquetaBoton),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.atrasadas,
+          side: const BorderSide(color: AppColors.atrasadas),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmarCancelar(BuildContext context) async {
+    final esBorrado =
+        cita.estado == EstadoCita.rechazada ||
+        cita.estado == EstadoCita.completado;
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(esBorrado ? 'Borrar cita' : 'Cancelar solicitud'),
+        content: Text(
+          esBorrado
+              ? '¿Estás seguro de borrar esta cita? '
+                    'Una vez borrada, no se podrá recuperar.'
+              : '¿Estás seguro de cancelar esta solicitud de cita? '
+                    'Una vez cancelada, no se podrá recuperar.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('No, mantener'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.atrasadas,
+              foregroundColor: Colors.white,
+            ),
+            child: Text(esBorrado ? 'Sí, borrar' : 'Sí, cancelar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmado == true && context.mounted) {
+      final ok = await controller.cancelarCita(cita.id!);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              ok
+                  ? (esBorrado
+                        ? 'Cita borrada correctamente.'
+                        : 'Solicitud cancelada correctamente.')
+                  : (esBorrado
+                        ? 'No se pudo borrar la cita.'
+                        : 'No se pudo cancelar la solicitud. Quizás ya fue aceptada.'),
+            ),
+            backgroundColor: ok ? AppColors.greenAccent : AppColors.atrasadas,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 }

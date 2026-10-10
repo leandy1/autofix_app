@@ -398,16 +398,23 @@ class CitaRepository implements BaseRepository<Cita> {
   /// `UPDATE` de SQLite una columna ausente NO SE TOCA, mientras que mandarla en
   /// `null` la vaciaria. Un update de estado no debe saber nada del borrado de
   /// otro dispositivo.
-  Future<int> cambiarEstado(String id, EstadoCita estado) async {
+  Future<int> cambiarEstado(String id, EstadoCita estado, {String? motivoRechazo}) async {
+    print('🔐 REPO cambiarEstado: id=$id, estado=$estado, motivoRechazo=$motivoRechazo');
     final db = await _helper.base;
+    final valores = <String, Object?>{
+      DatabaseHelper.colEstado: estado.name,
+      DatabaseHelper.colActualizadoEn: ahoraIso(),
+      // Marcamos 'pending' para que SyncService suba el cambio de estado a Firebase.
+      DatabaseHelper.colSyncStatus: 'pending',
+    };
+    // Solo guardamos el motivo de rechazo cuando el estado es rechazada
+    if (estado == EstadoCita.rechazada && motivoRechazo != null && motivoRechazo.isNotEmpty) {
+      valores[DatabaseHelper.colMotivoRechazo] = motivoRechazo;
+      print('🔐 REPO SAVING motivo_rechazo: "$motivoRechazo"');
+    }
     return db.update(
       tabla,
-      <String, Object?>{
-        DatabaseHelper.colEstado: estado.name,
-        DatabaseHelper.colActualizadoEn: ahoraIso(),
-        // Marcamos 'pending' para que SyncService suba el cambio de estado a Firebase.
-        DatabaseHelper.colSyncStatus: 'pending',
-      },
+      valores,
       where:
           '${DatabaseHelper.colId} = ? '
           'AND ${DatabaseHelper.colEliminadoEn} IS NULL',

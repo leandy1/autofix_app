@@ -69,6 +69,19 @@ class GrupoServicioRepository implements BaseRepository<GrupoServicio> {
     return filas.map(GrupoServicio.fromMap).toList();
   }
 
+  /// Solo los grupos activos de un taller: para formularios y listas de selección.
+  Future<List<GrupoServicio>> obtenerActivosPorTaller(String tallerId) async {
+    final db = await _helper.base;
+    final filas = await db.query(
+      tabla,
+      where:
+          '${DatabaseHelper.colTallerId} = ? AND ${DatabaseHelper.colActivo} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
+      whereArgs: <Object?>[tallerId, 1],
+      orderBy: '${DatabaseHelper.colNombre} COLLATE NOCASE ASC',
+    );
+    return filas.map(GrupoServicio.fromMap).toList();
+  }
+
   Future<GrupoServicio?> obtenerPorNombreYTaller(
     String nombre,
     String tallerId,

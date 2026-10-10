@@ -403,6 +403,7 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
     required IconData icon,
     required VoidCallback editar,
     required VoidCallback eliminar,
+    VoidCallback? accionExtra,
   }) {
     return Card(
       color: AppColors.cardWhite,
@@ -431,6 +432,13 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
               icon: const Icon(Icons.edit_outlined),
               color: AppColors.textGray,
             ),
+            if (accionExtra != null)
+              IconButton(
+                tooltip: 'Gestionar servicios',
+                onPressed: accionExtra,
+                icon: const Icon(Icons.list_alt_outlined),
+                color: AppColors.orangePrimary,
+              ),
             IconButton(
               tooltip: 'Eliminar $nombre',
               onPressed: eliminar,
@@ -516,7 +524,32 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
       title: 'Marcas de vehículo',
       child: Column(
         children: [
-          _addButton('Agregar marca', () => unawaited(_editarMarca())),
+          Row(
+            children: [
+              Expanded(child: _addButton('Agregar marca', () => unawaited(_editarMarca()))),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _cfg.cargando
+                      ? null
+                      : () => unawaited(_importarMarcasDesdeApi()),
+                  icon: _cfg.cargando
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.cloud_download_outlined, size: 18),
+                  label: const Text('Importar desde API'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.orangePrimary,
+                    side: const BorderSide(color: AppColors.orangePrimary),
+                    minimumSize: const Size(double.infinity, 36),
+                  ),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 12),
           if (_cfg.marcas.isEmpty)
             _empty('Aún no hay marcas registradas.')
@@ -546,9 +579,8 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
             child: Padding(
               padding: EdgeInsets.only(bottom: 12),
               child: Text(
-                'Los grupos son etiquetas para clasificar servicios. En esta versión '
-                'todavía no se asignan servicios a un grupo ni cambian las opciones '
-                'de las citas.',
+                'Los grupos son etiquetas para clasificar servicios. '
+                'Puedes asignar servicios a cada grupo usando el botón "Gestionar".',
                 style: TextStyle(color: AppColors.textGray, fontSize: 12),
               ),
             ),
@@ -556,12 +588,14 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
           _addButton('Agregar grupo', () => unawaited(_editarGrupo())),
           const SizedBox(height: 12),
           if (_cfg.gruposServicio.isEmpty)
-            _empty('Aún no hay grupos de servicios.')
+            _empty('Aún no hay grupos de servicios.\nCrea uno con "Agregar grupo" para empezar a asignar servicios.')
           else
-            for (final grupo in _cfg.gruposServicio)
+            for (final grupo in _cfg.gruposServicio) ...[
               _fila(
                 nombre: grupo.nombre,
-                detalle: null,
+                detalle: _cfg.obtenerServiciosCompletosDelGrupo(grupo.id!).isEmpty
+                    ? 'Sin servicios asignados'
+                    : '${_cfg.obtenerServiciosCompletosDelGrupo(grupo.id!).length} servicio(s)',
                 icon: Icons.folder_outlined,
                 editar: () => unawaited(_editarGrupo(grupo)),
                 eliminar: () => unawaited(
@@ -570,7 +604,23 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
                     accion: () => _cfg.eliminarGrupoServicio(grupo.id!),
                   ),
                 ),
+                accionExtra: () => unawaited(_gestionarServiciosDelGrupo(grupo)),
               ),
+              // Botón visible para gestionar servicios del grupo
+              Padding(
+                padding: const EdgeInsets.only(top: 4, bottom: 8),
+                child: OutlinedButton.icon(
+                  onPressed: () => unawaited(_gestionarServiciosDelGrupo(grupo)),
+                  icon: const Icon(Icons.list_alt_outlined, size: 18),
+                  label: const Text('Gestionar servicios'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.orangePrimary,
+                    side: const BorderSide(color: AppColors.orangePrimary),
+                    minimumSize: const Size(double.infinity, 36),
+                  ),
+                ),
+              ),
+            ],
         ],
       ),
     ),
@@ -621,6 +671,23 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
     }
   }
 
+  Future<void> _importarMarcasDesdeApi() async {
+    try {
+      final nuevas = await _cfg.importarMarcasDesdeApi();
+      if (mounted) {
+        if (nuevas > 0) {
+          _mostrarExito('Se importaron $nuevas marcas nuevas.');
+        } else {
+          _mostrarExito('No hay marcas nuevas para importar.');
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        _mostrarError('Error al importar marcas: $e');
+      }
+    }
+  }
+
   Future<void> _editarGrupo([GrupoServicio? grupo]) async {
     final guardado = await _mostrarEditor(
       titulo: grupo == null ? 'Nuevo grupo' : 'Editar grupo',
@@ -631,6 +698,35 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
     );
     if (guardado) {
       _mostrarExito(grupo == null ? 'Grupo guardado.' : 'Grupo actualizado.');
+    }
+  }
+
+  Future<void> _gestionarServiciosDelGrupo(GrupoServicio grupo) async {
+    try {
+      await showDialog<void>(
+        context: context,
+        useRootNavigator: true,
+        builder: (_) => _GestionarServiciosGrupoDialog(
+          grupo: grupo,
+          serviciosDisponibles: _cfg.tiposServicio,
+          serviciosAsignados: _cfg.obtenerServiciosCompletosDelGrupo(grupo.id!),
+          onAgregar: (tipoServicioId) => _cfg.agregarServicioAGrupo(
+            grupoId: grupo.id!,
+            tipoServicioId: tipoServicioId,
+          ),
+          onQuitar: (tipoServicioId) => _cfg.quitarServicioDeGrupo(
+            grupoId: grupo.id!,
+            tipoServicioId: tipoServicioId,
+          ),
+          onReordenar: (tipoServicioIds) => _cfg.reordenarServiciosDelGrupo(
+            grupoId: grupo.id!,
+            tipoServicioIds: tipoServicioIds,
+          ),
+          errorActual: () => _cfg.error,
+        ),
+      );
+    } catch (e) {
+      _mostrarError('Error al abrir diálogo: $e');
     }
   }
 
@@ -841,6 +937,222 @@ class _CatalogoEditorDialogState extends State<_CatalogoEditorDialog> {
         _guardando = false;
         _error = widget.errorActual() ?? 'No se pudo guardar el registro.';
       });
+    }
+  }
+}
+
+class _GestionarServiciosGrupoDialog extends StatefulWidget {
+  const _GestionarServiciosGrupoDialog({
+    required this.grupo,
+    required this.serviciosDisponibles,
+    required this.serviciosAsignados,
+    required this.onAgregar,
+    required this.onQuitar,
+    required this.onReordenar,
+    required this.errorActual,
+  });
+
+  final GrupoServicio grupo;
+  final List<TipoServicio> serviciosDisponibles;
+  final List<TipoServicio> serviciosAsignados;
+  final Future<bool> Function(String tipoServicioId) onAgregar;
+  final Future<bool> Function(String tipoServicioId) onQuitar;
+  final Future<bool> Function(List<String> tipoServicioIds) onReordenar;
+  final String? Function() errorActual;
+
+  @override
+  State<_GestionarServiciosGrupoDialog> createState() => _GestionarServiciosGrupoDialogState();
+}
+
+class _GestionarServiciosGrupoDialogState extends State<_GestionarServiciosGrupoDialog> {
+  late List<TipoServicio> _serviciosAsignados;
+  bool _guardando = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _serviciosAsignados = List.from(widget.serviciosAsignados);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final serviciosNoAsignados = widget.serviciosDisponibles
+        .where((s) => !_serviciosAsignados.any((a) => a.id == s.id))
+        .toList();
+
+    return AlertDialog(
+      title: Text('Servicios de "${widget.grupo.nombre}"'),
+      content: SizedBox(
+        width: 500,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Servicios asignados
+              if (_serviciosAsignados.isNotEmpty) ...[
+                const Text(
+                  'Servicios en este grupo:',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+                const SizedBox(height: 8),
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: _serviciosAsignados.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 4),
+                  itemBuilder: (context, index) {
+                    final servicio = _serviciosAsignados[index];
+                    return Card(
+                      child: ListTile(
+                        dense: true,
+                        leading: IconButton(
+                          icon: const Icon(Icons.arrow_upward, size: 18),
+                          onPressed: index > 0
+                              ? () async => await _moverServicio(index, index - 1)
+                              : null,
+                        ),
+                        title: Text(servicio.nombre),
+                        subtitle: Text(
+                          servicio.precio == 0
+                              ? 'Sin precio'
+                              : 'RD\$ ${servicio.precio.toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
+                        ),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.remove_circle_outline, color: Colors.redAccent, size: 20),
+                          onPressed: _guardando
+                              ? null
+                              : () async => await _quitarServicio(servicio),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 16),
+              ] else ...[
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  child: Text(
+                    'Este grupo no tiene servicios asignados.',
+                    style: TextStyle(color: AppColors.textGray, fontSize: 13),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
+
+              // Servicios disponibles para agregar
+              if (serviciosNoAsignados.isNotEmpty) ...[
+                const Divider(),
+                const Text(
+                  'Servicios disponibles para agregar:',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+                const SizedBox(height: 8),
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: serviciosNoAsignados.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 4),
+                  itemBuilder: (context, index) {
+                    final servicio = serviciosNoAsignados[index];
+                    return ListTile(
+                      dense: true,
+                      title: Text(servicio.nombre),
+                      subtitle: Text(
+                        servicio.precio == 0
+                            ? 'Sin precio'
+                            : 'RD\$ ${servicio.precio.toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
+                      ),
+                      trailing: _guardando
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : IconButton(
+                              icon: const Icon(Icons.add_circle_outline, color: AppColors.orangePrimary),
+                              onPressed: () async => await _agregarServicio(servicio),
+                            ),
+                    );
+                  },
+                ),
+              ] else if (_serviciosAsignados.isNotEmpty) ...[
+                const Divider(),
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    'Todos los servicios disponibles ya están en este grupo.',
+                    style: TextStyle(color: AppColors.textGray, fontSize: 12),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ] else ...[
+                const Divider(),
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    'No hay servicios creados aún. Ve a la pestaña "Servicios" para crear algunos.',
+                    style: TextStyle(color: AppColors.textGray, fontSize: 12),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _guardando ? null : () => Navigator.pop(context),
+          child: const Text('Cerrar'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _moverServicio(int fromIndex, int toIndex) async {
+    setState(() {
+      final item = _serviciosAsignados.removeAt(fromIndex);
+      _serviciosAsignados.insert(toIndex, item);
+    });
+    final ids = _serviciosAsignados.map((s) => s.id!).toList();
+    await widget.onReordenar(ids);
+  }
+
+  Future<void> _agregarServicio(TipoServicio servicio) async {
+    setState(() => _guardando = true);
+    final ok = await widget.onAgregar(servicio.id!);
+    if (!mounted) return;
+    if (ok) {
+      setState(() {
+        _serviciosAsignados.add(servicio);
+        _guardando = false;
+      });
+    } else {
+      setState(() => _guardando = false);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(widget.errorActual() ?? 'No se pudo agregar el servicio.')),
+        );
+      }
+    }
+  }
+
+  Future<void> _quitarServicio(TipoServicio servicio) async {
+    setState(() => _guardando = true);
+    final ok = await widget.onQuitar(servicio.id!);
+    if (!mounted) return;
+    if (ok) {
+      setState(() {
+        _serviciosAsignados.removeWhere((s) => s.id == servicio.id);
+        _guardando = false;
+      });
+    } else {
+      setState(() => _guardando = false);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(widget.errorActual() ?? 'No se pudo quitar el servicio.')),
+        );
+      }
     }
   }
 }

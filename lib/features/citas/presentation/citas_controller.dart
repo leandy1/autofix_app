@@ -14,9 +14,8 @@ import 'package:autofix/features/sync/sync_service.dart';
 /// No expone `Color` ni `Widget`: devuelve entidades y texto ya formateado.
 /// El mapeo etiqueta -> color es del diseño, no del dominio.
 class CitasController extends ChangeNotifier {
-  CitasController({CitaRepository? repositorio, String? tallerId})
-    : _repo = repositorio ?? CitaRepository.instance,
-      _tallerId = tallerId;
+  CitasController({CitaRepository? repositorio, this._tallerId})
+    : _repo = repositorio ?? CitaRepository.instance;
 
   final CitaRepository _repo;
   final String? _tallerId;
@@ -97,10 +96,16 @@ class CitasController extends ChangeNotifier {
     return true;
   }
 
-  /// El id es un `String` (UUID) desde la v7, no un `int`.
-  Future<bool> cambiarEstado(String id, EstadoCita estado) async {
+
+/// El id es un `String` (UUID) desde la v7, no un `int`.
+  Future<bool> cambiarEstado(
+    String id,
+    EstadoCita estado, {
+    String? motivoRechazo,
+  }) async {
+    debugPrint('🔐 CONTROLLER cambiarEstado: id=$id, estado=$estado, motivoRechazo=$motivoRechazo');
     final ok = await _intentar(() async {
-      await _repo.cambiarEstado(id, estado);
+      await _repo.cambiarEstado(id, estado, motivoRechazo: motivoRechazo);
       return _obtenerCitas();
     });
 

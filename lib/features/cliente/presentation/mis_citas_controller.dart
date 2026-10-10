@@ -178,6 +178,40 @@ class MisCitasController extends ChangeNotifier {
         if (!esFutura(i)) i,
     ]..sort((a, b) => b.cita.fechaCita.compareTo(a.cita.fechaCita));
 
-    return [...futuras, ...pasadas];
+return [...futuras, ...pasadas];
+  }
+
+  /// Cancela una cita (borrado logico).
+  ///
+  /// Se permite si la cita esta en estado `pendiente` (el admin todavia no la
+  /// acepto), `rechazada` (el admin la rechazo) o `completado` (la cita ya
+  /// finalizo). Devuelve true si se cancelo correctamente.
+  Future<bool> cancelarCita(String citaId) async {
+    try {
+      // Verificar que la cita existe y es del cliente actual
+      final cita = await _citas.obtenerVigentePorId(citaId);
+      if (cita == null) return false;
+
+      // Permitir cancelar en pendiente, rechazada o completado
+      if (cita.estado != EstadoCita.pendiente &&
+          cita.estado != EstadoCita.rechazada &&
+          cita.estado != EstadoCita.completado) {
+        return false;
+      }
+
+      // Verificar que pertenece al cliente actual
+      final correo = _correoCliente;
+      if (correo == null || correo.isEmpty) return false;
+      if (cita.correoCliente.trim().toLowerCase() != correo) return false;
+
+      final filas = await _citas.eliminar(citaId);
+      if (filas > 0) {
+        await cargar(); // Recargar la lista
+        return true;
+      }
+      return false;
+    } on Exception {
+      return false;
+    }
   }
 }

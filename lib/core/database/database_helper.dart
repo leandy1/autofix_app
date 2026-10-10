@@ -100,7 +100,7 @@ class DatabaseHelper {
   /// es lo que permite a un dispositivo que ya instalo la v1 seguir funcionando.
   /// En la v7 el `onUpgrade` hace `DROP TABLE`, asi que en ESTE caso si borra los
   /// datos, y es intencional (ver [_migrar]).
-  static const int _versionBase = 15;
+  static const int _versionBase = 17;
 
   /// Nombre del indice de [tablaCitas] por fecha.
   ///
@@ -130,6 +130,7 @@ class DatabaseHelper {
   static const String colDescripcion = 'descripcion';
   static const String colFechaCita = 'fecha_cita';
   static const String colEstado = 'estado';
+  static const String colMotivoRechazo = 'motivo_rechazo';
   static const String colCreadoEn = 'creado_en';
   static const String colActualizadoEn = 'actualizado_en';
   static const String colTotal = 'total';
@@ -201,12 +202,18 @@ class DatabaseHelper {
   /// Marcas de vehiculo. Alta en la v7. Ver `lib/features/configuracion/models/marca.dart`.
   static const String tablaMarcas = 'marcas';
 
-  /// Grupos de servicios ("Carroceria", "Mecanica general"). Alta en la v7.
-  /// Ver `lib/features/configuracion/models/grupo_servicio.dart`.
-  static const String tablaGruposServicio = 'grupos_servicio';
+/// Grupos de servicios ("Carroceria", "Mecanica general"). Alta en la v7.
+/// Ver `lib/features/configuracion/models/grupo_servicio.dart`.
+static const String tablaGruposServicio = 'grupos_servicio';
 
-  // ------------------------------------------------------------------
-  // COLA DE CAMBIOS DE CONTRASEÑA (v10)
+/// Tabla puente entre grupos de servicios y tipos de servicio.
+/// Relación many-to-many: un servicio puede estar en varios grupos y un grupo
+/// contiene varios servicios. Alta en la v16.
+/// Ver `lib/features/configuracion/models/grupo_servicio_item.dart`.
+static const String tablaGrupoServicioItems = 'grupo_servicio_items';
+
+// ------------------------------------------------------------------
+// COLA DE CAMBIOS DE CONTRASEÑA (v10)
   //
   // Cuando el cliente pide cambiar su contraseña sin internet, el cambio queda
   // en esta tabla con `sync_status = 'pending'` y lo drena `SyncService` cuando
@@ -229,12 +236,17 @@ class DatabaseHelper {
   /// la cola queda con filas cuyo secreto nadie puede leer.
   static const String prefijoSeguroCambiosPassword = 'cambiosPassword.';
 
-  static const String colNombre = 'nombre';
-  static const String colActivo = 'activo';
-  static const String colPrecio = 'precio';
+static const String colNombre = 'nombre';
+static const String colActivo = 'activo';
+static const String colPrecio = 'precio';
 
-  // ------------------------------------------------------------------
-  // Talleres afiliados (v4)
+/// Columnas de la tabla puente `grupo_servicio_items` (v16)
+static const String colGrupoId = 'grupo_id';
+static const String colTipoServicioId = 'tipo_servicio_id';
+static const String colOrden = 'orden';
+
+// ------------------------------------------------------------------
+// Talleres afiliados (v4)
   //
   // Directriz de Leandy: el mapa NO busca talleres libres en el mundo. Solo
   // muestra los que estan en esta tabla, que es la red de afiliados de la
@@ -498,6 +510,7 @@ class DatabaseHelper {
       '$colDescripcion TEXT NOT NULL DEFAULT \'\'',
       '$colFechaCita TEXT NOT NULL',
       '$colEstado TEXT NOT NULL',
+      '$colMotivoRechazo TEXT',
       '$colCreadoEn TEXT NOT NULL',
       _columnaTallerIdV4,
       '$colTotal INTEGER NOT NULL DEFAULT 0', // v5
@@ -761,6 +774,53 @@ class DatabaseHelper {
     // anticipan columnas que la UI todavia no muestra.
     await _crearTablaCatalogo(db, tablaMarcas);
     await _crearTablaCatalogo(db, tablaGruposServicio);
+
+    // Tabla puente grupo_servicio_items (v16): relacion many-to-many entre
+    // grupos de servicios y tipos de servicio.
+    await _crearTablaGrupoServicioItems(db);
+  }
+
+  Future<void> _crearTablaGrupoServicioItems(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS $tablaGrupoServicioItems (
+        $_pkUuid,
+        $colGrupoId TEXT NOT NULL,
+        $colTipoServicioId TEXT NOT NULL,
+        $colOrden INTEGER NOT NULL DEFAULT 0,
+        $colActivo INTEGER NOT NULL DEFAULT 1,
+        $colCreadoEn TEXT NOT NULL,
+        $colActualizadoEn TEXT NOT NULL,
+        $colTallerId TEXT NOT NULL,
+        $colSyncStatus TEXT NOT NULL DEFAULT 'pending',
+        $colEliminadoEn TEXT
+      )
+    ''');
+
+    // Índice único para evitar duplicados grupo-servicio por taller (solo vigentes)
+    await db.execute(
+      'CREATE UNIQUE INDEX IF NOT EXISTS '
+      'idx_${tablaGrupoServicioItems}_taller_grupo_servicio_vigente '
+      'ON $tablaGrupoServicioItems ($colTallerId, $colGrupoId, $colTipoServicioId) '
+      'WHERE $colEliminadoEn IS NULL',
+    );
+
+    // Índices para consultas por grupo, por servicio y por taller
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS '
+      'idx_${tablaGrupoServicioItems}_grupo_id ON $tablaGrupoServicioItems ($colGrupoId)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS '
+      'idx_${tablaGrupoServicioItems}_tipo_servicio_id ON $tablaGrupoServicioItems ($colTipoServicioId)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS '
+      'idx_${tablaGrupoServicioItems}_taller_id ON $tablaGrupoServicioItems ($colTallerId)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS '
+      'idx_${tablaGrupoServicioItems}_sync_status ON $tablaGrupoServicioItems ($colSyncStatus)',
+    );
   }
 
   Future<void> _crearTablaCatalogo(
@@ -1269,6 +1329,13 @@ class DatabaseHelper {
       if (versionAnterior < 15) {
         await _migrarAV15(txn);
       }
+
+      if (versionAnterior < 16) {
+        await _migrarAV16(txn);
+      }
+      if (versionAnterior < 17) {
+        await _migrarAV17(txn);
+      }
     });
   }
 
@@ -1289,6 +1356,73 @@ class DatabaseHelper {
     if (!columnas.contains(colEliminadoEnVehiculo)) {
       await txn.execute(
         'ALTER TABLE $tablaVehiculos ADD COLUMN $colEliminadoEnVehiculo TEXT',
+      );
+    }
+  }
+
+  /// Paso 15 -> 16: tabla puente `grupo_servicio_items` para relacionar
+  /// grupos de servicios con tipos de servicio (many-to-many).
+  ///
+  /// Un servicio puede estar en varios grupos ('Frenos' sirve tanto en
+  /// 'Mecánica general' como en 'Carrocería') y un grupo contiene varios
+  /// servicios. La tabla incluye `orden` para que el admin defina el orden
+  /// de visualización.
+  ///
+  /// Usa `CREATE TABLE IF NOT EXISTS` porque una v16 en desarrollo pudo
+  /// haberla creado ya. Incluye `taller_id NOT NULL` para aislamiento por
+  /// taller, indices para consultas rapidas y `sync_status` para sincronizacion
+  /// offline-first.
+  Future<void> _migrarAV16(DatabaseExecutor txn) async {
+    await txn.execute('''
+      CREATE TABLE IF NOT EXISTS $tablaGrupoServicioItems (
+        $_pkUuid,
+        $colGrupoId TEXT NOT NULL,
+        $colTipoServicioId TEXT NOT NULL,
+        $colOrden INTEGER NOT NULL DEFAULT 0,
+        $colActivo INTEGER NOT NULL DEFAULT 1,
+        $colCreadoEn TEXT NOT NULL,
+        $colActualizadoEn TEXT NOT NULL,
+        $colTallerId TEXT NOT NULL,
+        $colSyncStatus TEXT NOT NULL DEFAULT 'pending',
+        $colEliminadoEn TEXT
+      )
+    ''');
+
+    // Índice único para evitar duplicados grupo-servicio por taller (solo vigentes)
+    await txn.execute(
+      'CREATE UNIQUE INDEX IF NOT EXISTS '
+      'idx_${tablaGrupoServicioItems}_taller_grupo_servicio_vigente '
+      'ON $tablaGrupoServicioItems ($colTallerId, $colGrupoId, $colTipoServicioId) '
+      'WHERE $colEliminadoEn IS NULL',
+    );
+
+    // Índices para consultas por grupo, por servicio y por taller
+    await txn.execute(
+      'CREATE INDEX IF NOT EXISTS '
+      'idx_${tablaGrupoServicioItems}_grupo_id ON $tablaGrupoServicioItems ($colGrupoId)',
+    );
+    await txn.execute(
+      'CREATE INDEX IF NOT EXISTS '
+      'idx_${tablaGrupoServicioItems}_tipo_servicio_id ON $tablaGrupoServicioItems ($colTipoServicioId)',
+    );
+    await txn.execute(
+      'CREATE INDEX IF NOT EXISTS '
+      'idx_${tablaGrupoServicioItems}_taller_id ON $tablaGrupoServicioItems ($colTallerId)',
+    );
+    await txn.execute(
+      'CREATE INDEX IF NOT EXISTS '
+      'idx_${tablaGrupoServicioItems}_sync_status ON $tablaGrupoServicioItems ($colSyncStatus)',
+    );
+  }
+
+  /// Paso 16 -> 17: Agregar columna motivo_rechazo a la tabla citas.
+  Future<void> _migrarAV17(DatabaseExecutor txn) async {
+    // Agregar columna motivo_rechazo a la tabla citas si no existe
+    final infoCitas = await txn.rawQuery('PRAGMA table_info($tablaCitas)');
+    final columnasCitas = infoCitas.map((fila) => fila['name'] as String).toSet();
+    if (!columnasCitas.contains(colMotivoRechazo)) {
+      await txn.execute(
+        'ALTER TABLE $tablaCitas ADD COLUMN $colMotivoRechazo TEXT',
       );
     }
   }
