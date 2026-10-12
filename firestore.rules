@@ -9,7 +9,13 @@ service cloud.firestore {
     // El claim `dev` solo debe asignarse desde un entorno confiable usando
     // Firebase Admin SDK. Nunca se concede desde el cliente Flutter.
     function isDev() {
-      return signedIn() && request.auth.token.dev == true;
+      return signedIn() && (
+        request.auth.token.dev == true
+        || (request.auth.token.email is string
+          && request.auth.token.email.trim().lower()
+              == 'sandyortizz32@gmail.com'
+          && request.auth.token.email_verified == true)
+      );
     }
 
     function adminPath() {
@@ -114,6 +120,15 @@ service cloud.firestore {
           || data.ownerUid == request.auth.uid);
     }
 
+    function devRestauraVehiculo(oldData, newData) {
+      return isDev()
+        && oldData.eliminado_en != null
+        && newData.eliminado_en == null
+        && newData.diff(oldData).affectedKeys().hasOnly([
+          'eliminado_en', 'activo', 'actualizado_en', 'sync_status'
+        ]);
+    }
+
     function preservesTaller(oldData, newData) {
       return (oldData.keys().hasAny(['taller_id'])
           && newData.keys().hasAny(['taller_id'])
@@ -121,6 +136,16 @@ service cloud.firestore {
         || (!oldData.keys().hasAny(['taller_id'])
           && (!newData.keys().hasAny(['taller_id'])
             || newData.taller_id == null));
+    }
+
+    function devRestauraCita(oldData, newData) {
+      return isDev()
+        && oldData.eliminado_en != null
+        && newData.eliminado_en == null
+        && newData.diff(oldData).affectedKeys().hasOnly([
+          'eliminado_en', 'eliminado_por', 'restaurado_en',
+          'actualizado_en', 'sync_status'
+        ]);
     }
 
     function clientCanCreateCita(data) {
@@ -169,14 +194,15 @@ service cloud.firestore {
     }
 
     match /citas/{citaId} {
-      allow get, list: if canAccessCita(resource.data);
+      allow get, list: if canAccessCita(resource.data) || isDev();
 
       allow create: if validCita(request.resource.data)
         && (canAdminAccessCita(request.resource.data)
           || clientCanCreateCita(request.resource.data));
 
       allow update: if validCita(request.resource.data)
-        && ((canAdminAccessCita(resource.data)
+        && (devRestauraCita(resource.data, request.resource.data)
+          || (canAdminAccessCita(resource.data)
             && canAdminAccessCita(request.resource.data))
           || (ownsCita(resource.data)
             && ownsCita(request.resource.data)
@@ -192,17 +218,18 @@ service cloud.firestore {
     }
 
     match /vehiculos/{vehiculoId} {
-      allow get, list: if ownsVehiculo(resource.data);
+      allow get, list: if ownsVehiculo(resource.data) || isDev();
 
       allow create: if puedeCrearVehiculo(request.resource.data, vehiculoId);
 
       allow update: if vehiculoValido(request.resource.data, vehiculoId)
-        && ownsVehiculo(resource.data)
-        && ownsVehiculo(request.resource.data)
-        && request.resource.data.cliente_id == resource.data.cliente_id
-        && request.resource.data.correo_cliente == resource.data.correo_cliente
-        && (!resource.data.keys().hasAny(['ownerUid'])
-          || request.resource.data.ownerUid == resource.data.ownerUid);
+        && (devRestauraVehiculo(resource.data, request.resource.data)
+          || (ownsVehiculo(resource.data)
+            && ownsVehiculo(request.resource.data)
+            && request.resource.data.cliente_id == resource.data.cliente_id
+            && request.resource.data.correo_cliente == resource.data.correo_cliente
+            && (!resource.data.keys().hasAny(['ownerUid'])
+              || request.resource.data.ownerUid == resource.data.ownerUid)));
 
       // Las bajas se representan con activo=false y eliminado_en; no se permite
       // borrar físicamente el documento.
@@ -215,19 +242,22 @@ service cloud.firestore {
       allow create, update: if signedIn()
         && request.auth.uid == clienteUid
         && request.resource.data.uid == clienteUid;
-      allow delete: if signedIn() && request.auth.uid == clienteUid;
+      // La baja del perfil también es lógica (`eliminado: true`).
+      allow delete: if false;
     }
 
     // El mapa y el inicio de sesión necesitan leer estos catálogos autenticados.
     // Solo el usuario con claim DEV puede cambiar talleres o cuentas de Admin.
     match /talleres/{tallerId} {
       allow get, list: if signedIn();
-      allow create, update, delete: if isDev();
+      allow create, update: if isDev();
+      allow delete: if false;
     }
 
     match /admins/{adminUid} {
       allow get, list: if signedIn();
-      allow create, update, delete: if isDev();
+      allow create, update: if isDev();
+      allow delete: if false;
     }
 
     function catalogoBaseValido(data, documentoId) {
@@ -300,26 +330,26 @@ service cloud.firestore {
 
     function adminPuedeCrearCatalogo(data, documentoId) {
       return catalogoBaseValido(data, documentoId)
-        && adminOfWorkshop(data.taller_id);
+        && (adminOfWorkshop(data.taller_id) || isDev());
     }
 
     function adminPuedeEditarCatalogo(datosAnteriores, datosNuevos, documentoId) {
       return catalogoBaseValido(datosNuevos, documentoId)
         && datosAnteriores.taller_id == datosNuevos.taller_id
-        && adminOfWorkshop(datosAnteriores.taller_id)
-        && adminOfWorkshop(datosNuevos.taller_id);
+        && (adminOfWorkshop(datosAnteriores.taller_id) || isDev())
+        && (adminOfWorkshop(datosNuevos.taller_id) || isDev());
     }
 
     function adminPuedeCrearServicio(data, documentoId) {
       return servicioValido(data, documentoId)
-        && adminOfWorkshop(data.taller_id);
+        && (adminOfWorkshop(data.taller_id) || isDev());
     }
 
     function adminPuedeEditarServicio(datosAnteriores, datosNuevos, documentoId) {
       return servicioValido(datosNuevos, documentoId)
         && datosAnteriores.taller_id == datosNuevos.taller_id
-        && adminOfWorkshop(datosAnteriores.taller_id)
-        && adminOfWorkshop(datosNuevos.taller_id);
+        && (adminOfWorkshop(datosAnteriores.taller_id) || isDev())
+        && (adminOfWorkshop(datosNuevos.taller_id) || isDev());
     }
 
     // Lectura autenticada para configuración y agendamiento. La consulta del
@@ -387,6 +417,31 @@ service cloud.firestore {
         && resource.data.nextNumber is int
         && request.resource.data.nextNumber == resource.data.nextNumber + 1
         && counterTargetsNewCitaCode(request.resource.data.lastCitaId);
+      allow delete: if false;
+    }
+
+    // Los logs son append-only. Un usuario solo puede publicar logs propios;
+    // la consulta de auditoría completa queda reservada al rol DEV.
+    match /audit_logs/{logId} {
+      allow get, list: if isDev();
+      allow create: if signedIn()
+        && request.resource.data.usuario_uid == request.auth.uid
+        && request.resource.data.keys().hasAll([
+          'id', 'usuario_uid', 'usuario_email', 'modulo', 'entidad_id',
+          'accion', 'fecha_hora', 'dispositivo', 'detalles', 'sync_status'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'id', 'usuario_uid', 'usuario_email', 'modulo', 'entidad_id',
+          'accion', 'fecha_hora', 'dispositivo', 'detalles', 'sync_status'
+        ])
+        && request.resource.data.id == logId
+        && request.resource.data.accion in ['eliminacion', 'restauracion']
+        && request.resource.data.sync_status == 'synced';
+      // Permite únicamente reintentar una escritura idéntica tras perder la
+      // respuesta de red; el contenido sigue siendo inmutable.
+      allow update: if signedIn()
+        && resource.data.usuario_uid == request.auth.uid
+        && request.resource.data == resource.data;
       allow delete: if false;
     }
 

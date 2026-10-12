@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart' show DatabaseException;
 
 import 'package:autofix/features/devMode/sync/devmode_sync_service.dart';
 import 'package:autofix/features/talleres/data/taller_repository.dart';
 import 'package:autofix/features/talleres/models/taller.dart';
+import 'package:autofix/features/sync/sync_service.dart';
 
 class DevModeController extends ChangeNotifier {
   DevModeController({TallerRepository? talleres})
@@ -70,12 +74,15 @@ class DevModeController extends ChangeNotifier {
   }
 
   void _alCambiarElCatalogo() {
-    _talleresRepository.obtenerTodas().then((lista) {
-      if (!_subscriptionsActivas) return;
-      _talleres = lista;
-      _error = null;
-      notifyListeners();
-    }).catchError((_) {});
+    _talleresRepository
+        .obtenerTodas()
+        .then((lista) {
+          if (!_subscriptionsActivas) return;
+          _talleres = lista;
+          _error = null;
+          notifyListeners();
+        })
+        .catchError((_) {});
   }
 
   /// Fuerza una sincronizacion completa: reinicia el sync service
@@ -87,18 +94,19 @@ class DevModeController extends ChangeNotifier {
   }
 
   Future<void> _sincronizarConFirebase(String id) async {
+    final guardado = await _talleresRepository.obtenerPorId(id);
+    if (guardado == null) return;
     try {
-      final guardado = await _talleresRepository.obtenerPorId(id);
-      if (guardado != null) {
-        await FirebaseFirestore.instance
-            .collection('talleres')
-            .doc(id)
-            .set(_tallerAFirebaseMap(guardado), SetOptions(merge: true));
-      }
-    } catch (e) {
-      debugPrint(
-        '[DevModeController] Error sincronizando taller $id a Firebase: $e',
-      );
+      await FirebaseAuth.instance.currentUser?.getIdToken(true);
+      await FirebaseFirestore.instance
+          .collection('talleres')
+          .doc(id)
+          .set(_tallerAFirebaseMap(guardado), SetOptions(merge: true));
+      await _talleresRepository.marcarSincronizado(id);
+    } on FirebaseException catch (error) {
+      if (error.code == 'permission-denied') rethrow;
+      // Sin conectividad la fila queda pending y se reintenta al abrir DEV.
+      debugPrint('[DevModeController] Push de taller pendiente ($error)');
     }
   }
 
@@ -106,6 +114,7 @@ class DevModeController extends ChangeNotifier {
   /// como `bool`, porque el listener de sync lo lee como `bool?`.
   static Map<String, Object?> _tallerAFirebaseMap(Taller t) {
     return <String, Object?>{
+      'id': t.id,
       'nombre': t.nombre,
       'direccion': t.direccion,
       'telefono': t.telefono,
@@ -116,6 +125,8 @@ class DevModeController extends ChangeNotifier {
       'actualizado_en':
           t.actualizadoEn?.toUtc().toIso8601String() ??
           DateTime.now().toUtc().toIso8601String(),
+      'eliminado_en': t.eliminadoEn?.toUtc().toIso8601String(),
+      'sync_status': 'synced',
     };
   }
 
@@ -168,6 +179,7 @@ class DevModeController extends ChangeNotifier {
       }
 
       await _sincronizarConFirebase(idTaller);
+      unawaited(SyncService.instance.pushPending());
 
       _talleres = await _talleresRepository.obtenerTodas();
       _error = null;
@@ -184,6 +196,7 @@ class DevModeController extends ChangeNotifier {
       await _talleresRepository.darDeBaja(id);
 
       await _sincronizarConFirebase(id);
+      unawaited(SyncService.instance.pushPending());
 
       _talleres = await _talleresRepository.obtenerTodas();
       _error = null;
@@ -198,6 +211,7 @@ class DevModeController extends ChangeNotifier {
     try {
       await _talleresRepository.reactivar(id);
       await _sincronizarConFirebase(id);
+      unawaited(SyncService.instance.pushPending());
 
       _talleres = await _talleresRepository.obtenerTodas();
       _error = null;

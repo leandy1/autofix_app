@@ -26,6 +26,8 @@ class Taller implements EntidadPersistida {
     this.activo = true,
     this.creadoEn,
     this.actualizadoEn,
+    this.eliminadoEn,
+    this.syncStatus = 'synced',
   });
 
   static const String _kId = 'id';
@@ -37,6 +39,8 @@ class Taller implements EntidadPersistida {
   static const String _kActivo = 'activo';
   static const String _kCreadoEn = 'creado_en';
   static const String _kActualizadoEn = 'actualizado_en';
+  static const String _kEliminadoEn = 'eliminado_en';
+  static const String _kSyncStatus = 'sync_status';
 
   /// Radio medio terrestre en km (IUGN).
   static const double _radioTierraKm = 6371.0;
@@ -113,6 +117,9 @@ class Taller implements EntidadPersistida {
   @override
   final DateTime? actualizadoEn;
 
+  final DateTime? eliminadoEn;
+  final String syncStatus;
+
   /// La distancia al cliente NO es un campo guardado, y esa es la decision.
   ///
   /// Depende de donde esta el cliente, o sea que cambia con cada persona y cada
@@ -170,6 +177,8 @@ class Taller implements EntidadPersistida {
     bool? activo,
     DateTime? creadoEn,
     DateTime? actualizadoEn,
+    DateTime? eliminadoEn,
+    String? syncStatus,
   }) {
     return Taller(
       id: id ?? this.id,
@@ -181,6 +190,8 @@ class Taller implements EntidadPersistida {
       activo: activo ?? this.activo,
       creadoEn: creadoEn ?? this.creadoEn,
       actualizadoEn: actualizadoEn ?? this.actualizadoEn,
+      eliminadoEn: eliminadoEn ?? this.eliminadoEn,
+      syncStatus: syncStatus ?? this.syncStatus,
     );
   }
 
@@ -207,6 +218,8 @@ class Taller implements EntidadPersistida {
       // servicio de sincronizacion la volveria a subir. El reloj se usa solo
       // cuando no hay marca previa, que es el alta desde el formulario.
       _kActualizadoEn: aIsoUtc(actualizadoEn ?? Reloj.instancia.ahora()),
+      _kEliminadoEn: eliminadoEn == null ? null : aIsoUtc(eliminadoEn!),
+      _kSyncStatus: syncStatus,
     };
   }
 
@@ -230,6 +243,8 @@ class Taller implements EntidadPersistida {
       activo: ((map[_kActivo] as int?) ?? 1) != 0,
       creadoEn: desdeIso(map[_kCreadoEn]),
       actualizadoEn: desdeIso(map[_kActualizadoEn]),
+      eliminadoEn: desdeIso(map[_kEliminadoEn]),
+      syncStatus: map[_kSyncStatus] as String? ?? 'synced',
     );
   }
 }

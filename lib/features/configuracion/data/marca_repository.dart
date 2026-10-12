@@ -5,6 +5,7 @@ import 'package:autofix/core/database/database_helper.dart';
 import 'package:autofix/core/database/semilla_inicial.dart';
 import 'package:autofix/core/utils/reloj.dart';
 import 'package:autofix/core/utils/uuid.dart';
+import 'package:autofix/features/devMode/data/audit_log_repository.dart';
 import 'package:autofix/features/configuracion/models/marca.dart';
 
 /// Acceso a datos de Marcas de vehiculo.
@@ -212,7 +213,7 @@ class MarcaRepository implements BaseRepository<Marca> {
   Future<int> eliminar(String id) async {
     final db = await _helper.base;
     final ahora = Reloj.instancia.ahora();
-    return db.update(
+    final modificados = await db.update(
       tabla,
       <String, Object?>{
         DatabaseHelper.colEliminadoEn: ahora.toIso8601String(),
@@ -223,5 +224,13 @@ class MarcaRepository implements BaseRepository<Marca> {
           '${DatabaseHelper.colId} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[id],
     );
+    if (modificados > 0) {
+      await AuditLogRepository.instance.registrar(
+        modulo: 'marcas',
+        entidadId: id,
+        accion: AuditLogRepository.eliminacion,
+      );
+    }
+    return modificados;
   }
 }

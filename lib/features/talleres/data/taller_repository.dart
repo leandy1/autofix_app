@@ -5,6 +5,7 @@ import 'package:autofix/core/data/base_repository.dart';
 import 'package:autofix/core/database/database_helper.dart';
 import 'package:autofix/core/utils/reloj.dart';
 import 'package:autofix/core/utils/uuid.dart';
+import 'package:autofix/features/devMode/data/audit_log_repository.dart';
 import 'package:autofix/features/talleres/models/taller.dart';
 
 /// Acceso a datos de los talleres AFILIADOS.
@@ -65,6 +66,7 @@ class TallerRepository extends ChangeNotifier
     final conId = taller.copyWith(
       id: taller.id ?? Uuid.instancia.generar(),
       creadoEn: taller.creadoEn ?? Reloj.instancia.ahora(),
+      syncStatus: 'pending',
     );
     final db = await _helper.base;
     await db.insert(
@@ -105,7 +107,9 @@ class TallerRepository extends ChangeNotifier
     final db = await _helper.base;
     final filas = await db.query(
       tabla,
-      where: '${DatabaseHelper.colActivo} = ?',
+      where:
+          '${DatabaseHelper.colActivo} = ? AND '
+          '${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[1],
       orderBy: '${DatabaseHelper.colNombre} COLLATE NOCASE ASC',
     );
@@ -148,7 +152,12 @@ class TallerRepository extends ChangeNotifier
     final db = await _helper.base;
     return db.update(
       tabla,
-      taller.copyWith(actualizadoEn: Reloj.instancia.ahora()).toMap(),
+      taller
+          .copyWith(
+            actualizadoEn: Reloj.instancia.ahora(),
+            syncStatus: 'pending',
+          )
+          .toMap(),
       where: '${DatabaseHelper.colId} = ?',
       whereArgs: <Object?>[id],
       conflictAlgorithm: ConflictAlgorithm.abort,
@@ -167,7 +176,30 @@ class TallerRepository extends ChangeNotifier
     if (taller == null) {
       throw ArgumentError('No existe el taller $id.');
     }
-    return actualizar(taller.copyWith(activo: false));
+    final ahora = Reloj.instancia.ahora();
+    final db = await _helper.base;
+    final modificados = await db.update(
+      tabla,
+      <String, Object?>{
+        DatabaseHelper.colActivo: 0,
+        DatabaseHelper.colEliminadoEn: aIsoUtc(ahora),
+        DatabaseHelper.colActualizadoEn: aIsoUtc(ahora),
+        DatabaseHelper.colSyncStatus: 'pending',
+      },
+      where:
+          '${DatabaseHelper.colId} = ? AND '
+          '${DatabaseHelper.colEliminadoEn} IS NULL',
+      whereArgs: <Object?>[id],
+    );
+    if (modificados > 0) {
+      await AuditLogRepository.instance.registrar(
+        modulo: 'talleres',
+        entidadId: id,
+        accion: AuditLogRepository.eliminacion,
+        detalles: <String, Object?>{'nombre': taller.nombre},
+      );
+    }
+    return modificados;
   }
 
   /// Reactiva un taller dado de baja. Es el inverso de [darDeBaja].
@@ -176,30 +208,56 @@ class TallerRepository extends ChangeNotifier
     if (taller == null) {
       throw ArgumentError('No existe el taller $id.');
     }
-    return actualizar(taller.copyWith(activo: true));
+    final ahora = Reloj.instancia.ahora();
+    final db = await _helper.base;
+    final modificados = await db.update(
+      tabla,
+      <String, Object?>{
+        DatabaseHelper.colActivo: 1,
+        DatabaseHelper.colEliminadoEn: null,
+        DatabaseHelper.colActualizadoEn: aIsoUtc(ahora),
+        DatabaseHelper.colSyncStatus: 'pending',
+      },
+      where:
+          '${DatabaseHelper.colId} = ? AND '
+          '${DatabaseHelper.colEliminadoEn} IS NOT NULL',
+      whereArgs: <Object?>[id],
+    );
+    if (modificados > 0) {
+      await AuditLogRepository.instance.registrar(
+        modulo: 'talleres',
+        entidadId: id,
+        accion: AuditLogRepository.restauracion,
+        detalles: <String, Object?>{'nombre': taller.nombre},
+      );
+    }
+    return modificados;
   }
 
   // ------------------------------ DELETE ------------------------------
 
-  /// Borrado FISICO, y sigue siendolo a proposito.
-  ///
-  /// Es la excepcion consciousa al tombstone de `citas`, y la razon es que el
-  /// taller ya tiene su propio mecanismo de baja, que es [darDeBaja]: es
-  /// reversible y no pierde el historial de las citas que lo nombran.
-  ///
-  /// Agregarle `eliminado_en` seria redundancia, y peor que redundancia: la
-  /// consulta del mapa tendria que filtrar por `activo = 1 AND eliminado_en IS
-  /// NULL`, o sea dos banderas para el mismo significado, y el dia que alguien
-  /// olvide una el mapa muestra un taller dado de baja. Un mecanismo, una
-  /// bandera.
-  ///
-  /// Ademas, un taller se crea desde el Modo Desarrollador, y ese flujo es de
-  /// pruebas: ahi si conviene que borrar sea borrar de verdad.
+  /// Compatibilidad del contrato: la baja siempre conserva el tombstone.
   @override
   Future<int> eliminar(String id) async {
+    if (await obtenerPorId(id) == null) return 0;
+    return darDeBaja(id);
+  }
+
+  Future<List<Taller>> obtenerPendientesDeSync() async {
     final db = await _helper.base;
-    return db.delete(
+    final filas = await db.query(
       tabla,
+      where: "${DatabaseHelper.colSyncStatus} = 'pending'",
+      orderBy: '${DatabaseHelper.colActualizadoEn} ASC',
+    );
+    return filas.map(Taller.fromMap).toList();
+  }
+
+  Future<void> marcarSincronizado(String id) async {
+    final db = await _helper.base;
+    await db.update(
+      tabla,
+      <String, Object?>{DatabaseHelper.colSyncStatus: 'synced'},
       where: '${DatabaseHelper.colId} = ?',
       whereArgs: <Object?>[id],
     );

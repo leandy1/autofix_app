@@ -4,6 +4,7 @@ import 'package:autofix/core/data/base_repository.dart';
 import 'package:autofix/core/database/database_helper.dart';
 import 'package:autofix/core/utils/reloj.dart';
 import 'package:autofix/core/utils/uuid.dart';
+import 'package:autofix/features/devMode/data/audit_log_repository.dart';
 import 'package:autofix/features/configuracion/models/grupo_servicio_item.dart';
 
 /// Acceso a datos de la tabla puente `grupo_servicio_items`.
@@ -13,7 +14,8 @@ import 'package:autofix/features/configuracion/models/grupo_servicio_item.dart';
 class GrupoServicioItemRepository implements BaseRepository<GrupoServicioItem> {
   GrupoServicioItemRepository._();
 
-  static final GrupoServicioItemRepository instance = GrupoServicioItemRepository._();
+  static final GrupoServicioItemRepository instance =
+      GrupoServicioItemRepository._();
 
   final DatabaseHelper _helper = DatabaseHelper.instance;
 
@@ -85,7 +87,9 @@ class GrupoServicioItemRepository implements BaseRepository<GrupoServicioItem> {
   }
 
   /// Obtiene todos los vínculos activos de un servicio (en qué grupos está).
-  Future<List<GrupoServicioItem>> obtenerPorServicio(String tipoServicioId) async {
+  Future<List<GrupoServicioItem>> obtenerPorServicio(
+    String tipoServicioId,
+  ) async {
     final db = await _helper.base;
     final filas = await db.query(
       tabla,
@@ -110,7 +114,9 @@ class GrupoServicioItemRepository implements BaseRepository<GrupoServicioItem> {
   }
 
   /// Obtiene solo los vínculos activos de un taller.
-  Future<List<GrupoServicioItem>> obtenerActivosPorTaller(String tallerId) async {
+  Future<List<GrupoServicioItem>> obtenerActivosPorTaller(
+    String tallerId,
+  ) async {
     final db = await _helper.base;
     final filas = await db.query(
       tabla,
@@ -212,7 +218,7 @@ class GrupoServicioItemRepository implements BaseRepository<GrupoServicioItem> {
   Future<int> eliminar(String id) async {
     final db = await _helper.base;
     final ahora = Reloj.instancia.ahora();
-    return db.update(
+    final modificados = await db.update(
       tabla,
       <String, Object?>{
         DatabaseHelper.colEliminadoEn: ahora.toIso8601String(),
@@ -223,13 +229,29 @@ class GrupoServicioItemRepository implements BaseRepository<GrupoServicioItem> {
           '${DatabaseHelper.colId} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[id],
     );
+    if (modificados > 0) {
+      await AuditLogRepository.instance.registrar(
+        modulo: 'grupos_servicio_items',
+        entidadId: id,
+        accion: AuditLogRepository.eliminacion,
+      );
+    }
+    return modificados;
   }
 
   /// Elimina (baja lógica) todos los vínculos de un grupo.
   Future<int> eliminarPorGrupo(String grupoId) async {
     final db = await _helper.base;
     final ahora = Reloj.instancia.ahora();
-    return db.update(
+    final filas = await db.query(
+      tabla,
+      columns: <String>[DatabaseHelper.colId],
+      where:
+          '${DatabaseHelper.colGrupoId} = ? AND '
+          '${DatabaseHelper.colEliminadoEn} IS NULL',
+      whereArgs: <Object?>[grupoId],
+    );
+    final modificados = await db.update(
       tabla,
       <String, Object?>{
         DatabaseHelper.colEliminadoEn: ahora.toIso8601String(),
@@ -240,6 +262,14 @@ class GrupoServicioItemRepository implements BaseRepository<GrupoServicioItem> {
           '${DatabaseHelper.colGrupoId} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[grupoId],
     );
+    for (final fila in filas) {
+      await AuditLogRepository.instance.registrar(
+        modulo: 'grupos_servicio_items',
+        entidadId: fila[DatabaseHelper.colId]! as String,
+        accion: AuditLogRepository.eliminacion,
+      );
+    }
+    return modificados;
   }
 
   /// Elimina (baja lógica) un vínculo específico grupo-servicio.
@@ -249,7 +279,16 @@ class GrupoServicioItemRepository implements BaseRepository<GrupoServicioItem> {
   }) async {
     final db = await _helper.base;
     final ahora = Reloj.instancia.ahora();
-    return db.update(
+    final filas = await db.query(
+      tabla,
+      columns: <String>[DatabaseHelper.colId],
+      where:
+          '${DatabaseHelper.colGrupoId} = ? AND '
+          '${DatabaseHelper.colTipoServicioId} = ? AND '
+          '${DatabaseHelper.colEliminadoEn} IS NULL',
+      whereArgs: <Object?>[grupoId, tipoServicioId],
+    );
+    final modificados = await db.update(
       tabla,
       <String, Object?>{
         DatabaseHelper.colEliminadoEn: ahora.toIso8601String(),
@@ -260,5 +299,13 @@ class GrupoServicioItemRepository implements BaseRepository<GrupoServicioItem> {
           '${DatabaseHelper.colGrupoId} = ? AND ${DatabaseHelper.colTipoServicioId} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[grupoId, tipoServicioId],
     );
+    for (final fila in filas) {
+      await AuditLogRepository.instance.registrar(
+        modulo: 'grupos_servicio_items',
+        entidadId: fila[DatabaseHelper.colId]! as String,
+        accion: AuditLogRepository.eliminacion,
+      );
+    }
+    return modificados;
   }
 }

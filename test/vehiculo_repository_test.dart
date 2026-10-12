@@ -71,12 +71,19 @@ void main() {
       expect(vehiculo?.eliminadoEn, isNull);
       expect(
         (await db.rawQuery('PRAGMA user_version')).single['user_version'],
-        15,
+        18,
+      );
+      expect(
+        await db.query(
+          DatabaseHelper.tablaAuditLogs,
+          columns: <String>[DatabaseHelper.colId],
+        ),
+        isEmpty,
       );
     },
   );
 
-  test('el esquema v15 crea vehículos listos para sincronización', () async {
+  test('el esquema actual crea vehículos listos para sincronización', () async {
     final db = await DatabaseHelper.instance.base;
     final columnas = await db.rawQuery(
       'PRAGMA table_info(${DatabaseHelper.tablaVehiculos})',

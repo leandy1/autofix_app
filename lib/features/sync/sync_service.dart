@@ -14,10 +14,12 @@ import 'package:autofix/features/cliente/data/cambios_password_repository.dart';
 import 'package:autofix/features/cliente/data/cliente_repository.dart';
 import 'package:autofix/features/cliente/data/vehiculo_repository.dart';
 import 'package:autofix/features/cliente/models/vehiculo.dart';
+import 'package:autofix/features/devMode/data/audit_log_repository.dart';
 import 'package:autofix/features/sync/catalogo_taller_sync_repository.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'dart:async';
+import 'dart:convert';
 
 /// Servicio de sincronizacion bidireccional entre SQLite local y Firestore.
 ///
@@ -501,20 +503,61 @@ class SyncService extends ChangeNotifier {
     await _sinDejarQueCorte('el perfil de cliente', _pushPerfilesPendientes);
     await _sinDejarQueCorte('cambios de contraseña', _drenarCambiosPassword);
     await _sinDejarQueCorte('catálogos del taller', _pushCatalogosPendientes);
+    await _sinDejarQueCorte('logs de auditoría', _pushLogsDeAuditoria);
+  }
+
+  Future<void> _pushLogsDeAuditoria() async {
+    User? usuario;
+    try {
+      usuario = FirebaseAuth.instance.currentUser;
+    } on Object {
+      return;
+    }
+    if (usuario == null || usuario.isAnonymous) return;
+    final repositorio = AuditLogRepository.instance;
+    for (final fila in await repositorio.pendientes()) {
+      final id = fila[DatabaseHelper.colId] as String?;
+      if (id == null) continue;
+      try {
+        final detalles = jsonDecode(fila['detalles'] as String? ?? '{}');
+        await _db.collection('audit_logs').doc(id).set(<String, Object?>{
+          'id': id,
+          'usuario_uid': fila['usuario_uid'],
+          'usuario_email': fila['usuario_email'],
+          'modulo': fila['modulo'],
+          'entidad_id': fila['entidad_id'],
+          'accion': fila['accion'],
+          'fecha_hora': fila['fecha_hora'],
+          'dispositivo': fila['dispositivo'],
+          'detalles': detalles is Map<String, dynamic>
+              ? detalles
+              : <String, Object?>{'valor': detalles},
+          'sync_status': 'synced',
+        });
+        await repositorio.marcarSincronizado(id);
+      } catch (error) {
+        debugPrint('[SyncService] Falló el push de audit_logs/$id: $error');
+      }
+    }
   }
 
   /// Sube vehículos pendientes del cliente autenticado y publica bajas como
   /// tombstones. La identidad del propietario no se toma de una fila arbitraria:
-  /// solo se procesa el correo de la sesión Firebase activa.
+  /// un DEV solo puede publicar la restauración explícita de un tombstone y
+  /// conserva el propietario que ya existe en Firestore.
   Future<void> _pushVehiculosPendientes() async {
-    if (!SesionCliente.instance.activa || SesionAdmin.instance.activa) return;
+    final esCliente =
+        SesionCliente.instance.activa && !SesionAdmin.instance.activa;
+    final esDev = await _esDevFirebase();
+    if (!esCliente && !esDev) return;
     final uid = _currentUid();
     if (uid == null || uid.isEmpty) return;
 
-    final correoSesion =
-        SesionCliente.instance.correo?.trim().toLowerCase() ?? '';
-    if (correoSesion.isEmpty) return;
-    if (_uidOverride == null) {
+    final correoSesion = esCliente
+        ? SesionCliente.instance.correo?.trim().toLowerCase() ?? ''
+        : '';
+    if (esCliente && correoSesion.isEmpty) return;
+    if (_uidOverride == null && esCliente) {
       final usuario = FirebaseAuth.instance.currentUser;
       if (usuario == null ||
           usuario.isAnonymous ||
@@ -523,18 +566,27 @@ class SyncService extends ChangeNotifier {
       }
     }
 
-    final pendientes = await _repoVehiculos.pendientesDeSync(correoSesion);
+    final pendientes = await _repoVehiculos.pendientesDeSync(
+      esCliente ? correoSesion : null,
+    );
     for (final vehiculo in pendientes) {
       final id = vehiculo.id;
       final actualizadoEn = vehiculo.actualizadoEn;
       if (id == null || actualizadoEn == null) continue;
       final referencia = _db.collection('vehiculos').doc(id);
       final fechaActualizacion = aIsoUtc(actualizadoEn);
+      final correoVehiculo = vehiculo.clienteId.trim().toLowerCase();
+      final restauracionLocal =
+          vehiculo.eliminadoEn == null &&
+          await AuditLogRepository.instance.ultimaAccionEsRestauracion(
+            modulo: 'vehiculos',
+            entidadId: id,
+          );
       final data = <String, Object?>{
         'id': id,
-        'cliente_id': correoSesion,
-        'correo_cliente': correoSesion,
-        'ownerUid': uid,
+        'cliente_id': correoVehiculo,
+        'correo_cliente': correoVehiculo,
+        if (esCliente) 'ownerUid': uid,
         'marca': vehiculo.marca,
         'modelo': vehiculo.modelo,
         'anio': vehiculo.anio,
@@ -555,8 +607,18 @@ class SyncService extends ChangeNotifier {
           final remoto = await transaccion.get(referencia);
           final datosRemotos = remoto.data();
           if (datosRemotos?['eliminado_en'] != null &&
-              vehiculo.eliminadoEn == null) {
+              vehiculo.eliminadoEn == null &&
+              !restauracionLocal) {
             return datosRemotos;
+          }
+          if (esDev) {
+            final propietario = datosRemotos?['ownerUid'];
+            if (!remoto.exists || propietario is! String) {
+              throw StateError(
+                'No se puede restaurar el vehículo sin propietario remoto.',
+              );
+            }
+            data['ownerUid'] = propietario;
           }
           transaccion.set(referencia, data, SetOptions(merge: true));
           return null;
@@ -567,7 +629,7 @@ class SyncService extends ChangeNotifier {
             Vehiculo.fromMap(<String, Object?>{
               ...bajaRemota,
               'id': id,
-              'correo_cliente': bajaRemota['correo_cliente'] ?? correoSesion,
+              'correo_cliente': bajaRemota['correo_cliente'] ?? correoVehiculo,
             }),
             prevaleceBaja: true,
           );
@@ -631,79 +693,113 @@ class SyncService extends ChangeNotifier {
   /// filas con `eliminado_en` y Firestore no recibe nunca un borrado físico.
   Future<void> _pushCatalogosPendientes() async {
     final tallerId = SesionAdmin.instance.tallerId;
-    if (tallerId == null || tallerId.isEmpty) return;
-
-    for (final catalogo in _catalogosTaller) {
-      late final List<Map<String, Object?>> pendientes;
-      try {
-        pendientes = await _repoCatalogos.pendientes(catalogo, tallerId);
-      } catch (error) {
-        debugPrint(
-          '[SyncService] No se pudo leer la cola de ${catalogo.coleccion}: '
-          '$error',
-        );
-        continue;
+    final talleres = <String>{
+      if (tallerId != null && tallerId.isNotEmpty) tallerId,
+    };
+    if (talleres.isEmpty && await _esDevFirebase()) {
+      for (final catalogo in _catalogosTaller) {
+        talleres.addAll(await _repoCatalogos.talleresConPendientes(catalogo));
       }
-      for (final fila in pendientes) {
-        final id = fila[DatabaseHelper.colId] as String?;
-        final actualizadoEn = fila[DatabaseHelper.colActualizadoEn] as String?;
-        if (id == null || actualizadoEn == null) continue;
+    }
+    if (talleres.isEmpty) return;
 
+    for (final tallerPendiente in talleres) {
+      for (final catalogo in _catalogosTaller) {
+        late final List<Map<String, Object?>> pendientes;
         try {
-          final referencia = _db.collection(catalogo.coleccion).doc(id);
-          final bajaLocal = fila[DatabaseHelper.colEliminadoEn];
-          final bajaRemota = await _db.runTransaction<Map<String, dynamic>?>((
-            transaccion,
-          ) async {
-            final remoto = await transaccion.get(referencia);
-            final datosRemotos = remoto.data();
-            if (datosRemotos != null &&
-                datosRemotos[DatabaseHelper.colEliminadoEn] != null &&
-                bajaLocal == null) {
-              return datosRemotos;
+          pendientes = await _repoCatalogos.pendientes(
+            catalogo,
+            tallerPendiente,
+          );
+        } catch (error) {
+          debugPrint(
+            '[SyncService] No se pudo leer la cola de ${catalogo.coleccion}: '
+            '$error',
+          );
+          continue;
+        }
+        for (final fila in pendientes) {
+          final id = fila[DatabaseHelper.colId] as String?;
+          final actualizadoEn =
+              fila[DatabaseHelper.colActualizadoEn] as String?;
+          if (id == null || actualizadoEn == null) continue;
+
+          try {
+            final referencia = _db.collection(catalogo.coleccion).doc(id);
+            final bajaLocal = fila[DatabaseHelper.colEliminadoEn];
+            final restauracionLocal =
+                bajaLocal == null &&
+                await AuditLogRepository.instance.ultimaAccionEsRestauracion(
+                  modulo: catalogo.coleccion,
+                  entidadId: id,
+                );
+            final bajaRemota = await _db.runTransaction<Map<String, dynamic>?>((
+              transaccion,
+            ) async {
+              final remoto = await transaccion.get(referencia);
+              final datosRemotos = remoto.data();
+              if (datosRemotos != null &&
+                  datosRemotos[DatabaseHelper.colEliminadoEn] != null &&
+                  bajaLocal == null &&
+                  !restauracionLocal) {
+                return datosRemotos;
+              }
+              transaccion.set(
+                referencia,
+                _repoCatalogos.aFirestore(catalogo, fila),
+              );
+              return null;
+            });
+            if (bajaRemota != null) {
+              // Una fila borrada en otro dispositivo no se puede resucitar con
+              // una edición local que llevaba tiempo offline. La lectura y el
+              // posible push ocurrieron en una transacción para cerrar la carrera.
+              final aplicado = await _repoCatalogos.aplicarDesdeNube(
+                definition: catalogo,
+                id: id,
+                tallerId: tallerPendiente,
+                data: bajaRemota,
+              );
+              if (aplicado) notifyListeners();
+              continue;
             }
-            transaccion.set(
-              referencia,
-              _repoCatalogos.aFirestore(catalogo, fila),
-            );
-            return null;
-          });
-          if (bajaRemota != null) {
-            // Una fila borrada en otro dispositivo no se puede resucitar con
-            // una edición local que llevaba tiempo offline. La lectura y el
-            // posible push ocurrieron en una transacción para cerrar la carrera.
-            final aplicado = await _repoCatalogos.aplicarDesdeNube(
+
+            final marcado = await _repoCatalogos.marcarSincronizado(
               definition: catalogo,
               id: id,
-              tallerId: tallerId,
-              data: bajaRemota,
+              actualizadoEn: actualizadoEn,
             );
-            if (aplicado) notifyListeners();
-            continue;
-          }
-
-          final marcado = await _repoCatalogos.marcarSincronizado(
-            definition: catalogo,
-            id: id,
-            actualizadoEn: actualizadoEn,
-          );
-          if (!marcado) {
-            // Se editó durante el push: permanece pending y el siguiente ciclo
-            // enviará la versión más reciente.
+            if (!marcado) {
+              // Se editó durante el push: permanece pending y el siguiente ciclo
+              // enviará la versión más reciente.
+              debugPrint(
+                '[SyncService] ${catalogo.coleccion}/$id cambió durante el push; '
+                'queda pendiente',
+              );
+            }
+            notifyListeners();
+          } catch (error) {
+            // Los reintentos son por fila: el resto del catálogo continúa y esta
+            // fila permanece pending para la próxima sincronización.
             debugPrint(
-              '[SyncService] ${catalogo.coleccion}/$id cambió durante el push; '
-              'queda pendiente',
+              '[SyncService] Falló el push de ${catalogo.coleccion}/$id: $error',
             );
           }
-          notifyListeners();
-        } catch (error) {
-          // Los reintentos son por fila: el resto del catálogo continúa y esta
-          // fila permanece pending para la próxima sincronización.
-          debugPrint(
-            '[SyncService] Falló el push de ${catalogo.coleccion}/$id: $error',
-          );
         }
       }
+    }
+  }
+
+  Future<bool> _esDevFirebase() async {
+    try {
+      final usuario = FirebaseAuth.instance.currentUser;
+      if (usuario == null) return false;
+      final token = await usuario.getIdTokenResult(true);
+      return token.claims?['dev'] == true ||
+          (usuario.email?.trim().toLowerCase() == 'sandyortizz32@gmail.com' &&
+              token.claims?['email_verified'] == true);
+    } on Object {
+      return false;
     }
   }
 
@@ -942,9 +1038,7 @@ class SyncService extends ChangeNotifier {
         }
 
         if (change.type == DocumentChangeType.removed) {
-          // Firestore no suele borrar (soft delete en app), pero por si acaso:
-          await _repo.borrar(doc.id);
-          notifyListeners();
+          // Una ausencia remota no es una instrucción de borrado local.
           continue;
         }
 

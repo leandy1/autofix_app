@@ -56,6 +56,21 @@ class CatalogoTallerSyncRepository {
     );
   }
 
+  Future<List<String>> talleresConPendientes(
+    CatalogoTallerSyncDefinition definition,
+  ) async {
+    final db = await _helper.base;
+    final filas = await db.rawQuery(
+      'SELECT DISTINCT ${DatabaseHelper.colTallerId} '
+      'FROM ${definition.tabla} '
+      'WHERE ${DatabaseHelper.colSyncStatus} = ?',
+      <Object?>['pending'],
+    );
+    return filas
+        .map((fila) => fila[DatabaseHelper.colTallerId] as String)
+        .toList(growable: false);
+  }
+
   /// Incorpora una versión remota, sin convertirla en una edición local.
   ///
   /// Una edición local `pending` siempre se conserva para el push. Las plantillas

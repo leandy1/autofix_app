@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:autofix/features/devMode/sync/devmode_sync_service.dart';
+import 'package:autofix/features/devMode/data/audit_log_repository.dart';
+import 'package:autofix/features/sync/sync_service.dart';
 import 'package:autofix/features/talleres/models/taller.dart';
 import 'package:autofix/features/talleres/data/taller_repository.dart';
 
@@ -27,7 +31,7 @@ class CuentasAdminController extends ChangeNotifier {
     try {
       final normalizado = email.trim().toLowerCase();
       final doc = await _db.collection('adminUsers').doc(normalizado).get();
-      
+
       if (doc.exists) {
         _verificado = true;
         _emailVerificado = normalizado;
@@ -271,6 +275,12 @@ class CuentasAdminController extends ChangeNotifier {
         'tallerId': nuevoTallerId,
         'actualizado_en': FieldValue.serverTimestamp(),
       });
+      await AuditLogRepository.instance.registrar(
+        modulo: 'admins',
+        entidadId: uid,
+        accion: AuditLogRepository.eliminacion,
+      );
+      unawaited(SyncService.instance.pushPending());
       await cargarDatos();
       return true;
     } catch (e) {
@@ -301,6 +311,12 @@ class CuentasAdminController extends ChangeNotifier {
         'eliminado': true,
         'actualizado_en': FieldValue.serverTimestamp(),
       });
+      await AuditLogRepository.instance.registrar(
+        modulo: 'admins',
+        entidadId: uid,
+        accion: AuditLogRepository.restauracion,
+      );
+      unawaited(SyncService.instance.pushPending());
       await cargarDatos();
       return true;
     } catch (e) {

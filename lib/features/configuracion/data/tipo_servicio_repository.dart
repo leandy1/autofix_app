@@ -5,6 +5,7 @@ import 'package:autofix/core/database/database_helper.dart';
 import 'package:autofix/core/database/semilla_inicial.dart';
 import 'package:autofix/core/utils/reloj.dart';
 import 'package:autofix/core/utils/uuid.dart';
+import 'package:autofix/features/devMode/data/audit_log_repository.dart';
 import 'package:autofix/features/configuracion/models/tipo_servicio.dart';
 
 /// Acceso a datos de Tipos de Servicio.
@@ -144,7 +145,7 @@ class TipoServicioRepository implements BaseRepository<TipoServicio> {
   Future<int> eliminar(String id) async {
     final db = await _helper.base;
     final ahora = Reloj.instancia.ahora();
-    return db.update(
+    final modificados = await db.update(
       tabla,
       <String, Object?>{
         DatabaseHelper.colEliminadoEn: ahora.toIso8601String(),
@@ -155,5 +156,13 @@ class TipoServicioRepository implements BaseRepository<TipoServicio> {
           '${DatabaseHelper.colId} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[id],
     );
+    if (modificados > 0) {
+      await AuditLogRepository.instance.registrar(
+        modulo: 'servicios',
+        entidadId: id,
+        accion: AuditLogRepository.eliminacion,
+      );
+    }
+    return modificados;
   }
 }

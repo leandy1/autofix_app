@@ -3,6 +3,7 @@ import 'package:autofix/features/devMode/controllers/dev_mode_controller.dart';
 import 'package:autofix/features/talleres/models/taller.dart';
 import 'package:autofix/shared/theme/app_colors.dart';
 import 'package:autofix/features/devMode/screens/cuentas_admin_screen.dart';
+import 'package:autofix/features/devMode/screens/papelera_dev_screen.dart';
 
 class TalleresAfiliadosScreen extends StatefulWidget {
   const TalleresAfiliadosScreen({super.key});
@@ -70,6 +71,13 @@ class _TalleresAfiliadosScreenState extends State<TalleresAfiliadosScreen> {
                 MaterialPageRoute(builder: (_) => const CuentasAdminScreen()),
               );
             },
+          ),
+          IconButton(
+            tooltip: 'Papelera y restauración',
+            icon: const Icon(Icons.restore_from_trash),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const PapeleraDevScreen()),
+            ),
           ),
           IconButton(
             tooltip: 'Cerrar sesión',

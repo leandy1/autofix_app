@@ -3,6 +3,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:autofix/core/data/base_repository.dart';
 import 'package:autofix/core/database/database_helper.dart';
 import 'package:autofix/core/utils/borrado_logico.dart';
+import 'package:autofix/features/devMode/data/audit_log_repository.dart';
 import 'package:autofix/core/utils/reloj.dart';
 import 'package:autofix/core/utils/uuid.dart';
 import 'package:autofix/features/citas/models/cita.dart';
@@ -398,8 +399,14 @@ class CitaRepository implements BaseRepository<Cita> {
   /// `UPDATE` de SQLite una columna ausente NO SE TOCA, mientras que mandarla en
   /// `null` la vaciaria. Un update de estado no debe saber nada del borrado de
   /// otro dispositivo.
-  Future<int> cambiarEstado(String id, EstadoCita estado, {String? motivoRechazo}) async {
-    print('🔐 REPO cambiarEstado: id=$id, estado=$estado, motivoRechazo=$motivoRechazo');
+  Future<int> cambiarEstado(
+    String id,
+    EstadoCita estado, {
+    String? motivoRechazo,
+  }) async {
+    print(
+      '🔐 REPO cambiarEstado: id=$id, estado=$estado, motivoRechazo=$motivoRechazo',
+    );
     final db = await _helper.base;
     final valores = <String, Object?>{
       DatabaseHelper.colEstado: estado.name,
@@ -408,7 +415,9 @@ class CitaRepository implements BaseRepository<Cita> {
       DatabaseHelper.colSyncStatus: 'pending',
     };
     // Solo guardamos el motivo de rechazo cuando el estado es rechazada
-    if (estado == EstadoCita.rechazada && motivoRechazo != null && motivoRechazo.isNotEmpty) {
+    if (estado == EstadoCita.rechazada &&
+        motivoRechazo != null &&
+        motivoRechazo.isNotEmpty) {
       valores[DatabaseHelper.colMotivoRechazo] = motivoRechazo;
       print('🔐 REPO SAVING motivo_rechazo: "$motivoRechazo"');
     }
@@ -476,7 +485,8 @@ class CitaRepository implements BaseRepository<Cita> {
   Future<int> borrar(String id, {String? eliminadaPor}) async {
     final db = await _helper.base;
     final ahora = Reloj.instancia.ahora();
-    return db.update(
+    final cita = await obtenerPorId(id);
+    final modificadas = await db.update(
       tabla,
       <String, Object?>{
         DatabaseHelper.colEliminadoEn: aIsoUtc(ahora),
@@ -490,6 +500,19 @@ class CitaRepository implements BaseRepository<Cita> {
           'AND ${DatabaseHelper.colEliminadoEn} IS NULL',
       whereArgs: <Object?>[id],
     );
+    if (modificadas > 0) {
+      await AuditLogRepository.instance.registrar(
+        modulo: 'citas',
+        entidadId: id,
+        accion: AuditLogRepository.eliminacion,
+        detalles: <String, Object?>{
+          'codigo_visible': cita?.codigoVisible,
+          'cliente': cita?.cliente,
+          'ejecutor_uid': eliminadaPor,
+        },
+      );
+    }
+    return modificadas;
   }
 
   /// Devuelve una cita borrada a la vida.
@@ -505,7 +528,8 @@ class CitaRepository implements BaseRepository<Cita> {
   Future<int> restaurar(String id) async {
     final db = await _helper.base;
     final ahora = Reloj.instancia.ahora();
-    return db.update(
+    final cita = await obtenerPorId(id);
+    final modificadas = await db.update(
       tabla,
       <String, Object?>{
         DatabaseHelper.colEliminadoEn: null,
@@ -524,6 +548,18 @@ class CitaRepository implements BaseRepository<Cita> {
           'AND ${DatabaseHelper.colEliminadoEn} IS NOT NULL',
       whereArgs: <Object?>[id],
     );
+    if (modificadas > 0) {
+      await AuditLogRepository.instance.registrar(
+        modulo: 'citas',
+        entidadId: id,
+        accion: AuditLogRepository.restauracion,
+        detalles: <String, Object?>{
+          'codigo_visible': cita?.codigoVisible,
+          'cliente': cita?.cliente,
+        },
+      );
+    }
+    return modificadas;
   }
 
   /// Las citas borradas: la consulta de la futura Papelera.
@@ -668,11 +704,7 @@ class CitaRepository implements BaseRepository<Cita> {
   ///
   /// Es `db.update` con el mapa de la cita, sacado aparte porque los
   /// tres caminos de [fusionarDesdeNube] lo hacen igual.
-  Future<void> _bajarVersionRemota(
-    Database db,
-    String id,
-    Cita remota,
-  ) async {
+  Future<void> _bajarVersionRemota(Database db, String id, Cita remota) async {
     await db.update(
       tabla,
       remota.toMap(),

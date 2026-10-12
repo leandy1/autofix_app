@@ -3,6 +3,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:autofix/core/database/database_helper.dart';
 import 'package:autofix/core/utils/reloj.dart';
 import 'package:autofix/core/utils/uuid.dart';
+import 'package:autofix/features/devMode/data/audit_log_repository.dart';
 import 'package:autofix/features/cliente/models/vehiculo.dart';
 
 /// Almacenamiento local de vehículos registrados por el cliente.
@@ -78,7 +79,8 @@ class VehiculoRepository {
 
   Future<int> eliminar(String id, {required String clienteId}) async {
     final db = await DatabaseHelper.instance.base;
-    return db.update(
+    final vehiculo = await obtenerPorId(id);
+    final modificados = await db.update(
       DatabaseHelper.tablaVehiculos,
       <String, Object?>{
         DatabaseHelper.colActivoVehiculo: 0,
@@ -91,6 +93,51 @@ class VehiculoRepository {
           '${DatabaseHelper.colClienteIdVehiculo} = ?',
       whereArgs: [id, clienteId.trim().toLowerCase()],
     );
+    if (modificados > 0) {
+      await AuditLogRepository.instance.registrar(
+        modulo: 'vehiculos',
+        entidadId: id,
+        accion: AuditLogRepository.eliminacion,
+        detalles: <String, Object?>{
+          'marca': vehiculo?.marca,
+          'modelo': vehiculo?.modelo,
+          'placa': vehiculo?.placa,
+        },
+      );
+    }
+    return modificados;
+  }
+
+  Future<int> restaurar(String id) async {
+    final db = await DatabaseHelper.instance.base;
+    final vehiculo = await obtenerPorId(id);
+    final ahora = ahoraIso();
+    final modificados = await db.update(
+      DatabaseHelper.tablaVehiculos,
+      <String, Object?>{
+        DatabaseHelper.colActivoVehiculo: 1,
+        DatabaseHelper.colEliminadoEnVehiculo: null,
+        DatabaseHelper.colActualizadoEn: ahora,
+        DatabaseHelper.colSyncStatusVehiculo: 'pending',
+      },
+      where:
+          '${DatabaseHelper.colId} = ? AND '
+          '${DatabaseHelper.colEliminadoEnVehiculo} IS NOT NULL',
+      whereArgs: <Object?>[id],
+    );
+    if (modificados > 0) {
+      await AuditLogRepository.instance.registrar(
+        modulo: 'vehiculos',
+        entidadId: id,
+        accion: AuditLogRepository.restauracion,
+        detalles: <String, Object?>{
+          'marca': vehiculo?.marca,
+          'modelo': vehiculo?.modelo,
+          'placa': vehiculo?.placa,
+        },
+      );
+    }
+    return modificados;
   }
 
   Future<int> borrarLocalTodo() async {
@@ -98,14 +145,17 @@ class VehiculoRepository {
     return db.delete(DatabaseHelper.tablaVehiculos);
   }
 
-  Future<List<Vehiculo>> pendientesDeSync(String clienteId) async {
+  Future<List<Vehiculo>> pendientesDeSync([String? clienteId]) async {
     final db = await DatabaseHelper.instance.base;
     final filas = await db.query(
       DatabaseHelper.tablaVehiculos,
-      where:
-          '${DatabaseHelper.colClienteIdVehiculo} = ? AND '
-          '${DatabaseHelper.colSyncStatusVehiculo} = ?',
-      whereArgs: [clienteId.trim().toLowerCase(), 'pending'],
+      where: clienteId == null
+          ? "${DatabaseHelper.colSyncStatusVehiculo} = 'pending'"
+          : '${DatabaseHelper.colClienteIdVehiculo} = ? AND '
+                '${DatabaseHelper.colSyncStatusVehiculo} = ?',
+      whereArgs: clienteId == null
+          ? null
+          : <Object?>[clienteId.trim().toLowerCase(), 'pending'],
       orderBy: '${DatabaseHelper.colActualizadoEn} ASC',
     );
     return filas.map(Vehiculo.fromMap).toList(growable: false);

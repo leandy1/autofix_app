@@ -100,7 +100,7 @@ class DatabaseHelper {
   /// es lo que permite a un dispositivo que ya instalo la v1 seguir funcionando.
   /// En la v7 el `onUpgrade` hace `DROP TABLE`, asi que en ESTE caso si borra los
   /// datos, y es intencional (ver [_migrar]).
-  static const int _versionBase = 17;
+  static const int _versionBase = 18;
 
   /// Nombre del indice de [tablaCitas] por fecha.
   ///
@@ -202,18 +202,18 @@ class DatabaseHelper {
   /// Marcas de vehiculo. Alta en la v7. Ver `lib/features/configuracion/models/marca.dart`.
   static const String tablaMarcas = 'marcas';
 
-/// Grupos de servicios ("Carroceria", "Mecanica general"). Alta en la v7.
-/// Ver `lib/features/configuracion/models/grupo_servicio.dart`.
-static const String tablaGruposServicio = 'grupos_servicio';
+  /// Grupos de servicios ("Carroceria", "Mecanica general"). Alta en la v7.
+  /// Ver `lib/features/configuracion/models/grupo_servicio.dart`.
+  static const String tablaGruposServicio = 'grupos_servicio';
 
-/// Tabla puente entre grupos de servicios y tipos de servicio.
-/// Relación many-to-many: un servicio puede estar en varios grupos y un grupo
-/// contiene varios servicios. Alta en la v16.
-/// Ver `lib/features/configuracion/models/grupo_servicio_item.dart`.
-static const String tablaGrupoServicioItems = 'grupo_servicio_items';
+  /// Tabla puente entre grupos de servicios y tipos de servicio.
+  /// Relación many-to-many: un servicio puede estar en varios grupos y un grupo
+  /// contiene varios servicios. Alta en la v16.
+  /// Ver `lib/features/configuracion/models/grupo_servicio_item.dart`.
+  static const String tablaGrupoServicioItems = 'grupo_servicio_items';
 
-// ------------------------------------------------------------------
-// COLA DE CAMBIOS DE CONTRASEÑA (v10)
+  // ------------------------------------------------------------------
+  // COLA DE CAMBIOS DE CONTRASEÑA (v10)
   //
   // Cuando el cliente pide cambiar su contraseña sin internet, el cambio queda
   // en esta tabla con `sync_status = 'pending'` y lo drena `SyncService` cuando
@@ -236,17 +236,17 @@ static const String tablaGrupoServicioItems = 'grupo_servicio_items';
   /// la cola queda con filas cuyo secreto nadie puede leer.
   static const String prefijoSeguroCambiosPassword = 'cambiosPassword.';
 
-static const String colNombre = 'nombre';
-static const String colActivo = 'activo';
-static const String colPrecio = 'precio';
+  static const String colNombre = 'nombre';
+  static const String colActivo = 'activo';
+  static const String colPrecio = 'precio';
 
-/// Columnas de la tabla puente `grupo_servicio_items` (v16)
-static const String colGrupoId = 'grupo_id';
-static const String colTipoServicioId = 'tipo_servicio_id';
-static const String colOrden = 'orden';
+  /// Columnas de la tabla puente `grupo_servicio_items` (v16)
+  static const String colGrupoId = 'grupo_id';
+  static const String colTipoServicioId = 'tipo_servicio_id';
+  static const String colOrden = 'orden';
 
-// ------------------------------------------------------------------
-// Talleres afiliados (v4)
+  // ------------------------------------------------------------------
+  // Talleres afiliados (v4)
   //
   // Directriz de Leandy: el mapa NO busca talleres libres en el mundo. Solo
   // muestra los que estan en esta tabla, que es la red de afiliados de la
@@ -263,6 +263,7 @@ static const String colOrden = 'orden';
   // ------------------------------------------------------------------
 
   static const String tablaTalleres = 'talleres';
+  static const String tablaAuditLogs = 'audit_logs';
 
   static const String colDireccion = 'direccion';
   static const String colLatitud = 'latitud';
@@ -357,6 +358,8 @@ static const String colOrden = 'orden';
     colActivo: 'INTEGER NOT NULL DEFAULT 1',
     colCreadoEn: 'TEXT NOT NULL',
     colActualizadoEn: 'TEXT NOT NULL',
+    colEliminadoEn: 'TEXT',
+    colSyncStatus: "TEXT NOT NULL DEFAULT 'pending'",
   };
 
   /// Columnas comunes a los catalogos, en el orden en que se declaran.
@@ -531,6 +534,7 @@ static const String colOrden = 'orden';
     // `talleres` ANTES que el indice de `citas.taller_id`: una FK necesita que
     // la tabla que referencia exista.
     await _crearTalleres(db);
+    await _crearAuditLogs(db);
     await _crearAdmins(db);
     await _crearClientes(db);
     await db.execute(
@@ -648,6 +652,27 @@ static const String colOrden = 'orden';
     await db.execute(
       'CREATE UNIQUE INDEX IF NOT EXISTS idx_${tablaTalleres}_nombre '
       'ON $tablaTalleres ($colNombre COLLATE NOCASE)',
+    );
+  }
+
+  Future<void> _crearAuditLogs(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS $tablaAuditLogs (
+        $colId TEXT NOT NULL PRIMARY KEY,
+        usuario_uid TEXT NOT NULL DEFAULT '',
+        usuario_email TEXT NOT NULL DEFAULT '',
+        modulo TEXT NOT NULL,
+        entidad_id TEXT NOT NULL,
+        accion TEXT NOT NULL,
+        fecha_hora TEXT NOT NULL,
+        dispositivo TEXT NOT NULL,
+        detalles TEXT NOT NULL DEFAULT '{}',
+        $colSyncStatus TEXT NOT NULL DEFAULT 'pending'
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_audit_logs_sync_status '
+      'ON $tablaAuditLogs ($colSyncStatus, fecha_hora)',
     );
   }
 
@@ -1336,6 +1361,9 @@ static const String colOrden = 'orden';
       if (versionAnterior < 17) {
         await _migrarAV17(txn);
       }
+      if (versionAnterior < 18) {
+        await _migrarAV18(txn);
+      }
     });
   }
 
@@ -1417,14 +1445,47 @@ static const String colOrden = 'orden';
 
   /// Paso 16 -> 17: Agregar columna motivo_rechazo a la tabla citas.
   Future<void> _migrarAV17(DatabaseExecutor txn) async {
+    final tablaExiste = await txn.rawQuery(
+      'SELECT name FROM sqlite_master WHERE type = ? AND name = ?',
+      <Object?>['table', tablaCitas],
+    );
+    if (tablaExiste.isEmpty) return;
     // Agregar columna motivo_rechazo a la tabla citas si no existe
     final infoCitas = await txn.rawQuery('PRAGMA table_info($tablaCitas)');
-    final columnasCitas = infoCitas.map((fila) => fila['name'] as String).toSet();
+    final columnasCitas = infoCitas
+        .map((fila) => fila['name'] as String)
+        .toSet();
     if (!columnasCitas.contains(colMotivoRechazo)) {
       await txn.execute(
         'ALTER TABLE $tablaCitas ADD COLUMN $colMotivoRechazo TEXT',
       );
     }
+  }
+
+  /// Paso 17 -> 18: tombstones de talleres y bitácora local append-only.
+  Future<void> _migrarAV18(DatabaseExecutor txn) async {
+    final infoTalleres = await txn.rawQuery(
+      'PRAGMA table_info($tablaTalleres)',
+    );
+    if (infoTalleres.isEmpty) {
+      await _crearTalleres(txn);
+      await _crearAuditLogs(txn);
+      return;
+    }
+    final columnasTalleres = infoTalleres
+        .map((fila) => fila['name'] as String)
+        .toSet();
+    if (!columnasTalleres.contains(colEliminadoEn)) {
+      await txn.execute(
+        'ALTER TABLE $tablaTalleres ADD COLUMN $colEliminadoEn TEXT',
+      );
+    }
+    if (!columnasTalleres.contains(colSyncStatus)) {
+      await txn.execute(
+        "ALTER TABLE $tablaTalleres ADD COLUMN $colSyncStatus TEXT NOT NULL DEFAULT 'synced'",
+      );
+    }
+    await _crearAuditLogs(txn);
   }
 
   /// Paso 13 -> 14: convierte los catalogos existentes en tablas offline-first.

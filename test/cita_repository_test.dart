@@ -3,6 +3,8 @@ import 'package:autofix/core/database/database_helper.dart';
 import 'package:autofix/core/utils/borrado_logico.dart';
 import 'package:autofix/core/utils/uuid.dart';
 import 'package:autofix/features/citas/data/cita_repository.dart';
+import 'package:autofix/features/devMode/data/audit_log_repository.dart';
+import 'package:autofix/features/devMode/data/papelera_repository.dart';
 import 'package:autofix/features/citas/models/cita.dart';
 import 'package:autofix/features/citas/models/codigo_de_cita.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -242,6 +244,11 @@ void main() {
       // La huella de que estuvo fuera NO se pierde: eso es lo que distingue una
       // restauracion de una cita que nunca se borro.
       expect(restaurada.trazabilidad.restauradoEn, isNotNull);
+      expect(restaurada.syncStatus, 'pending');
+      final auditoria = await AuditLogRepository.instance.obtenerTodos();
+      expect(auditoria.first['accion'], AuditLogRepository.restauracion);
+      expect(auditoria.first['modulo'], 'citas');
+      expect(auditoria.first['entidad_id'], id);
       expect((await CitaRepository.instance.obtenerTodas()).length, 1);
     });
 
@@ -267,6 +274,13 @@ void main() {
       final papelera = await CitaRepository.instance.obtenerBorradas();
       expect(papelera.length, 1);
       expect(papelera.first.id, borradaId);
+      final papeleraDev = await PapeleraRepository.instance.obtenerEliminados();
+      expect(
+        papeleraDev.any(
+          (registro) => registro.modulo == 'citas' && registro.id == borradaId,
+        ),
+        isTrue,
+      );
     });
 
     test('asignarCodigoVisible sella el numero SIN pisar el resto', () async {
