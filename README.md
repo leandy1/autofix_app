@@ -1,162 +1,141 @@
-# AutoFix — Gestión de Citas para Talleres Automotrices
+# AutoFix — Gestión de talleres y citas automotrices
 
-| | |
-|---|---|
-| **Proyecto** | ISW307 · Programación de Dispositivos Móviles · Grupo Q |
-| **Repositorio** | [github.com/leandy1/autofix_app](https://github.com/leandy1/autofix_app) |
-| **Plataforma** | Flutter (Android / iOS / Web / Desktop) |
-| **Almacenamiento** | SQLite (offline) + Cloud Firestore (sincronización) |
-| **Estado** | Funcional · Arquitectura Offline-First completada |
-
----
+Aplicación móvil del Grupo Q para conectar a clientes con talleres afiliados y apoyar la operación diaria del taller. El sistema combina una experiencia local-first con sincronización entre dispositivos, una agenda administrable, catálogos por taller y herramientas de atención al cliente.
 
 ## 1. Visión General del Proyecto
 
-AutoFix es una aplicación móvil para la **gestión integral de citas de talleres automotrices**, con flujos coordinados para el **cliente**, que agenda y consulta sus servicios, y para el **administrador**, que opera su taller desde un panel aislado por tenant.
+AutoFix resuelve dos necesidades que suelen entrar en conflicto: poder trabajar cuando la conexión no está disponible y mantener consistentes las citas cuando cliente y administrador usan dispositivos distintos.
 
-El problema que resuelve es doble:
+El cliente puede registrar vehículos, buscar talleres afiliados, solicitar una cita, revisar su estado y presentar el QR de una cita confirmada. El administrador trabaja con las solicitudes, organiza la agenda y mantiene la información operativa de su taller. Las citas y los datos de operación se guardan primero en el dispositivo; Firebase permite sincronizarlos con el contexto correcto cuando hay conectividad.
 
-1. **Los talleres operan sin una red estable.** Una cita creada en recepción no puede perderse porque se cayó el internet. AutoFix funciona **Offline-First**: todo se escribe primero en SQLite local y la nube se pone al día cuando hay conectividad.
-2. **Un mismo taller necesita verse desde varios dispositivos.** La cita que crea el administrador en su panel debe aparecer al instante en el celular del cliente (y en el de otro dispositivo del mismo taller), sin que nadie se pise los datos.
-
-El proyecto nació bajo la **visión, planificación y arquitectura base de Leandy**, quien estableció la estructura inicial de la aplicación y sus módulos. Sobre esa base, Sandy asumió el rol de **co-líder integrador**, evolucionando la arquitectura para resolver los desafíos de persistencia, sincronización y aislamiento de datos, además de cerrar cuellos de botella técnicos y completar funcionalidades en coordinación con Leandy.
-
-Por eso, AutoFix no se limita a un CRUD conectado a la nube: implementa un **flujo de datos local-first con sincronización bidireccional** entre SQLite y Cloud Firestore, control de conflictos, separación multitenant y un ciclo de vida de datos que preserva la privacidad de las sesiones.
-
-> **Producto resultante:** historial completo de citas offline, agenda y mapa de talleres, generación local y sincronizada de códigos QR de confirmación (`CITA-XXXX`), catálogos de servicios/técnicos por taller, dashboard con números reales, sesión persistente y un Modo Desarrollador para la administración de talleres y cuentas.
-
----
+El resultado es una aplicación **Offline-First y multitenant**: la pantalla no depende de una lectura remota para operar, los cambios pendientes se conservan localmente y cada cuenta administrativa trabaja asociada a un `taller_id`.
 
 ## 2. Arquitectura y Stack Tecnológico
 
 ### Stack
 
-- **Flutter / Dart** — SDK `^3.13.2`, Material Design.
-- **SQLite (`sqflite`)** — base local, migraciones por versión (esquema **v15** actual).
-- **Cloud Firestore + Firebase Auth** — sincronización y autenticación (credenciales del proyecto `autofix-6f844`).
-- **`connectivity_plus`** — detector de red en vivo (banner global de conectividad).
-- **`qr_flutter`** — generación local de códigos QR.
-- **`maplibre_gl` + `geolocator` + `url_launcher`** — mapa de talleres, ubicación y "Abrir en Maps".
-- **`http`** — consumo de la API pública **NHTSA vPIC** para catálogo de vehículos.
-- **`shared_preferences` + `flutter_secure_storage`** — sesión persistente ("Recuérdame") y cola segura de cambios de contraseña.
+- **Flutter y Dart** para la aplicación multiplataforma.
+- **SQLite mediante `sqflite`** como persistencia local; el esquema actual es **v17**.
+- **Firebase Auth y Cloud Firestore** para identidad, reglas de acceso y sincronización entre dispositivos.
+- **`connectivity_plus`** para detectar conectividad y reintentar el envío de pendientes.
+- **`mobile_scanner` y `qr_flutter`** para leer los QR de citas desde el panel admin y generar el QR del cliente.
+- **NHTSA vPIC mediante `http`** para consultar marcas/modelos; caché local y alternativas offline.
+- **MapLibre, `geolocator` y `url_launcher`** para mostrar talleres afiliados, ubicación y navegación externa.
+- **`shared_preferences` y `flutter_secure_storage`** para preferencias de sesión y material sensible de acceso/cambios de contraseña.
 
-### Arquitectura Offline-First
+### Datos local-first y sincronización
 
-La persistencia se organiza alrededor de SQLite como **fuente de lectura y escritura inmediata para la interfaz**. Las operaciones del usuario se confirman localmente y quedan marcadas como pendientes; Firestore replica los cambios entre dispositivos cuando la sesión y la conectividad lo permiten. Los listeners contextuales aplican los cambios remotos a SQLite mediante upsert, evitando que las pantallas dependan de una llamada de red para mostrar o modificar información.
+La aplicación sigue esta ruta: **UI → controlador → repositorio → SQLite**. `SyncService` conecta la persistencia local con Firestore: sube las filas pendientes y aplica snapshots remotos en la base local. Los controladores notifican a las pantallas después de las escrituras locales o de una actualización recibida. Los listeners se abren con el contexto de la sesión; el administrador filtra por taller y el cliente por UID/correo.
 
-La separación por capas mantiene las responsabilidades acotadas: las pantallas usan controladores, los controladores coordinan repositorios, los repositorios aplican el contrato de persistencia y `SyncService` coordina el intercambio con Firestore. El detector de conectividad activa reintentos y comunica el estado de red, pero la disponibilidad de la UI no depende de él.
+El servicio sincroniza citas, perfiles, vehículos y catálogos operativos del taller. Los registros actualizados localmente entran en `sync_status = 'pending'`; después de una escritura confirmada pasan a `synced`. Los errores se manejan por fila/cola para que el fallo de una entidad no detenga el resto de los intentos.
 
-```text
-+----------------------------------+          +---------------------------------+
-|            Flutter App           |          |             Firebase            |
-|                                  |          |                                 |
-|  +----------------------------+  |   PUSH   |  +---------------------------+  |
-|  | SQLite autofix.db (v15)    |  | pending |  |      Cloud Firestore       |  |
-|  |                            |--+--------->|  |                           |  |
-|  | citas      · catalogos     |  |  queue  |  | citas    · talleres        |  |
-|  | talleres   · admins        |  |         |  | tecnicos · servicios       |  |
-|  | clientes   · vehiculos     |<-+----------|  | marcas · grupos · vehiculos |  |
-|  +----------------------------+  |   PULL   |  | counters/citas (QR)        |  |
-|                ▲                 |onSnapshot|  +---------------------------+  |
-|                | Ctrl+Repo       |          |                ▲                |
-|  +----------------------------+  |          |  +---------------------------+  |
-|  |        SyncService         |  |          |  |   Firebase Auth (roles)   |  |
-|  +----------------------------+  |          |  +---------------------------+  |
-+----------------------------------+          +---------------------------------+
-```
+### SQLite: v15, v16 y v17
 
-### Patrones y decisiones clave
+La versión vigente es **SQLite v17**. Las migraciones recientes amplían el modelo sin presentar v15 como la versión actual:
 
-- **Esquema SQLite versionado (v15):** `DatabaseHelper` centraliza una conexión singleton, el esquema, sus índices y las migraciones. La versión actual incorpora citas, vehículos, perfiles y catálogos con los campos necesarios para sincronización y aislamiento por taller. Las migraciones se ejecutan por versión; la reconstrucción de identidad introducida en v7 fue una decisión del entorno académico que puede descartar datos locales legados. Para conservar datos de usuarios reales se requiere una migración con conversión y copia de filas antes de desplegar una actualización.
-- **Tombstones para bajas sincronizables:** las bajas funcionales de citas, vehículos y catálogos se representan con `eliminado_en` y, cuando corresponde, `eliminado_por`/`restaurado_en` (`lib/core/utils/borrado_logico.dart`). Las consultas ordinarias excluyen filas marcadas y la sincronización replica la marca como una actualización; las reglas de Firestore rechazan el borrado físico de estas colecciones. Es distinto de la purga local de `LimpiezaLocal`, que elimina físicamente la copia local al cerrar o cambiar de sesión según la política de "Recuérdame"; el garaje en Firestore se recupera al volver a iniciar sesión.
-- **Identidad distribuida y código legible:** las entidades sincronizables usan UUID generados en el cliente como identidad estable, evitando colisiones de autoincrementos entre dispositivos. El código de cita visible (`CITA-XXXX`) es separado e inmutable una vez confirmado; su numeración se reserva mediante una **transacción atómica** sobre `counters/citas`.
-- **`SyncService` bidireccional:** `lib/features/sync/sync_service.dart` coordina las colas locales y los listeners de Firestore.
-  - **Push:** procesa registros `sync_status = 'pending'` para citas, vehículos, perfiles y catálogos, con reintentos por fila. Los cambios de contraseña se reintentan mediante Firebase Auth; el secreto se conserva temporalmente en almacenamiento seguro y nunca se envía a Firestore. Los fallos de una cola no impiden procesar las demás.
-  - **Pull:** listeners `onSnapshot` aplican upserts a SQLite. Los filtros dependen de la sesión: `taller_id` para administración y `ownerUid`/correo para citas y vehículos del cliente. El listener se inicia al establecer el contexto de sesión, no con una descarga global de citas al abrir la app.
-  - **Conflictos:** las citas comparan `actualizado_en`; las bajas de catálogos y vehículos tienen protección para evitar que una edición local antigua las resucite. El `codigo_visible` se conserva una vez asignado. Para perfiles, un cambio local pendiente prevalece sobre una copia remota atrasada.
-- **Multitenencia por `taller_id`:** citas y catálogos operativos llevan el identificador del taller. SQLite aplica filtros e índices por tenant y limita la unicidad de nombres al taller; Firestore valida la pertenencia del administrador al taller en las escrituras. Los catálogos globales de talleres y cuentas de administrador tienen un flujo separado.
-- **Ciclo de vida de sesión y datos:** `lib/core/data/limpieza_local.dart` separa datos temporales del usuario (citas, perfil y vehículos locales) de los datos permanentes de plataforma. Al cambiar de cuenta limpia primero, detiene listeners y hace un intento acotado de enviar pendientes cuando hay conectividad.
-- **Reglas de seguridad en la nube:** `firestore.rules` valida estructura y tipos, propiedad del cliente, asociación del administrador con `taller_id`, protección de catálogos y avance monotónico del contador. El acceso no definido queda denegado por defecto.
+| Versión | Cambio relevante |
+|---|---|
+| **v15** | Vehículos del cliente con estado de sincronización y tombstone, conservando los registros ya guardados al migrar. |
+| **v16** | Nueva tabla local `grupo_servicio_items` para relacionar grupos y servicios y definir el orden de presentación. |
+| **v17** | Campo `motivo_rechazo` para conservar y mostrar al cliente la explicación del rechazo de una cita. |
 
----
+`DatabaseHelper` es el punto único de apertura y migración de `autofix.db`. Las entidades usan UUID para mantener identidades estables en distintos dispositivos; los códigos legibles `CITA-XXXX` se asignan en una transacción Firestore.
+
+### Tombstones, conflictos y consistencia
+
+Las bajas funcionales sincronizables se representan mediante marcas como `eliminado_en` (y, en las citas, trazabilidad asociada), no mediante un borrado físico remoto. Las consultas activas ocultan los registros marcados y la nube puede propagar la misma decisión a los demás dispositivos. Los vehículos también conservan su tombstone en SQLite/Firestore.
+
+Para las citas vivas, la sincronización compara `actualizado_en`; para bajas/restauraciones, aplica la regla de trazabilidad que impide resucitar una fila borrada. El `codigo_visible` queda protegido una vez que Firestore lo asigna. Los perfiles pendientes tienen una regla específica para no perder una edición local frente a una copia remota atrasada.
+
+### Multitenencia y seguridad
+
+Las citas y catálogos operativos llevan `taller_id`. SQLite filtra por taller y aplica unicidad de nombres dentro de cada tenant; las reglas `firestore.rules` verifican propietario, pertenencia al taller, forma/tipos de datos y operaciones permitidas. Las colecciones de citas y catálogos no permiten borrado físico y la regla final deniega todo acceso no descrito.
+
+**Alcance actual de dos integraciones:** `grupo_servicio_items` ya está modelada y persistida localmente con `taller_id`, `sync_status` y tombstones; el `SyncService` y `firestore.rules` versionados aún no incluyen su sincronización remota. El panel de Cuentas Admin incorpora una verificación por documento en `adminUsers`, mientras que las reglas actuales de escritura de `admins` y `talleres` siguen requiriendo el claim `dev` y no declaran una regla para `adminUsers`. Para habilitar ese flujo en un despliegue, hay que alinear la autorización de cliente y servidor.
 
 ## 3. Módulos Principales
 
 ### Cliente
-Área de cliente respaldada por un perfil local persistente (`clientes`):
 
-- **Registro híbrido:** acceso por correo/contraseña (Firebase Auth) con **modo invitado** y validación **sin internet** contra credenciales seguras del keystore cuando "Recuérdame" está activo. Memoria de roles (`SesionAdmin`/`SesionCliente`) independientes.
-- **Gestión de vehículos:** el "garaje virtual" guarda vehículos en SQLite v15 y sincroniza en ambos sentidos con Firestore, vinculados al UID/correo del cliente. El garaje remoto sobrevive al cierre de sesión y a la limpieza de caché (Garbage Collection) y se restaura al iniciar sesión; incluye autocompletado desde **NHTSA vPIC** y fallback offline.
-- **Agenda offline:** crear una cita con taller, vehículo, servicio y técnico del catálogo, fecha y hora; el guardado local no espera a que la sincronización termine.
-- **Historial de citas:** estados reales (pendiente, esperando pieza, en proceso, completada); lista "Mis Citas" alimentada por el listener contextual (por `ownerUid` y por `correo_cliente`).
-- **QR de confirmación local:** la cita aceptada muestra su código `CITA-XXXX` en un QR generado en el dispositivo, incluso sin red.
-- **Mapa de talleres:** red de afiliados (no talleres libres) con MapLibre, marcadores, distancia aproximada y "Abrir en Maps" vía `url_launcher`.
+- **Acceso y perfil:** registro/login, modo invitado y sesión local persistente con opción “Recuérdame”. El perfil del cliente se mantiene en SQLite y se sincroniza al recuperar conexión.
+- **Vehículos:** alta, edición y selección local; sincronización por UID/correo, con tombstones para las bajas. NHTSA vPIC ayuda a completar marcas/modelos; se usa caché y, si no existe, una lista de 20 marcas comunes y entrada manual.
+- **Agenda:** selección de taller afiliado, vehículo, servicio y fecha/hora. Se rechazan fechas pasadas y la solicitud queda guardada localmente mientras espera sincronización.
+- **Mis citas:** historial filtrado por el perfil local, estados y motivos de rechazo, indicador de elementos pendientes, recarga manual mediante *pull-to-refresh* y escucha de los cambios notificados por `SyncService`. El cliente puede cancelar solicitudes pendientes y dar de baja citas rechazadas o completadas, sujeto a verificación de propiedad.
+- **Confirmación QR:** generación local del QR a partir del código visible de una cita aceptada; el QR puede mostrarse sin hacer una nueva consulta a Firestore.
+- **Talleres:** directorio y mapa de afiliados con ubicación, distancia aproximada y apertura de navegación externa.
 
 ### Administrador
-Panel de gestión aislado por taller (`taller_id`):
 
-- **Gestión de solicitudes cruzadas:** el cliente agenda desde su celular y la solicitud nace en su dispositivo; el administrador la **acepta o rechaza** desde su panel y el cliente ve el resultado al instante. Resolución de colisiones en la cola de envío con UUIDs y transacciones atómicas en Firebase.
-- **Catálogo de servicios, técnicos, marcas y grupos de servicio:** CRUD completo conectado a SQLite con aislamiento por taller, unicidad de nombres por taller y protección histórica (Soft-Delete).
-- **Dashboard con datos reales:** números, gráficos y citas del día conectados a la base (no a mocks), filtrables por fecha.
-- **Panel multitenant y Modo Desarrollador:** creación de cuentas de admin y altas/bajas de talleres con sincronización a Firestore; impresión de recibos por Bluetooth (por Luis, integrada por Leandy).
-
----
+- **Agenda y solicitudes:** crear/editar citas, filtrar por fecha y estado y administrar solicitudes entrantes. Rechazar una solicitud requiere ingresar un motivo; ese dato se conserva en `motivo_rechazo`, viaja con la cita y se muestra en “Mis citas”. Los estados de aceptación/rechazo se resuelven desde las solicitudes, no desde el selector operativo del editor.
+- **Actualización entre dispositivos:** los snapshots de Firestore se aplican a SQLite; las pantallas de Citas y Configuración escuchan a `SyncService` y vuelven a cargar los datos afectados. El Dashboard lee las agregaciones locales al cargar o cambiar la fecha. La cita escaneada por QR abre su detalle dentro del flujo de Citas, usando el mismo diálogo y acciones que la tarjeta normal.
+- **Escáner QR:** la cámara lee el código `CITA-XXXX`, lo busca en la base local y permite abrir la cita y su detalle administrativo.
+- **Dashboard:** métricas y citas del día agregadas desde SQLite, con selector de fecha; la vista vuelve a calcular los datos al cargar o cambiar el día.
+- **Configuración del taller:** CRUD de servicios, técnicos, marcas y grupos. Los servicios pueden asignarse a varios grupos; en la Configuración se pueden agregar/quitar vínculos y ordenar los servicios. El formulario de citas presenta los servicios por grupo y una sección “Sin grupo”. Esta relación se persiste localmente.
+- **Marcas desde NHTSA:** el administrador puede importar marcas de la API al catálogo SQLite; luego se pueden usar offline en los formularios de administración.
+- **Talleres y cuentas Admin:** Modo Desarrollador para sincronizar talleres y administrar cuentas. La validación de acceso y las reglas de Firestore deben quedar alineadas en el ambiente de despliegue (ver Arquitectura y Stack).
+- **Herramientas adicionales:** impresión de recibos por Bluetooth y gestión de perfil del administrador.
 
 ## 4. Contribuciones del Equipo
 
+**Leandy Gabin Fermín — líder principal y arquitecto original.** El proyecto nació de su visión, plan inicial y estructura base. Desarrolló la base funcional de la aplicación, los flujos de citas administrativas, acceso Cliente/Admin, Modo Desarrollador y separación de datos por taller. En los cambios más recientes refactorizó la agenda administrativa, integró el rechazo con motivo, el escáner QR y el refresco de las pantallas ante cambios recibidos desde otros dispositivos (`06818ce`, `06dc091`).
 
-### Leandy Gabin Fermín — Líder principal y arquitecto original
-Leandy dio origen al proyecto: definió la visión y el plan inicial, estableció la estructura base de la aplicación y condujo la arquitectura funcional sobre la que se integraron los módulos. En el código, trabajó en el diseño y CRUD administrativo de citas (`feature/leandy-citas-admin`), el acceso Cliente/Admin, el Modo Desarrollador (`feature/leandy-dev-apartado`), las cuentas de administración vinculadas a talleres (`feature/leandy-devMode-Account`), la separación de datos por taller (`feature/leandy-login-admin`) y la integración/revisión general del trabajo del equipo. **Su liderazgo principal y su rol de arquitecto original se mantuvieron durante el desarrollo.**
+**Sandy Alexander Ortiz Taveras — co-líder integrador.** Fortaleció la arquitectura durante el desarrollo y lideró buena parte del motor de persistencia, esquema SQLite, conectividad, sincronización Offline-First, configuración multitenant, perfil y sincronización de vehículos (`714b413`). También resolvió cuellos de botella y completó integraciones iniciadas por compañeros, preservando su lógica base cuando fue posible.
 
-### Sandy Alexander Ortiz Taveras — Co-líder integrador y responsable del motor Offline-First
-Sandy se incorporó como **co-líder integrador**: fortaleció la arquitectura original conforme aparecieron los requisitos de persistencia local, concurrencia, conectividad y sincronización; resolvió cuellos de botella técnicos y llevó módulos críticos a un estado integrado y estable. Su trabajo incluye el motor SQLite (`feature/sandy-conectividad-almacenamiento`, `feature/sandy-configuracion-db`), conectividad, Dashboard real, mapa, esquema v15, sincronización con Firebase (`feature/sandy-firebase-offline-sync`), gestión del ciclo de vida/limpieza local (`sesion-offline`) y cierre de Configuración Admin (`feature/sandy-configuracion-admin`, `feature/sandy-correccion-ids-solicitudes`).
-
-### Aportes iniciales de los demás integrantes
-
-- **Luis Ernesto Hernández Peralta — Bluetooth:** inició el flujo de impresión de recibos (`feature/luis-bluetooth`); Leandy lo integró y completó dentro del flujo de citas (`feature/leandy-recibo-cita`).
-- **Rafael David Sánchez Arias — Talleres y agenda del cliente:** inició el mapa y el formulario de agendamiento (`feature/david-busqueda-ubicacion`, `feature/david-mapa-final`); Sandy refinó la integración de MapLibre, la selección de afiliados, las distancias y la navegación a mapas externos.
-- **Andy Andrés Rodríguez Abreu — Servicios web y solicitudes:** inició el consumo de API REST y la gestión de solicitudes administrativas (`feature/andy-servicios-web`, `feature/andy-configuracion-marcas`, `feature/andy-solicitudes-admin`). Debido a la carga de trabajo y a las necesidades de integración, Sandy apoyó y finalizó la API de vehículos y el flujo de solicitudes **preservando la lógica base iniciada por Andy**.
-
-### Cierre colaborativo
-
-La distribución original asignó funcionalidades; la entrega requirió integración transversal. **Leandy fue el líder principal y arquitecto original; Sandy fue su co-líder integrador**, reforzando esa arquitectura, resolviendo los bloqueos de persistencia/sincronización y finalizando componentes que necesitaban trabajo adicional. Leandy aportó la dirección inicial y la integración funcional; Sandy consolidó buena parte del motor Offline-First y completó módulos iniciados por Andy, Luis y Rafael junto con Leandy. El resultado actual es un esfuerzo colaborativo cuyo liderazgo y cierre técnico recayeron principalmente en ambos, con responsabilidades distintas y complementarias.
-
----
+**Contribuciones iniciales integradas:** Andy inició los servicios web de vehículos y la gestión de solicitudes; Sandy cerró su integración al flujo final. Rafael David inició el mapa y el agendamiento cliente, que Sandy refinó dentro de la experiencia de talleres. Luis inició el flujo Bluetooth, integrado por Leandy en los recibos. La distribución original y el historial de ramas muestran esos puntos de partida; la entrega final fue un trabajo colaborativo con liderazgo principal de Leandy y co-liderazgo técnico de Sandy.
 
 ## 5. Estructura del Proyecto
 
-```
+```text
 lib/
-├── app/                      # Punto de entrada: MaterialApp, ruta inicial, banner
+├── app/                         # Arranque, ruta inicial y composición de la app
 ├── core/
-│   ├── auth/                 # Sesiones Admin/Cliente, credenciales seguras, Recuérdame
-│   ├── connectivity/         # Detector de red y banner global
-│   ├── data/                 # BaseRepository + LimpiezaLocal (garbage collection)
-│   ├── database/             # DatabaseHelper (singleton SQLite, migraciones v1→v15)
-│   ├── mapa/                 # Estilos y etiquetas del mapa
-│   ├── ubicacion/            # Servicio de geolocalización
-│   └── utils/                # borrado_logico (tombstones), reloj, uuid
+│   ├── auth/                    # Sesiones Admin/Cliente y credenciales locales
+│   ├── connectivity/            # Estado de red y banner global
+│   ├── data/                    # Repositorios base y limpieza de datos por sesión
+│   ├── database/                # SQLite, esquema y migraciones v1–v17
+│   ├── mapa/                    # Estilos y etiquetas del mapa
+│   ├── ubicacion/               # Acceso a ubicación del dispositivo
+│   └── utils/                   # UUID, reloj y lógica de tombstones
 ├── features/
-│   ├── admin/                # Citas admin, Dashboard, Configuración, Bluetooth
-│   ├── auth/                 # Login, cambio de contraseña
-│   ├── citas/                # Modelo Cita, repositorio, controller
-│   ├── cliente/              # Mis cita, Agendar, Talleres/Mapa, perfil, NHTSA
-│   ├── configuracion/        # Catálogos: técnicos, servicios, marcas, grupos
-│   ├── devMode/              # Talleres afiliados, cuentas admin, sync global
-│   ├── sync/                 # SyncService + catálogos por taller
-│   └── talleres/             # Modelo y repositorio de talleres
-└── shared/                   # Modelos compartidos y tema (AppColors)
+│   ├── admin/                   # Citas, solicitudes, Dashboard, QR y configuración
+│   ├── auth/                    # Login y cambio de contraseña
+│   ├── citas/                   # Modelo, repositorio y controlador de citas
+│   ├── cliente/                 # Agenda, vehículos, perfil, mapa y Mis Citas
+│   ├── configuracion/           # Técnicos, servicios, marcas y grupos
+│   ├── devMode/                 # Talleres y cuentas administrativas
+│   ├── sync/                    # Coordinación local–Firestore
+│   └── talleres/                # Modelo y persistencia de talleres
+└── shared/                      # Modelos compartidos y tema visual
+
+docs/                            # Guía de exposición técnica
+test/                            # Pruebas de unidad, widgets y sincronización
 ```
 
----
+La organización mantiene límites claros: las pantallas componen la experiencia, los controladores coordinan acciones de usuario, los repositorios contienen acceso y persistencia, `core` concentra capacidades transversales y `features` agrupa cada área funcional. Así se pueden probar o modificar módulos sin llevar lógica de base de datos a los widgets.
 
 ## 6. Cómo Ejecutar
 
+### Requisitos
+
+- Flutter/Dart compatible con la versión declarada en `pubspec.yaml`.
+- Proyecto Firebase configurado para la plataforma objetivo (`lib/firebase_options.dart` y configuración nativa correspondiente).
+- Para usar el escáner QR, permisos de cámara en Android/iOS; para el mapa, permisos de ubicación y configuración del proveedor de mapas.
+
+### Preparar y ejecutar
+
 ```bash
-flutter pub get      # instalar dependencias
-flutter run          # ejecutar la app
-flutter test         # correr la suite de tests
-flutter analyze      # análisis estático
+flutter pub get
+flutter analyze
+flutter test
+flutter run
 ```
 
-> **Nota Firebase:** la app usa credenciales reales del proyecto `autofix-6f844` (`android/app/google-services.json` + `lib/firebase_options.dart`) y reglas de Firestore versionadas en `firestore.rules`. Los claims de Modo Desarrollador (`dev`) deben emitirse **solo** a través de Firebase Admin SDK; nunca se conceden desde el cliente.
+### Compilar para distribución
+
+```bash
+flutter build apk --release       # Android
+flutter build appbundle --release # Android, Google Play
+flutter build ipa --release       # iOS (en macOS con Xcode configurado)
+```
+
+Antes de desplegar, revisar `firestore.rules` y verificar que las reglas y los documentos de autorización (`adminUsers`/claim `dev`) correspondan al flujo de administración habilitado. Las reglas se pueden publicar con `firebase deploy --only firestore:rules` cuando el proyecto Firebase y su CLI estén configurados.
