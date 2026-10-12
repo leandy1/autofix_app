@@ -81,7 +81,12 @@ Las citas y catálogos operativos llevan `taller_id`. SQLite filtra por taller y
 
 **Sandy Alexander Ortiz Taveras — co-líder integrador.** Fortaleció la arquitectura durante el desarrollo y lideró buena parte del motor de persistencia, esquema SQLite, conectividad, sincronización Offline-First, configuración multitenant, perfil y sincronización de vehículos (`714b413`). También resolvió cuellos de botella y completó integraciones iniciadas por compañeros, preservando su lógica base cuando fue posible.
 
-**Contribuciones iniciales integradas:** Andy inició los servicios web de vehículos y la gestión de solicitudes; Sandy cerró su integración al flujo final. Rafael David inició el mapa y el agendamiento cliente, que Sandy refinó dentro de la experiencia de talleres. Luis inició el flujo Bluetooth, integrado por Leandy en los recibos. La distribución original y el historial de ramas muestran esos puntos de partida; la entrega final fue un trabajo colaborativo con liderazgo principal de Leandy y co-liderazgo técnico de Sandy.
+**Contribuciones iniciales integradas:** 
+- **Andy** inició los servicios web de vehículos y la gestión de solicitudes; **Sandy** cerró su integración al flujo final.
+- **Rafael David** inició el mapa y el agendamiento cliente, que **Sandy** refinó dentro de la experiencia de talleres.
+- **Luis** inició el flujo Bluetooth, integrado por **Leandy** en los recibos.
+
+La distribución original y el historial de ramas muestran esos puntos de partida; la entrega final fue un trabajo colaborativo con liderazgo principal de Leandy y co-liderazgo técnico de Sandy.
 
 ## 5. Estructura del Proyecto
 
