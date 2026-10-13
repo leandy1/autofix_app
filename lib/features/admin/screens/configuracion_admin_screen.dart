@@ -35,10 +35,14 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
         SesionAdmin.instance.tallerId ??
         SemillaInicial.talleres.first.id,
   );
+  late final TextEditingController _busquedaMarcasController;
 
   @override
   void initState() {
     super.initState();
+    _busquedaMarcasController = TextEditingController(
+      text: _cfg.consultaMarcas,
+    );
     SyncService.instance.addListener(_alCambiarSync);
     _cfg.cargar();
   }
@@ -46,6 +50,7 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
   @override
   void dispose() {
     SyncService.instance.removeListener(_alCambiarSync);
+    _busquedaMarcasController.dispose();
     _cfg.dispose();
     super.dispose();
   }
@@ -457,7 +462,7 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
       description: 'Administra lo que ofrece el taller y el precio vigente.',
     ),
     _panel(
-      title: 'Catálogo de servicios',
+      title: 'Servicios (${_cfg.tiposServicio.length})',
       child: Column(
         children: [
           _addButton('Agregar servicio', () => unawaited(_editarServicio())),
@@ -489,7 +494,7 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
       description: 'Mantén actualizado el equipo disponible para las citas.',
     ),
     _panel(
-      title: 'Técnicos',
+      title: 'Técnicos (${_cfg.tecnicos.length})',
       child: Column(
         children: [
           _addButton('Agregar técnico', () => unawaited(_editarTecnico())),
@@ -515,116 +520,223 @@ class _ConfiguracionScreenState extends State<ConfiguracionScreen> {
     ),
   ]);
 
-  Widget _buildCatalogosTab() => _tabScroll([
-    _intro(
-      title: 'Catálogos del taller',
-      description: 'Organiza las marcas de vehículos y los grupos de servicio.',
-    ),
-    _panel(
-      title: 'Marcas de vehículo',
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Expanded(child: _addButton('Agregar marca', () => unawaited(_editarMarca()))),
-              const SizedBox(width: 12),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _cfg.cargando
-                      ? null
-                      : () => unawaited(_importarMarcasDesdeApi()),
-                  icon: _cfg.cargando
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.cloud_download_outlined, size: 18),
-                  label: const Text('Importar desde API'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.orangePrimary,
-                    side: const BorderSide(color: AppColors.orangePrimary),
-                    minimumSize: const Size(double.infinity, 36),
+  Widget _buildCatalogosTab() {
+    final marcas = _cfg.marcas;
+
+    return RefreshIndicator(
+      onRefresh: _cfg.cargar,
+      child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 18, 16, 28),
+        itemCount: 3,
+        itemBuilder: (context, index) {
+          if (index == 0) {
+            return _intro(
+              title: 'Catálogos del taller',
+              description:
+                  'Organiza las marcas de vehículos y los grupos de servicio.',
+            );
+          }
+
+          if (index == 1) {
+            return _panel(
+              title: 'Marcas (${_cfg.totalMarcas})',
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _addButton(
+                          'Agregar marca',
+                          () => unawaited(_editarMarca()),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _cfg.cargando
+                              ? null
+                              : () => unawaited(_importarMarcasDesdeApi()),
+                          icon: _cfg.cargando
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.cloud_download_outlined,
+                                  size: 18,
+                                ),
+                          label: const Text('Importar desde API'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.orangePrimary,
+                            side: const BorderSide(
+                              color: AppColors.orangePrimary,
+                            ),
+                            minimumSize: const Size(double.infinity, 36),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _busquedaMarcasController,
+                    onChanged: _cfg.buscarMarcas,
+                    textInputAction: TextInputAction.search,
+                    decoration: InputDecoration(
+                      hintText: 'Buscar marcas',
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: _cfg.cargandoMarcas
+                          ? const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            )
+                          : _busquedaMarcasController.text.isNotEmpty
+                          ? IconButton(
+                              tooltip: 'Limpiar búsqueda',
+                              onPressed: () {
+                                _busquedaMarcasController.clear();
+                                _cfg.buscarMarcas('');
+                              },
+                              icon: const Icon(Icons.close),
+                            )
+                          : null,
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                  if (marcas.isEmpty) ...[
+                    const SizedBox(height: 12),
+                    _empty(
+                      _cfg.consultaMarcas.isEmpty
+                          ? 'Aún no hay marcas registradas.'
+                          : 'No se encontraron marcas para la búsqueda.',
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 12),
+                    for (final marca in marcas)
+                      _fila(
+                        nombre: marca.nombre,
+                        detalle: null,
+                        icon: Icons.directions_car_outlined,
+                        editar: () => unawaited(_editarMarca(marca)),
+                        eliminar: () => unawaited(
+                          _confirmarEliminar(
+                            nombre: marca.nombre,
+                            accion: () => _cfg.eliminarMarca(marca.id!),
+                          ),
+                        ),
+                      ),
+                  ],
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton(
+                          tooltip: 'Página anterior',
+                          onPressed:
+                              _cfg.paginaActual > 1 && !_cfg.cargandoMarcas
+                              ? () => unawaited(_cfg.paginaAnterior())
+                              : null,
+                          icon: const Icon(Icons.chevron_left),
+                        ),
+                        Text(
+                          'Página ${_cfg.paginaActual} de ${_cfg.totalPaginas}',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        IconButton(
+                          tooltip: 'Página siguiente',
+                          onPressed:
+                              _cfg.paginaActual < _cfg.totalPaginas &&
+                                  !_cfg.cargandoMarcas
+                              ? () => unawaited(_cfg.paginaSiguiente())
+                              : null,
+                          icon: const Icon(Icons.chevron_right),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          return _panel(
+            title: 'Grupos de servicios (${_cfg.gruposServicio.length})',
+            child: Column(
+              children: [
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Padding(
+                    padding: EdgeInsets.only(bottom: 12),
+                    child: Text(
+                      'Los grupos son etiquetas para clasificar servicios. '
+                      'Puedes asignar servicios a cada grupo usando el botón "Gestionar".',
+                      style: TextStyle(color: AppColors.textGray, fontSize: 12),
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          if (_cfg.marcas.isEmpty)
-            _empty('Aún no hay marcas registradas.')
-          else
-            for (final marca in _cfg.marcas)
-              _fila(
-                nombre: marca.nombre,
-                detalle: null,
-                icon: Icons.directions_car_outlined,
-                editar: () => unawaited(_editarMarca(marca)),
-                eliminar: () => unawaited(
-                  _confirmarEliminar(
-                    nombre: marca.nombre,
-                    accion: () => _cfg.eliminarMarca(marca.id!),
-                  ),
-                ),
-              ),
-        ],
-      ),
-    ),
-    _panel(
-      title: 'Grupos de servicios',
-      child: Column(
-        children: [
-          const Align(
-            alignment: Alignment.centerLeft,
-            child: Padding(
-              padding: EdgeInsets.only(bottom: 12),
-              child: Text(
-                'Los grupos son etiquetas para clasificar servicios. '
-                'Puedes asignar servicios a cada grupo usando el botón "Gestionar".',
-                style: TextStyle(color: AppColors.textGray, fontSize: 12),
-              ),
+                _addButton('Agregar grupo', () => unawaited(_editarGrupo())),
+                const SizedBox(height: 12),
+                if (_cfg.gruposServicio.isEmpty)
+                  _empty(
+                    'Aún no hay grupos de servicios.\n'
+                    'Crea uno con "Agregar grupo" para empezar a asignar servicios.',
+                  )
+                else
+                  for (final grupo in _cfg.gruposServicio) ...[
+                    _fila(
+                      nombre: grupo.nombre,
+                      detalle:
+                          _cfg
+                              .obtenerServiciosCompletosDelGrupo(grupo.id!)
+                              .isEmpty
+                          ? 'Sin servicios asignados'
+                          : '${_cfg.obtenerServiciosCompletosDelGrupo(grupo.id!).length} servicio(s)',
+                      icon: Icons.folder_outlined,
+                      editar: () => unawaited(_editarGrupo(grupo)),
+                      eliminar: () => unawaited(
+                        _confirmarEliminar(
+                          nombre: grupo.nombre,
+                          accion: () => _cfg.eliminarGrupoServicio(grupo.id!),
+                        ),
+                      ),
+                      accionExtra: () =>
+                          unawaited(_gestionarServiciosDelGrupo(grupo)),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4, bottom: 8),
+                      child: OutlinedButton.icon(
+                        onPressed: () =>
+                            unawaited(_gestionarServiciosDelGrupo(grupo)),
+                        icon: const Icon(Icons.list_alt_outlined, size: 18),
+                        label: const Text('Gestionar servicios'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.orangePrimary,
+                          side: const BorderSide(
+                            color: AppColors.orangePrimary,
+                          ),
+                          minimumSize: const Size(double.infinity, 36),
+                        ),
+                      ),
+                    ),
+                  ],
+              ],
             ),
-          ),
-          _addButton('Agregar grupo', () => unawaited(_editarGrupo())),
-          const SizedBox(height: 12),
-          if (_cfg.gruposServicio.isEmpty)
-            _empty('Aún no hay grupos de servicios.\nCrea uno con "Agregar grupo" para empezar a asignar servicios.')
-          else
-            for (final grupo in _cfg.gruposServicio) ...[
-              _fila(
-                nombre: grupo.nombre,
-                detalle: _cfg.obtenerServiciosCompletosDelGrupo(grupo.id!).isEmpty
-                    ? 'Sin servicios asignados'
-                    : '${_cfg.obtenerServiciosCompletosDelGrupo(grupo.id!).length} servicio(s)',
-                icon: Icons.folder_outlined,
-                editar: () => unawaited(_editarGrupo(grupo)),
-                eliminar: () => unawaited(
-                  _confirmarEliminar(
-                    nombre: grupo.nombre,
-                    accion: () => _cfg.eliminarGrupoServicio(grupo.id!),
-                  ),
-                ),
-                accionExtra: () => unawaited(_gestionarServiciosDelGrupo(grupo)),
-              ),
-              // Botón visible para gestionar servicios del grupo
-              Padding(
-                padding: const EdgeInsets.only(top: 4, bottom: 8),
-                child: OutlinedButton.icon(
-                  onPressed: () => unawaited(_gestionarServiciosDelGrupo(grupo)),
-                  icon: const Icon(Icons.list_alt_outlined, size: 18),
-                  label: const Text('Gestionar servicios'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.orangePrimary,
-                    side: const BorderSide(color: AppColors.orangePrimary),
-                    minimumSize: const Size(double.infinity, 36),
-                  ),
-                ),
-              ),
-            ],
-        ],
+          );
+        },
       ),
-    ),
-  ]);
+    );
+  }
 
   Future<void> _editarServicio([TipoServicio? servicio]) async {
     final guardado = await _mostrarEditor(
@@ -961,10 +1073,12 @@ class _GestionarServiciosGrupoDialog extends StatefulWidget {
   final String? Function() errorActual;
 
   @override
-  State<_GestionarServiciosGrupoDialog> createState() => _GestionarServiciosGrupoDialogState();
+  State<_GestionarServiciosGrupoDialog> createState() =>
+      _GestionarServiciosGrupoDialogState();
 }
 
-class _GestionarServiciosGrupoDialogState extends State<_GestionarServiciosGrupoDialog> {
+class _GestionarServiciosGrupoDialogState
+    extends State<_GestionarServiciosGrupoDialog> {
   late List<TipoServicio> _serviciosAsignados;
   bool _guardando = false;
 
@@ -1008,7 +1122,8 @@ class _GestionarServiciosGrupoDialogState extends State<_GestionarServiciosGrupo
                         leading: IconButton(
                           icon: const Icon(Icons.arrow_upward, size: 18),
                           onPressed: index > 0
-                              ? () async => await _moverServicio(index, index - 1)
+                              ? () async =>
+                                    await _moverServicio(index, index - 1)
                               : null,
                         ),
                         title: Text(servicio.nombre),
@@ -1018,7 +1133,11 @@ class _GestionarServiciosGrupoDialogState extends State<_GestionarServiciosGrupo
                               : 'RD\$ ${servicio.precio.toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
                         ),
                         trailing: IconButton(
-                          icon: const Icon(Icons.remove_circle_outline, color: Colors.redAccent, size: 20),
+                          icon: const Icon(
+                            Icons.remove_circle_outline,
+                            color: Colors.redAccent,
+                            size: 20,
+                          ),
                           onPressed: _guardando
                               ? null
                               : () async => await _quitarServicio(servicio),
@@ -1069,8 +1188,12 @@ class _GestionarServiciosGrupoDialogState extends State<_GestionarServiciosGrupo
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : IconButton(
-                              icon: const Icon(Icons.add_circle_outline, color: AppColors.orangePrimary),
-                              onPressed: () async => await _agregarServicio(servicio),
+                              icon: const Icon(
+                                Icons.add_circle_outline,
+                                color: AppColors.orangePrimary,
+                              ),
+                              onPressed: () async =>
+                                  await _agregarServicio(servicio),
                             ),
                     );
                   },
@@ -1131,7 +1254,11 @@ class _GestionarServiciosGrupoDialogState extends State<_GestionarServiciosGrupo
       setState(() => _guardando = false);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(widget.errorActual() ?? 'No se pudo agregar el servicio.')),
+          SnackBar(
+            content: Text(
+              widget.errorActual() ?? 'No se pudo agregar el servicio.',
+            ),
+          ),
         );
       }
     }
@@ -1150,7 +1277,11 @@ class _GestionarServiciosGrupoDialogState extends State<_GestionarServiciosGrupo
       setState(() => _guardando = false);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(widget.errorActual() ?? 'No se pudo quitar el servicio.')),
+          SnackBar(
+            content: Text(
+              widget.errorActual() ?? 'No se pudo quitar el servicio.',
+            ),
+          ),
         );
       }
     }

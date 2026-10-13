@@ -1,5 +1,7 @@
 import 'package:autofix/core/database/database_helper.dart';
 import 'package:autofix/core/database/semilla_inicial.dart';
+import 'package:autofix/features/configuracion/data/marca_repository.dart';
+import 'package:autofix/features/configuracion/models/marca.dart';
 import 'package:autofix/features/configuracion/presentation/configuracion_controller.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -57,6 +59,46 @@ void main() {
 
       // El primero es el `cargando = true`, el segundo el false con la data.
       expect(avisos, greaterThanOrEqualTo(2));
+    });
+
+    test('pagina, cuenta y filtra marcas en bloques de diez', () async {
+      final tallerId = SemillaInicial.talleres.first.id;
+      final repo = MarcaRepository.instance;
+      final marcasIniciales = await repo.obtenerTodasPorTaller(tallerId);
+      for (var i = 0; i < 55; i++) {
+        await repo.crear(
+          Marca(
+            nombre: 'Marca paginada ${i.toString().padLeft(2, '0')}',
+            tallerId: tallerId,
+          ),
+        );
+      }
+
+      final c = nuevo();
+      await c.cargar();
+      expect(c.marcas, hasLength(ConfiguracionController.elementosPorPagina));
+      expect(c.totalMarcas, marcasIniciales.length + 55);
+      expect(c.paginaActual, 1);
+      expect(c.totalPaginas, 6);
+
+      await c.paginaSiguiente();
+      expect(c.paginaActual, 2);
+      expect(c.marcas, hasLength(ConfiguracionController.elementosPorPagina));
+      await c.paginaAnterior();
+      expect(c.paginaActual, 1);
+
+      c.buscarMarcas('Marca paginada 0');
+      await Future<void>.delayed(
+        ConfiguracionController.debounceBusquedaMarcas +
+            const Duration(milliseconds: 50),
+      );
+      expect(c.totalMarcas, 10);
+      expect(c.totalPaginas, 1);
+      expect(c.marcas, hasLength(10));
+      expect(
+        c.marcas.every((marca) => marca.nombre.contains('paginada 0')),
+        isTrue,
+      );
     });
   });
 
@@ -190,10 +232,8 @@ void main() {
       // distinto por cada tarjeta.
       final c = nuevo();
       await c.cargar();
-      final antes = c.marcas.length;
 
       expect(await c.guardarMarca('  Kia  '), isTrue);
-      expect(c.marcas.length, antes + 1);
       // El mismo `trim` que en tecnicos: el UNIQUE no debe saltar por un espacio.
       expect(c.marcas.any((m) => m.nombre == 'Kia'), isTrue);
       expect(c.error, isNull);

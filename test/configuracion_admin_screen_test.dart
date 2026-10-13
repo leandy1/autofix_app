@@ -53,6 +53,35 @@ void main() {
     expect(find.text('Técnico 1'), findsOneWidget);
   });
 
+  testWidgets('muestra contadores y buscador en los encabezados del catálogo', (
+    tester,
+  ) async {
+    await mostrarPantalla(tester);
+    await tester.tap(find.text('Catálogos'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Marcas (5)'), findsOneWidget);
+    expect(find.byType(TextField), findsOneWidget);
+    expect(find.text('Buscar marcas'), findsOneWidget);
+    final listaCatalogos = find.byType(ListView).last;
+    await tester.scrollUntilVisible(
+      find.text('Grupos de servicios (1)'),
+      300,
+      scrollable: find
+          .descendant(of: listaCatalogos, matching: find.byType(Scrollable))
+          .first,
+    );
+    expect(find.text('Grupos de servicios (1)'), findsOneWidget);
+
+    await tester.tap(find.text('Técnicos'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Técnicos ('), findsOneWidget);
+
+    await tester.tap(find.text('Servicios'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Servicios ('), findsOneWidget);
+  });
+
   testWidgets('rechaza precios negativos antes de guardar un servicio', (
     tester,
   ) async {

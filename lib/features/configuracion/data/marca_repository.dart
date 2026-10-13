@@ -69,16 +69,63 @@ class MarcaRepository implements BaseRepository<Marca> {
 
   /// TODAS las marcas, activas y dadas de baja: para la pantalla de
   /// administracion, que tambien necesita ver las de baja para reactivarlas.
-  Future<List<Marca>> obtenerTodasPorTaller(String tallerId) async {
+  Future<List<Marca>> obtenerTodasPorTaller(
+    String tallerId, {
+    int? limit,
+    int offset = 0,
+    String? query,
+  }) async {
+    if (limit != null && limit <= 0) {
+      throw ArgumentError.value(limit, 'limit', 'Debe ser mayor que cero.');
+    }
+    if (offset < 0) {
+      throw ArgumentError.value(offset, 'offset', 'No puede ser negativo.');
+    }
+    if (limit == null && offset > 0) {
+      throw ArgumentError('Se requiere limit para usar offset.');
+    }
+
+    final textoBusqueda = query?.trim();
+    final where = StringBuffer(
+      '${DatabaseHelper.colTallerId} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
+    );
+    final whereArgs = <Object?>[tallerId];
+    if (textoBusqueda != null && textoBusqueda.isNotEmpty) {
+      where.write(' AND ${DatabaseHelper.colNombre} LIKE ? COLLATE NOCASE');
+      whereArgs.add('%$textoBusqueda%');
+    }
+
     final db = await _helper.base;
     final filas = await db.query(
       tabla,
-      where:
-          '${DatabaseHelper.colTallerId} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
-      whereArgs: <Object?>[tallerId],
+      where: where.toString(),
+      whereArgs: whereArgs,
       orderBy: '${DatabaseHelper.colNombre} COLLATE NOCASE ASC',
+      limit: limit,
+      offset: offset > 0 ? offset : null,
     );
     return filas.map(Marca.fromMap).toList();
+  }
+
+  /// Cuenta únicamente las marcas vigentes del taller, aplicando el mismo
+  /// filtro que [obtenerTodasPorTaller].
+  Future<int> contarMarcas(String tallerId, {String? query}) async {
+    final textoBusqueda = query?.trim();
+    final where = StringBuffer(
+      '${DatabaseHelper.colTallerId} = ? AND ${DatabaseHelper.colEliminadoEn} IS NULL',
+    );
+    final whereArgs = <Object?>[tallerId];
+    if (textoBusqueda != null && textoBusqueda.isNotEmpty) {
+      where.write(' AND ${DatabaseHelper.colNombre} LIKE ? COLLATE NOCASE');
+      whereArgs.add('%$textoBusqueda%');
+    }
+
+    final db = await _helper.base;
+    final resultado = await db.rawQuery(
+      'SELECT COUNT(*) AS total FROM $tabla WHERE ${where.toString()}',
+      whereArgs,
+    );
+    return Sqflite.firstIntValue(resultado) ?? 0;
   }
 
   Future<List<Marca>> obtenerActivasPorTaller(String tallerId) async {

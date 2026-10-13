@@ -66,6 +66,9 @@ import 'package:autofix/features/sync/sync_service.dart';
 /// No expone `Color` ni `Widget`: devuelve entidades y texto ya formateado. El
 /// mapeo a color es del diseño, no del dominio.
 class ConfiguracionController extends ChangeNotifier {
+  static const int elementosPorPagina = 10;
+  static const Duration debounceBusquedaMarcas = Duration(milliseconds: 350);
+
   /// Los cuatro repositorios son inyectables para que un test pueda pasar un
   /// doble sin tocar la base. Todos son opcionales y por defecto caen al
   /// singleton.
@@ -83,7 +86,8 @@ class ConfiguracionController extends ChangeNotifier {
        _repoServicios = servicios ?? TipoServicioRepository.instance,
        _repoMarcas = marcas ?? MarcaRepository.instance,
        _repoGrupos = grupos ?? GrupoServicioRepository.instance,
-       _repoGrupoServicioItems = grupoServicioItems ?? GrupoServicioItemRepository.instance;
+       _repoGrupoServicioItems =
+           grupoServicioItems ?? GrupoServicioItemRepository.instance;
 
   final String tallerId;
 
@@ -109,6 +113,13 @@ class ConfiguracionController extends ChangeNotifier {
   List<GrupoServicioItem> _grupoServicioItems = const <GrupoServicioItem>[];
 
   bool _cargando = true;
+  bool _cargandoMarcas = false;
+  int _paginaActual = 1;
+  int _totalPaginas = 1;
+  int _totalMarcas = 0;
+  int _versionConsultaMarcas = 0;
+  String _consultaMarcas = '';
+  Timer? _debounceMarcas;
   String? _error;
   bool _disposed = false;
 
@@ -121,9 +132,15 @@ class ConfiguracionController extends ChangeNotifier {
   List<TipoServicio> get tiposServicio => List.unmodifiable(_tiposServicio);
   List<Marca> get marcas => List.unmodifiable(_marcas);
   List<GrupoServicio> get gruposServicio => List.unmodifiable(_gruposServicio);
-  List<GrupoServicioItem> get grupoServicioItems => List.unmodifiable(_grupoServicioItems);
+  List<GrupoServicioItem> get grupoServicioItems =>
+      List.unmodifiable(_grupoServicioItems);
 
   bool get cargando => _cargando;
+  bool get cargandoMarcas => _cargandoMarcas;
+  int get paginaActual => _paginaActual;
+  int get totalPaginas => _totalPaginas;
+  int get totalMarcas => _totalMarcas;
+  String get consultaMarcas => _consultaMarcas;
 
   /// Ultimo error, en texto que se puede mostrar tal cual en un SnackBar.
   /// `null` cuando la ultima operacion salio bien.
@@ -132,6 +149,7 @@ class ConfiguracionController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _debounceMarcas?.cancel();
     super.dispose();
   }
 
@@ -182,25 +200,29 @@ class ConfiguracionController extends ChangeNotifier {
   // ---------------------------------------------------------------------
 
   Future<void> cargar({bool mostrarCarga = true}) async {
+    _debounceMarcas?.cancel();
     if (mostrarCarga) _cargando = true;
     _error = null;
     if (mostrarCarga) _notificarSiActivo();
 
     try {
+      final cargaPaginaMarcas = _cargarPaginaMarcas(
+        pagina: _paginaActual,
+        mostrarIndicador: false,
+      );
       // Las cinco se piden juntas filtradas por tallerId
       final resultados = await Future.wait(<Future<Object?>>[
         _repoTecnicos.obtenerTodasPorTaller(tallerId),
         _repoServicios.obtenerTodasPorTaller(tallerId),
-        _repoMarcas.obtenerTodasPorTaller(tallerId),
         _repoGrupos.obtenerTodasPorTaller(tallerId),
         _repoGrupoServicioItems.obtenerActivosPorTaller(tallerId),
       ]);
+      await cargaPaginaMarcas;
 
       _tecnicos = resultados[0] as List<Tecnico>;
       _tiposServicio = resultados[1] as List<TipoServicio>;
-      _marcas = resultados[2] as List<Marca>;
-      _gruposServicio = resultados[3] as List<GrupoServicio>;
-      _grupoServicioItems = resultados[4] as List<GrupoServicioItem>;
+      _gruposServicio = resultados[2] as List<GrupoServicio>;
+      _grupoServicioItems = resultados[3] as List<GrupoServicioItem>;
       _error = null;
     } on Exception catch (e) {
       _error = _mensajeDe(e);
@@ -209,6 +231,89 @@ class ConfiguracionController extends ChangeNotifier {
     _cargando = false;
     _notificarSiActivo();
   }
+
+  /// Actualiza el filtro y espera brevemente antes de consultar SQLite.
+  void buscarMarcas(String texto) {
+    if (texto == _consultaMarcas) return;
+    _consultaMarcas = texto;
+    _paginaActual = 1;
+    _versionConsultaMarcas++;
+    _debounceMarcas?.cancel();
+    _cargandoMarcas = true;
+    _notificarSiActivo();
+    _debounceMarcas = Timer(debounceBusquedaMarcas, () {
+      unawaited(_cargarPaginaMarcas(pagina: 1));
+    });
+  }
+
+  Future<void> paginaSiguiente() async {
+    if (_cargandoMarcas || _paginaActual >= _totalPaginas) return;
+    _debounceMarcas?.cancel();
+    await _cargarPaginaMarcas(pagina: _paginaActual + 1);
+  }
+
+  Future<void> paginaAnterior() async {
+    if (_cargandoMarcas || _paginaActual <= 1) return;
+    _debounceMarcas?.cancel();
+    await _cargarPaginaMarcas(pagina: _paginaActual - 1);
+  }
+
+  Future<void> _cargarPaginaMarcas({
+    int? pagina,
+    bool mostrarIndicador = true,
+  }) async {
+    if (_disposed) return;
+    final version = ++_versionConsultaMarcas;
+    if (mostrarIndicador) {
+      _cargandoMarcas = true;
+      _notificarSiActivo();
+    }
+
+    try {
+      final paginaSolicitada = pagina ?? _paginaActual;
+      final totalMarcasFuture = _repoMarcas.contarMarcas(
+        tallerId,
+        query: _consultaMarcas,
+      );
+      final marcasPaginaFuture = _repoMarcas.obtenerTodasPorTaller(
+        tallerId,
+        query: _consultaMarcas,
+        limit: elementosPorPagina,
+        offset: (paginaSolicitada - 1) * elementosPorPagina,
+      );
+      final total = await totalMarcasFuture;
+      final paginas = total == 0
+          ? 1
+          : (total + elementosPorPagina - 1) ~/ elementosPorPagina;
+      final paginaValida = paginaSolicitada.clamp(1, paginas);
+      final marcas = paginaValida == paginaSolicitada
+          ? await marcasPaginaFuture
+          : await _repoMarcas.obtenerTodasPorTaller(
+              tallerId,
+              query: _consultaMarcas,
+              limit: elementosPorPagina,
+              offset: (paginaValida - 1) * elementosPorPagina,
+            );
+      if (version != _versionConsultaMarcas) return;
+
+      _totalMarcas = total;
+      _totalPaginas = paginas;
+      _paginaActual = paginaValida;
+      _marcas = marcas;
+      _error = null;
+    } on Exception catch (e) {
+      if (version == _versionConsultaMarcas) _error = _mensajeDe(e);
+    } finally {
+      if (version == _versionConsultaMarcas) {
+        _cargandoMarcas = false;
+        if (mostrarIndicador) _notificarSiActivo();
+      }
+    }
+  }
+
+  /// Recarga la página visible después de modificar el catálogo.
+  Future<void> _recargarMarcas() =>
+      _cargarPaginaMarcas(pagina: _paginaActual, mostrarIndicador: false);
 
   // ---------------------------------------------------------------------
   // Escritura
@@ -294,7 +399,7 @@ class ConfiguracionController extends ChangeNotifier {
     if (limpio == null) return false;
     return _escribir(
       () => _repoMarcas.crear(Marca(nombre: limpio, tallerId: tallerId)),
-      () async => _marcas = await _repoMarcas.obtenerTodasPorTaller(tallerId),
+      _recargarMarcas,
     );
   }
 
@@ -305,7 +410,7 @@ class ConfiguracionController extends ChangeNotifier {
     if (existente.isEmpty) return _noEncontrado();
     return _escribir(
       () => _repoMarcas.actualizar(existente.first.copyWith(nombre: limpio)),
-      () async => _marcas = await _repoMarcas.obtenerTodasPorTaller(tallerId),
+      _recargarMarcas,
     );
   }
 
@@ -351,10 +456,8 @@ class ConfiguracionController extends ChangeNotifier {
 
   /// Baja lógica sincronizable de la marca. `MarcaRepository.darDeBaja` conserva
   /// además la marca visible en el historial usando `activo = 0`.
-  Future<bool> eliminarMarca(String id) => _escribir(
-    () => _repoMarcas.eliminar(id),
-    () async => _marcas = await _repoMarcas.obtenerTodasPorTaller(tallerId),
-  );
+  Future<bool> eliminarMarca(String id) =>
+      _escribir(() => _repoMarcas.eliminar(id), _recargarMarcas);
 
   Future<bool> eliminarGrupoServicio(String id) => _escribir(
     () => _repoGrupos.eliminar(id),
@@ -409,7 +512,8 @@ class ConfiguracionController extends ChangeNotifier {
     }
 
     // Si no se proporciona orden, usar el siguiente disponible
-    final ordenFinal = orden ??
+    final ordenFinal =
+        orden ??
         (_grupoServicioItems
                 .where((item) => item.grupoId == grupoId)
                 .map((item) => item.orden)
@@ -423,9 +527,8 @@ class ConfiguracionController extends ChangeNotifier {
         tallerId: tallerId,
         orden: ordenFinal,
       ),
-      () async =>
-          _grupoServicioItems =
-              await _repoGrupoServicioItems.obtenerActivosPorTaller(tallerId),
+      () async => _grupoServicioItems = await _repoGrupoServicioItems
+          .obtenerActivosPorTaller(tallerId),
     );
   }
 
@@ -439,9 +542,8 @@ class ConfiguracionController extends ChangeNotifier {
         grupoId: grupoId,
         tipoServicioId: tipoServicioId,
       ),
-      () async =>
-          _grupoServicioItems =
-              await _repoGrupoServicioItems.obtenerActivosPorTaller(tallerId),
+      () async => _grupoServicioItems = await _repoGrupoServicioItems
+          .obtenerActivosPorTaller(tallerId),
     );
   }
 
@@ -452,8 +554,10 @@ class ConfiguracionController extends ChangeNotifier {
     required int orden,
   }) async {
     // Buscar el vínculo actual
-    final items = _grupoServicioItems.where((item) =>
-        item.grupoId == grupoId && item.tipoServicioId == tipoServicioId);
+    final items = _grupoServicioItems.where(
+      (item) =>
+          item.grupoId == grupoId && item.tipoServicioId == tipoServicioId,
+    );
     if (items.isEmpty) {
       _error = 'El servicio no está en este grupo.';
       _notificarSiActivo();
@@ -462,9 +566,8 @@ class ConfiguracionController extends ChangeNotifier {
     final item = items.first;
     return _escribir(
       () => _repoGrupoServicioItems.actualizarOrden(item.id!, orden),
-      () async =>
-          _grupoServicioItems =
-              await _repoGrupoServicioItems.obtenerActivosPorTaller(tallerId),
+      () async => _grupoServicioItems = await _repoGrupoServicioItems
+          .obtenerActivosPorTaller(tallerId),
     );
   }
 
@@ -475,15 +578,18 @@ class ConfiguracionController extends ChangeNotifier {
   }) async {
     for (int i = 0; i < tipoServicioIds.length; i++) {
       final tipoServicioId = tipoServicioIds[i];
-      final items = _grupoServicioItems.where((item) =>
-          item.grupoId == grupoId && item.tipoServicioId == tipoServicioId);
+      final items = _grupoServicioItems.where(
+        (item) =>
+            item.grupoId == grupoId && item.tipoServicioId == tipoServicioId,
+      );
       if (items.isNotEmpty) {
         await _repoGrupoServicioItems.actualizarOrden(items.first.id!, i);
       }
     }
     // Releer para actualizar la lista en memoria
-    _grupoServicioItems =
-        await _repoGrupoServicioItems.obtenerActivosPorTaller(tallerId);
+    _grupoServicioItems = await _repoGrupoServicioItems.obtenerActivosPorTaller(
+      tallerId,
+    );
     _notificarSiActivo();
     return true;
   }
@@ -522,7 +628,7 @@ class ConfiguracionController extends ChangeNotifier {
       }
 
       // Recargar la lista local
-      _marcas = await _repoMarcas.obtenerTodasPorTaller(tallerId);
+      await _recargarMarcas();
       _error = null;
     } on Exception catch (e) {
       _error = 'No se pudo importar marcas: ${_mensajeDe(e)}';

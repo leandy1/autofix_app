@@ -376,29 +376,39 @@ class SyncService extends ChangeNotifier {
     required String tallerId,
   }) async {
     var huboCambios = false;
-    for (final cambio in snapshot.docChanges) {
-      // Un removed de una consulta significa que ya no cumple el filtro, o que
-      // se borró desde consola. Ninguno de esos casos autoriza un DELETE local:
-      // las bajas oficiales llegan como un documento con `eliminado_en`.
-      if (cambio.type == DocumentChangeType.removed) continue;
-      final datos = cambio.doc.data();
-      if (datos == null) continue;
-      if (datos['taller_id'] != tallerId) continue;
-      try {
-        huboCambios =
-            await _repoCatalogos.aplicarDesdeNube(
-              definition: catalogo,
-              id: cambio.doc.id,
-              tallerId: tallerId,
-              data: datos,
-            ) ||
-            huboCambios;
-      } catch (error) {
-        // Una fila mal formada no debe impedir que se apliquen las demás.
-        debugPrint(
-          '[SyncService] No se pudo aplicar ${catalogo.coleccion}/'
-          '${cambio.doc.id}: $error',
-        );
+    const tamanoLote = 50;
+    final cambios = snapshot.docChanges;
+    for (var inicio = 0; inicio < cambios.length; inicio += tamanoLote) {
+      final fin = (inicio + tamanoLote).clamp(0, cambios.length);
+      for (final cambio in cambios.skip(inicio).take(fin - inicio)) {
+        // Un removed de una consulta significa que ya no cumple el filtro, o
+        // que se borró desde consola. Las bajas oficiales llegan como tombstone.
+        if (cambio.type == DocumentChangeType.removed) continue;
+        final datos = cambio.doc.data();
+        if (datos == null) continue;
+        if (datos['taller_id'] != tallerId) continue;
+        try {
+          huboCambios =
+              await _repoCatalogos.aplicarDesdeNube(
+                definition: catalogo,
+                id: cambio.doc.id,
+                tallerId: tallerId,
+                data: datos,
+              ) ||
+              huboCambios;
+        } catch (error) {
+          // Una fila mal formada no debe impedir que se apliquen las demás.
+          debugPrint(
+            '[SyncService] No se pudo aplicar ${catalogo.coleccion}/'
+            '${cambio.doc.id}: $error',
+          );
+        }
+      }
+
+      // La primera emisión de Firestore puede incluir el catálogo entero. Ceder
+      // entre bloques mantiene la UI interactiva mientras SQLite lo incorpora.
+      if (fin < cambios.length) {
+        await Future<void>.delayed(Duration.zero);
       }
     }
     if (huboCambios) notifyListeners();
