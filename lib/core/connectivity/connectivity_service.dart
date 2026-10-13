@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:collection/collection.dart';
 
 /// Estado de red segun lo que la app puede afirmar en este instante.
@@ -32,6 +32,7 @@ class ConnectivityService extends ChangeNotifier {
   final Connectivity _connectivity = Connectivity();
 
   StreamSubscription<List<ConnectivityResult>>? _suscripcion;
+  AppLifecycleListener? _lifecycleListener;
 
   /// Stream para consumidores externos (ej. SyncService) que quieran reaccionar
   /// a cambios de conectividad (reconexion -> pushPending()).
@@ -49,6 +50,9 @@ class ConnectivityService extends ChangeNotifier {
 
   int _reintentos = 0;
   bool _descartado = false;
+
+  Timer? _periodicCheckTimer;
+  static const Duration _periodicCheckInterval = Duration(seconds: 5);
 
   List<ConnectivityResult> _resultados = const <ConnectivityResult>[];
   EstadoRed _estado = EstadoRed.desconocido;
@@ -74,6 +78,8 @@ class ConnectivityService extends ChangeNotifier {
     // responde, ese corte no lo ve nadie y el banner queda mostrando "en linea"
     // hasta el siguiente cambio de red, que puede no llegar nunca.
     _escuchar();
+    _iniciarVerificacionPeriodica();
+    _iniciarLifecycleListener();
 
     try {
       _aplicar(await _connectivity.checkConnectivity());
@@ -85,6 +91,34 @@ class ConnectivityService extends ChangeNotifier {
       // acusamos.
       debugPrint('ConnectivityService: no se pudo leer el estado inicial ($e)');
     }
+  }
+
+  void _iniciarLifecycleListener() {
+    _lifecycleListener = AppLifecycleListener(
+      onResume: _verificarConectividad,
+      onShow: _verificarConectividad,
+    );
+  }
+
+  Future<void> _verificarConectividad() async {
+    if (_descartado) return;
+    try {
+      _aplicar(await _connectivity.checkConnectivity());
+    } catch (e) {
+      debugPrint('ConnectivityService: verificación al reanudar falló ($e)');
+    }
+  }
+
+  void _iniciarVerificacionPeriodica() {
+    _periodicCheckTimer?.cancel();
+    _periodicCheckTimer = Timer.periodic(_periodicCheckInterval, (_) async {
+      if (_descartado) return;
+      try {
+        _aplicar(await _connectivity.checkConnectivity());
+      } catch (e) {
+        debugPrint('ConnectivityService: verificación periódica falló ($e)');
+      }
+    });
   }
 
   void _escuchar() {
@@ -156,6 +190,8 @@ class ConnectivityService extends ChangeNotifier {
     // `notifyListeners()` sobre un `ChangeNotifier` ya liberado.
     _descartado = true;
     _suscripcion?.cancel();
+    _periodicCheckTimer?.cancel();
+    _lifecycleListener?.dispose();
     _connectivityController.close();
     super.dispose();
   }
