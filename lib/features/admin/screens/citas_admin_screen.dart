@@ -1230,6 +1230,7 @@ class _EditarCitaDialogState extends State<_EditarCitaDialog> {
                           Expanded(
                             child: DropdownButtonFormField<String>(
                               initialValue: _marcaSeleccionada,
+                              isExpanded: true,
                               decoration: _decoracionCampo('Marca'),
 items: widget.marcas
     .where((m) => m.activo)
@@ -3203,6 +3204,7 @@ class _CrearCitaDialogState extends State<_CrearCitaDialog> {
                             Expanded(
                               child: DropdownButtonFormField<String>(
                                 initialValue: _marcaSeleccionada,
+                                isExpanded: true,
                                 decoration: _decoracionCampo('Marca'),
                                 validator: (valor) => valor == null
                                     ? 'Selecciona la marca.'
