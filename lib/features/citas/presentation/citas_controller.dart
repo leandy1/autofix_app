@@ -103,7 +103,7 @@ class CitasController extends ChangeNotifier {
     EstadoCita estado, {
     String? motivoRechazo,
   }) async {
-    debugPrint('🔐 CONTROLLER cambiarEstado: id=$id, estado=$estado, motivoRechazo=$motivoRechazo');
+    debugPrint('CONTROLLER cambiarEstado: id=$id, estado=$estado, motivoRechazo=$motivoRechazo');
     final ok = await _intentar(() async {
       await _repo.cambiarEstado(id, estado, motivoRechazo: motivoRechazo);
       return _obtenerCitas();
